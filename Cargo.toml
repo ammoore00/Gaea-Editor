@@ -15,4 +15,8 @@ serde_with = "3.7"
 
 zip = "2.2"
 
-iced = "0.13.1"
+iced = { version = "0.13.1", features = ["highlighter", "tokio", "debug"] }
+
+tokio = { version = "1.43.0", features = ["fs"] }
+
+rfd = "0.13"
