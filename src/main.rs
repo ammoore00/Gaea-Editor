@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: MPL-2.0
+
+mod gui;
+
+use crate::gui::window::ApplicationWindow;
+
 use iced::highlighter;
 use iced::keyboard;
 use iced::widget::{
@@ -12,11 +18,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub fn main() -> iced::Result {
-    iced::application("Editor - Iced", Editor::update, Editor::view)
-        .theme(Editor::theme)
+    iced::application("Gaea - Minecraft Resource and Datapack Editor", ApplicationWindow::update, ApplicationWindow::view)
+        .theme(ApplicationWindow::theme)
         .font(include_bytes!("../fonts/icons.ttf").as_slice())
         .default_font(Font::MONOSPACE)
-        .run_with(Editor::new)
+        .run_with(ApplicationWindow::new)
 }
 
 struct Editor {
@@ -324,7 +330,7 @@ fn open_icon<'a, Message>() -> Element<'a, Message> {
 }
 
 fn icon<'a, Message>(codepoint: char) -> Element<'a, Message> {
-    const ICON_FONT: Font = Font::with_name("editor-icons");
+    const ICON_FONT: Font = Font::with_name("text_editor-icons");
     
     text(codepoint).font(ICON_FONT).into()
 }
