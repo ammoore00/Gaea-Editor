@@ -3,11 +3,17 @@
 use iced::{Element, highlighter, Length, Task, Theme};
 use iced::widget::{Column, Container, pane_grid, PaneGrid, Row};
 use iced::widget::pane_grid::Axis;
+use crate::gui::text_editor;
+use crate::gui::text_editor::TextEditor;
 
 #[derive(Debug, Clone)]
 pub enum Message {
     ResizedPane(pane_grid::ResizeEvent),
     ClickedPane(pane_grid::Pane),
+    
+    ThemeSelected(highlighter::Theme),
+    
+    TextEditorMessage(i32, text_editor::Message),
 }
 
 pub struct ApplicationWindow {
@@ -15,15 +21,56 @@ pub struct ApplicationWindow {
     
     panes: pane_grid::State<PaneState>,
     focus: Option<pane_grid::Pane>,
+    
+    text_editors: Vec<TextEditor>
 }
 
 impl ApplicationWindow {
     pub fn new() -> (Self, Task<Message>) {
-        (Self::default(), Task::none())
+        let file_tree_pane = PaneState::new(PaneType::FileTree);
+        let main_content_pane = PaneState::new(PaneType::MainContent);
+        let preview_pane = PaneState::new(PaneType::Preview);
+        
+        let panes = pane_grid::State::with_configuration(
+            pane_grid::Configuration::Split{
+                axis: Axis::Vertical,
+                ratio: 0.2,
+                a: Box::new(pane_grid::Configuration::Pane(file_tree_pane)),
+                b: Box::new(pane_grid::Configuration::Split{
+                    axis: Axis::Vertical,
+                    ratio: 0.66,
+                    a: Box::new(pane_grid::Configuration::Pane(main_content_pane)),
+                    b: Box::new(pane_grid::Configuration::Pane(preview_pane)),
+                }),
+            });
+        
+        let mut window = Self {
+            theme: highlighter::Theme::SolarizedDark,
+            
+            panes,
+            focus: None,
+            
+            text_editors: Vec::new(),
+        };
+        
+        let editor = TextEditor::new(window.theme.clone());
+        window.text_editors.push(editor.0);
+        
+        // Todo: fix task from editor being eaten
+        (window, Task::none())
     }
     
     pub fn update(&mut self, message: Message) -> Task<Message> {
-        Task::none()
+        match message {
+            Message::ThemeSelected(theme) => {
+                self.theme = theme;
+                
+                Task::none()
+            }
+            Message::ResizedPane(_) => todo!(),
+            Message::ClickedPane(_) => todo!(),
+            Message::TextEditorMessage(_, _) => todo!(),
+        }
     }
     
     pub fn view(&self) -> Element<Message> {
@@ -33,7 +80,7 @@ impl ApplicationWindow {
             pane_grid::Content::new(
                 match state.pane_type {
                     PaneType::FileTree => Container::new(iced::widget::text("File Tree")),
-                    PaneType::MainContent => Container::new(iced::widget::text("Main Content")),
+                    PaneType::MainContent => Container::new(self.text_editors[0].view()),
                     PaneType::Preview => Container::new(iced::widget::text("Preview")),
                 })
         })
@@ -57,34 +104,6 @@ impl ApplicationWindow {
             Theme::Dark
         } else {
             Theme::Light
-        }
-    }
-}
-
-impl Default for ApplicationWindow {
-    fn default() -> Self {
-        let file_tree_pane = PaneState::new(PaneType::FileTree);
-        let main_content_pain = PaneState::new(PaneType::MainContent);
-        let preview_pane = PaneState::new(PaneType::Preview);
-        
-        let panes = pane_grid::State::with_configuration(
-            pane_grid::Configuration::Split{
-                axis: Axis::Vertical,
-                ratio: 0.2,
-                a: Box::new(pane_grid::Configuration::Pane(file_tree_pane)),
-                b: Box::new(pane_grid::Configuration::Split{
-                    axis: Axis::Vertical,
-                    ratio: 0.66,
-                    a: Box::new(pane_grid::Configuration::Pane(main_content_pain)),
-                    b: Box::new(pane_grid::Configuration::Pane(preview_pane)),
-                }),
-            });
-        
-        Self {
-            theme: highlighter::Theme::SolarizedDark,
-            
-            panes,
-            focus: None
         }
     }
 }
