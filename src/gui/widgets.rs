@@ -36,7 +36,7 @@ pub fn open_icon<'a, Message>() -> Element<'a, Message> {
 }
 
 pub fn icon<'a, Message>(codepoint: char) -> Element<'a, Message> {
-    const ICON_FONT: Font = Font::with_name("text_editor-icons");
+    const ICON_FONT: Font = Font::with_name("editor-icons");
     
     text(codepoint).font(ICON_FONT).into()
 }
