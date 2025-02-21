@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use iced::{Element, Font};
 use iced::widget::{button, center, container, text, tooltip};
 

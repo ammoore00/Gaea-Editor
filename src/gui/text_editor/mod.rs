@@ -76,7 +76,7 @@ impl<'a> TextEditor {
         )
     }
     
-    fn update(&mut self, message: Message) -> Task<window::Message> {
+    pub(crate) fn update(&mut self, message: Message) -> Task<window::Message> {
         match message {
             Message::ActionPerformed(action) => {
                 self.is_dirty = self.is_dirty || action.is_edit();

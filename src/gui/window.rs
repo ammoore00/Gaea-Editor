@@ -56,20 +56,25 @@ impl ApplicationWindow {
         let editor = TextEditor::new(window.theme.clone());
         window.text_editors.push(editor.0);
         
-        // Todo: fix task from editor being eaten
-        (window, Task::none())
+        (window, editor.1)
     }
     
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::ThemeSelected(theme) => {
                 self.theme = theme;
-                
                 Task::none()
             }
-            Message::ResizedPane(_) => todo!(),
-            Message::ClickedPane(_) => todo!(),
-            Message::TextEditorMessage(_, _) => todo!(),
+            Message::ResizedPane(pane_grid::ResizeEvent { split, ratio }) => {
+                self.panes.resize(split, ratio);
+                Task::none()
+            }
+            Message::ClickedPane(pane) => {
+                self.focus = Some(pane);
+                Task::none()
+            }
+            // TODO: Fix indexes not being used
+            Message::TextEditorMessage(index, message) => self.text_editors[0].update(message),
         }
     }
     
