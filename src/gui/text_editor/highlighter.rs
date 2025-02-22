@@ -282,18 +282,6 @@ impl std::fmt::Display for Theme {
     }
 }
 
-impl Into<iced::highlighter::Theme> for Theme {
-    fn into(self) -> iced::highlighter::Theme {
-        match self {
-            Theme::SolarizedDark => iced::highlighter::Theme::SolarizedDark,
-            Theme::Base16Mocha => iced::highlighter::Theme::Base16Mocha,
-            Theme::Base16Ocean => iced::highlighter::Theme::Base16Ocean,
-            Theme::Base16Eighties => iced::highlighter::Theme::Base16Eighties,
-            Theme::InspiredGitHub => iced::highlighter::Theme::InspiredGitHub,
-        }
-    }
-}
-
 struct ScopeRangeIterator {
     ops: Vec<(usize, parsing::ScopeStackOp)>,
     line_length: usize,
@@ -302,7 +290,7 @@ struct ScopeRangeIterator {
 }
 
 impl Iterator for ScopeRangeIterator {
-    type Item = (std::ops::Range<usize>, parsing::ScopeStackOp);
+    type Item = (Range<usize>, parsing::ScopeStackOp);
     
     fn next(&mut self) -> Option<Self::Item> {
         if self.index > self.ops.len() {

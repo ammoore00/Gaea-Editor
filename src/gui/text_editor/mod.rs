@@ -226,37 +226,22 @@ impl<'a> TextEditor {
             .as_deref()
             .and_then(Path::extension)
             .and_then(ffi::OsStr::to_str)
-            .unwrap_or("json");
+            .unwrap_or("json")
+            .to_owned();
         
-        let mut column = Column::new()
-                .push(controls);
-        
-        column = column.push(text_editor.highlight_with::<highlighter::MinecraftHighlighter>(
-            highlighter::Settings {
-                theme: self.theme,
-                token: self.file
-                    .as_deref()
-                    .and_then(Path::extension)
-                    .and_then(ffi::OsStr::to_str)
-                    .unwrap_or("json")
-                    .to_owned(),
-            },
-            |highlight, _theme| highlight.to_format()
-        ));
-        
-        /*
-        if extension == "mcfunction" {
-        
-        }
-        else {
-            column = column.push(text_editor.highlight(extension, self.theme.into()));
-        }
-         */
-        
-        column.push(status)
-            .spacing(10)
-            .padding(10)
-            .into()
+        Column::new()
+                .push(controls)
+                .push(text_editor.highlight_with::<highlighter::MinecraftHighlighter>(
+                highlighter::Settings {
+                        theme: self.theme,
+                        token: extension
+                    },
+                    |highlight, _theme| highlight.to_format()
+                ))
+                .push(status)
+                .spacing(10)
+                .padding(10)
+                .into()
     }
 }
 
