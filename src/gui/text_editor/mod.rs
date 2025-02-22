@@ -22,10 +22,14 @@ use std::ffi;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use iced::{Center, Element, Fill, Font, highlighter, keyboard, Task, widget};
-use iced::widget::{button, center, container, column, horizontal_space, pick_list, row, Row, text, text_editor, toggler, tooltip, Column};
+
+use iced::{Center, Element, Fill, keyboard, Task, widget};
+use iced::widget::{Column, horizontal_space, row, Row, text, text_editor, toggler};
+
 use crate::gui::widgets::{action, new_icon, open_icon, save_icon};
 use crate::gui::window;
+
+pub mod highlighter;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -197,37 +201,59 @@ impl<'a> TextEditor {
         ]
             .spacing(10);
         
-        Column::new()
-            .push(controls)
-            .push(text_editor(&self.content)
-                .height(Fill)
-                .on_action(|action| make_message(Message::ActionPerformed(action)))
-                .wrapping(if self.word_wrap {
-                    text::Wrapping::Word
-                } else {
-                    text::Wrapping::None
-                })
-                .highlight(
-                    self.file
-                        .as_deref()
-                        .and_then(Path::extension)
-                        .and_then(ffi::OsStr::to_str)
-                        .unwrap_or("rs"),
-                    self.theme,
-                )
-                .key_binding(|key_press| {
-                    match key_press.key.as_ref() {
-                        keyboard::Key::Character("s")
-                            if key_press.modifiers.command() =>
+        let text_editor = text_editor(&self.content)
+            .height(Fill)
+            .on_action(|action| make_message(Message::ActionPerformed(action)))
+            .wrapping(if self.word_wrap {
+                text::Wrapping::Word
+            } else {
+                text::Wrapping::None
+            })
+            .key_binding(|key_press| {
+                match key_press.key.as_ref() {
+                    keyboard::Key::Character("s")
+                    if key_press.modifiers.command() =>
                         {
                             Some(text_editor::Binding::Custom(
                                 make_message(Message::SaveFile),
                             ))
                         }
-                        _ => text_editor::Binding::from_key_press(key_press),
-                    }
-                }))
-            .push(status)
+                    _ => text_editor::Binding::from_key_press(key_press),
+                }
+            });
+        
+        let extension = self.file
+            .as_deref()
+            .and_then(Path::extension)
+            .and_then(ffi::OsStr::to_str)
+            .unwrap_or("json");
+        
+        let mut column = Column::new()
+                .push(controls);
+        
+        column = column.push(text_editor.highlight_with::<highlighter::MinecraftHighlighter>(
+            highlighter::Settings {
+                theme: self.theme,
+                token: self.file
+                    .as_deref()
+                    .and_then(Path::extension)
+                    .and_then(ffi::OsStr::to_str)
+                    .unwrap_or("json")
+                    .to_owned(),
+            },
+            |highlight, _theme| highlight.to_format()
+        ));
+        
+        /*
+        if extension == "mcfunction" {
+        
+        }
+        else {
+            column = column.push(text_editor.highlight(extension, self.theme.into()));
+        }
+         */
+        
+        column.push(status)
             .spacing(10)
             .padding(10)
             .into()

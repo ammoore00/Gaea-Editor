@@ -1,0 +1,63 @@
+%YAML 1.2
+---
+# See http://www.sublimetext.com/docs/3/syntax.html
+file_extensions:
+  - mcfunction
+scope: source.mcfunction
+
+contexts:
+  # The prototype context is prepended to all contexts but those setting
+  # meta_include_prototype: false.
+  prototype:
+    - include: comments
+
+  main:
+    # The main context is the initial starting point of our syntax.
+    # Include other contexts from here (or specify them directly).
+    - include: keywords
+    - include: selectors
+    - include: numbers
+    - include: strings
+
+  keywords:
+    # Command names
+    - match: '^(advancement|attribute|bossbar|clear|clone|damage|data|datapack|debug|defaultgamemode|difficulty|effect|enchant|execute|experience|fill|fillbiome|forceload|function|gamemode|gamerule|give|help|item|jfr|kick|kill|list|locate|loot|me|msg|particle|place|playsound|random|recipe|reload|return|ride|rotate|say|schedule|scoreboard|seed|setblock|setworldspawn|spawnpoint|spectate|spreadplayers|stopsound|summon|tag|team|teammsg|teleport|tell|tellraw|test|tick|time|title|tm|tp|trigger|w|weather|worldborder|xp)\b'
+      scope: keyword.command.mcfunction
+
+  selectors:
+    - match: '@(p|n|r|a|e|s)'
+      scope: selectors.mcfunction
+      push:
+        - meta_scope: qualifier.selectors.mcfunction
+        - match: '(\[.\]|\w)\b'
+          pop: true
+
+  numbers:
+    - match: '\b(-)?[0-9.]+\b'
+      scope: constant.numeric.mcfunction
+
+  strings:
+    # Strings begin and end with quotes, and use backslashes as an escape
+    # character.
+    - match: '"'
+      scope: punctuation.definition.string.begin.mcfunction
+      push: inside_string
+
+  inside_string:
+    - meta_include_prototype: false
+    - meta_scope: string.quoted.double.mcfunction
+    - match: '\\.'
+      scope: constant.character.escape.mcfunction
+    - match: '"'
+      scope: punctuation.definition.string.end.mcfunction
+      pop: true
+
+  comments:
+    # Comments begin with a # and finish at the end of the line.
+    - match: '\#'
+      scope: punctuation.definition.comment.mcfunction
+      push:
+        # This is an anonymous context push for brevity.
+        - meta_scope: comment.line.hash.mcfunction
+        - match: $\n?
+          pop: true

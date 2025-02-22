@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use iced::{Element, highlighter, Length, Task, Theme};
+use iced::{Element, Length, Task, Theme};
 use iced::widget::{Column, Container, pane_grid, PaneGrid, Row};
 use iced::widget::pane_grid::Axis;
 use crate::gui::text_editor;
-use crate::gui::text_editor::TextEditor;
+use crate::gui::text_editor::{highlighter, TextEditor};
 
 #[derive(Debug, Clone)]
 pub enum Message {
