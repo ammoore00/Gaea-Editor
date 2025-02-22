@@ -23,7 +23,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use iced::{Center, Element, Fill, keyboard, Task, widget};
+use iced::{Center, Element, Fill, keyboard, Task, widget, Font};
 use iced::widget::{Column, horizontal_space, row, Row, text, text_editor, toggler};
 
 use crate::gui::widgets::{action, new_icon, open_icon, save_icon};
@@ -220,7 +220,8 @@ impl<'a> TextEditor {
                         }
                     _ => text_editor::Binding::from_key_press(key_press),
                 }
-            });
+            })
+            .font(Font::MONOSPACE);
         
         let extension = self.file
             .as_deref()

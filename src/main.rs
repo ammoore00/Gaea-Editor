@@ -10,6 +10,6 @@ pub fn main() -> iced::Result {
     iced::application("Gaea - Minecraft Resource and Datapack Editor", ApplicationWindow::update, ApplicationWindow::view)
         .theme(ApplicationWindow::theme)
         .font(include_bytes!("../resources/assets/fonts/icons.ttf").as_slice())
-        .default_font(Font::MONOSPACE)
+        .default_font(Font::DEFAULT)
         .run_with(ApplicationWindow::new)
 }
