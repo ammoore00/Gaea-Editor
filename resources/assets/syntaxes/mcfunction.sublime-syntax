@@ -28,8 +28,13 @@ contexts:
     - match: '@(p|n|r|a|e|s)'
       scope: selectors.mcfunction
       push:
-        - meta_scope: qualifier.selectors.mcfunction
-        - match: '(\[.\]|\w)\b'
+        - meta_scope: selector.qualified.mcfunction
+        # Match square brackets or other qualifiers
+        - match: '\[.*?\]'
+          scope: selector.qualifier.mcfunction
+          pop: true
+        # Pop without qualifiers
+        - match: '\s|$'
           pop: true
 
   numbers:

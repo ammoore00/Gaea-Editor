@@ -70,7 +70,7 @@ impl<'a> TextEditor {
             Task::batch([
                 Task::perform(
                     load_file(format!(
-                        "{}/src/main.rs",
+                        "{}/resources/assets/test.mcfunction",
                         env!("CARGO_MANIFEST_DIR")
                     )),
                     |result| make_message(Message::FileOpened(result)),
