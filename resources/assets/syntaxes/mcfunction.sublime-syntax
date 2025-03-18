@@ -18,8 +18,11 @@ contexts:
     - include: tags
     - include: resource_locations
     - include: selectors
+    - include: coordinates
+    - include: number_ranges
     - include: numbers
     - include: strings
+    - include: nbt_data
 
   keywords:
     # Command names
@@ -28,7 +31,7 @@ contexts:
 
   # Tags (like #minecraft:logs)
   tags:
-    - match: '(#[a-z0-9_.-]+:[a-z0-9_/.-]+)'
+    - match: '(?<!^)(#[a-z0-9_.-]+:[a-z0-9_/.-]+)'
       scope: entity.name.tag.mcfunction
 
   # Resource locations (like minecraft:oak_log)
@@ -48,17 +51,44 @@ contexts:
 
   selector_arguments:
     - meta_content_scope: meta.selector.arguments.mcfunction
-    # Add specific patterns for argument contents here
-    - match: '(name|distance|tag|team|limit|sort|level|gamemode|x|y|z|dx|dy|dz|scores|nbt|advancements|predicate)='
-      scope: entity.other.attribute-name.selector.mcfunction
-    - include: strings
+    # Match argument names and equals sign separately
+    - match: '([a-z_][a-z0-9_]*)(=)'
+      captures:
+        1: entity.other.attribute-name.selector.mcfunction
+        2: keyword.operator.assignment.mcfunction
+    - include: tags
+    - include: resource_locations
+    - include: coordinates
+    - include: number_ranges
     - include: numbers
+    - include: strings
+    - include: nbt_data
     - match: '\]'
       scope: variable.language.selector.mcfunction
       pop: true
 
+  # Coordinates (~ and ^ prefixed numbers)
+  coordinates:
+    # Relative coordinates (~)
+    - match: '(~)(-?[0-9]*\.?[0-9]*)'
+      scope: constant.numeric.coordinate.relative.mcfunction
+      captures:
+        1: keyword.operator.coordinate.relative.mcfunction
+
+    # Local coordinates (^)
+    - match: '(\^)(-?[0-9]*\.?[0-9]*)'
+      scope: constant.numeric.coordinate.local.mcfunction
+      captures:
+        1: keyword.operator.coordinate.local.mcfunction
+
+  number_ranges:
+    - match: '(-?[0-9]+(\.[0-9]+)?)?(\.\.)(-?[0-9]+(\.[0-9]+)?)?'
+      scope: constant.numeric.range.mcfunction
+      captures:
+        3: keyword.operator.range.mcfunction
+
   numbers:
-    - match: '\b(-)?[0-9.]+\b'
+    - match: '(?<!\.)(-?[0-9]+(\.[0-9]+)?)(?!\.\.|\.)'
       scope: constant.numeric.mcfunction
 
   strings:
@@ -86,3 +116,56 @@ contexts:
         - meta_scope: comment.line.hash.mcfunction
         - match: $\n?
           pop: true
+
+  # NBT data highlighting
+  nbt_data:
+    - match: '{'
+      scope: punctuation.section.braces.begin.nbt.mcfunction
+      push:
+        - meta_scope: meta.nbt.mcfunction
+        - match: '}'
+          scope: punctuation.section.braces.end.nbt.mcfunction
+          pop: true
+        - include: nbt_content
+
+  nbt_content:
+    # Match key names and colons in NBT
+    - match: '([a-zA-Z0-9_]+)(:)'
+      captures:
+        1: entity.name.tag.nbt.mcfunction
+        2: punctuation.separator.key-value.nbt.mcfunction
+    # Match data types
+    - match: '\b(true|false)\b'
+      scope: constant.language.boolean.nbt.mcfunction
+    - match: '\b[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)f\b'
+      scope: constant.numeric.float.nbt.mcfunction
+    - match: '\b[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)d\b'
+      scope: constant.numeric.double.nbt.mcfunction
+    - match: '\b[+-]?[0-9]+b\b'
+      scope: constant.numeric.byte.nbt.mcfunction
+    - match: '\b[+-]?[0-9]+s\b'
+      scope: constant.numeric.short.nbt.mcfunction
+    - match: '\b[+-]?[0-9]+l\b'
+      scope: constant.numeric.long.nbt.mcfunction
+    # Arrays
+    - match: '\['
+      scope: punctuation.section.brackets.begin.nbt.mcfunction
+      push:
+        - meta_scope: meta.array.nbt.mcfunction
+        - match: '\]'
+          scope: punctuation.section.brackets.end.nbt.mcfunction
+          pop: true
+        - include: nbt_content
+    # Recursive NBT objects
+    - match: '{'
+      scope: punctuation.section.braces.begin.nbt.mcfunction
+      push:
+        - meta_scope: meta.nbt.mcfunction
+        - match: '}'
+          scope: punctuation.section.braces.end.nbt.mcfunction
+          pop: true
+        - include: nbt_content
+    # Include existing patterns for strings, etc.
+    - include: strings
+    - include: numbers
+    - include: resource_locations
