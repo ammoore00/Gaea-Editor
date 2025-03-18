@@ -15,6 +15,8 @@ contexts:
     # The main context is the initial starting point of our syntax.
     # Include other contexts from here (or specify them directly).
     - include: keywords
+    - include: tags
+    - include: resource_locations
     - include: selectors
     - include: numbers
     - include: strings
@@ -24,20 +26,36 @@ contexts:
     - match: '\b(advancement|attribute|bossbar|clear|clone|damage|data|datapack|debug|defaultgamemode|difficulty|effect|enchant|execute|experience|fill|fillbiome|forceload|function|gamemode|gamerule|give|help|item|jfr|kick|kill|list|locate|loot|me|msg|particle|place|playsound|random|recipe|reload|return|ride|rotate|say|schedule|scoreboard|seed|setblock|setworldspawn|spawnpoint|spectate|spreadplayers|stopsound|summon|tag|team|teammsg|teleport|tell|tellraw|test|tick|time|title|tm|tp|trigger|w|weather|worldborder|xp)\b'
       scope: keyword.command.mcfunction
 
+  # Tags (like #minecraft:logs)
+  tags:
+    - match: '(#[a-z0-9_.-]+:[a-z0-9_/.-]+)'
+      scope: entity.name.tag.mcfunction
+
+  # Resource locations (like minecraft:oak_log)
+  resource_locations:
+    - match: '(?<![#@])([a-z0-9_.-]+:[a-z0-9_/.-]+)'
+      scope: string.unquoted.resource.mcfunction
+
   selectors:
-    - match: '@(p|n|r|a|e|s)'
+    - match: '@(p|r|a|e|s|n)'
       scope: variable.language.selector.mcfunction
       push:
         - match: '\['
-          scope: punctuation.section.brackets.begin.mcfunction
-          push:
-            - meta_scope: meta.selector.arguments.mcfunction
-            - match: '\]'
-              scope: punctuation.section.brackets.end.mcfunction
-              pop: true
+          scope: variable.language.selector.mcfunction
+          push: selector_arguments
         - match: '(?=\s|$|[^@\[])'
           pop: true
 
+  selector_arguments:
+    - meta_content_scope: meta.selector.arguments.mcfunction
+    # Add specific patterns for argument contents here
+    - match: '(name|distance|tag|team|limit|sort|level|gamemode|x|y|z|dx|dy|dz|scores|nbt|advancements|predicate)='
+      scope: entity.other.attribute-name.selector.mcfunction
+    - include: strings
+    - include: numbers
+    - match: '\]'
+      scope: variable.language.selector.mcfunction
+      pop: true
 
   numbers:
     - match: '\b(-)?[0-9.]+\b'
@@ -61,7 +79,7 @@ contexts:
 
   comments:
     # Comments begin with a # and finish at the end of the line.
-    - match: '\#'
+    - match: '^\#'
       scope: punctuation.definition.comment.mcfunction
       push:
         # This is an anonymous context push for brevity.
