@@ -21,21 +21,23 @@ contexts:
 
   keywords:
     # Command names
-    - match: '^(advancement|attribute|bossbar|clear|clone|damage|data|datapack|debug|defaultgamemode|difficulty|effect|enchant|execute|experience|fill|fillbiome|forceload|function|gamemode|gamerule|give|help|item|jfr|kick|kill|list|locate|loot|me|msg|particle|place|playsound|random|recipe|reload|return|ride|rotate|say|schedule|scoreboard|seed|setblock|setworldspawn|spawnpoint|spectate|spreadplayers|stopsound|summon|tag|team|teammsg|teleport|tell|tellraw|test|tick|time|title|tm|tp|trigger|w|weather|worldborder|xp)\b'
+    - match: '\b(advancement|attribute|bossbar|clear|clone|damage|data|datapack|debug|defaultgamemode|difficulty|effect|enchant|execute|experience|fill|fillbiome|forceload|function|gamemode|gamerule|give|help|item|jfr|kick|kill|list|locate|loot|me|msg|particle|place|playsound|random|recipe|reload|return|ride|rotate|say|schedule|scoreboard|seed|setblock|setworldspawn|spawnpoint|spectate|spreadplayers|stopsound|summon|tag|team|teammsg|teleport|tell|tellraw|test|tick|time|title|tm|tp|trigger|w|weather|worldborder|xp)\b'
       scope: keyword.command.mcfunction
 
   selectors:
     - match: '@(p|n|r|a|e|s)'
-      scope: selectors.mcfunction
+      scope: variable.language.selector.mcfunction
       push:
-        - meta_scope: selector.qualified.mcfunction
-        # Match square brackets or other qualifiers
-        - match: '\[.*?\]'
-          scope: selector.qualifier.mcfunction
+        - match: '\['
+          scope: punctuation.section.brackets.begin.mcfunction
+          push:
+            - meta_scope: meta.selector.arguments.mcfunction
+            - match: '\]'
+              scope: punctuation.section.brackets.end.mcfunction
+              pop: true
+        - match: '(?=\s|$|[^@\[])'
           pop: true
-        # Pop without qualifiers
-        - match: '\s|$'
-          pop: true
+
 
   numbers:
     - match: '\b(-)?[0-9.]+\b'
