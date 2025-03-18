@@ -15,10 +15,11 @@ contexts:
     # The main context is the initial starting point of our syntax.
     # Include other contexts from here (or specify them directly).
     - include: keywords
-    - include: tags
-    - include: resource_locations
+    - include: tags_with_states
+    - include: resource_locations_with_states
     - include: selectors
     - include: coordinates
+    - include: uuids
     - include: number_ranges
     - include: numbers
     - include: strings
@@ -29,15 +30,58 @@ contexts:
     - match: '\b(advancement|attribute|bossbar|clear|clone|damage|data|datapack|debug|defaultgamemode|difficulty|effect|enchant|execute|experience|fill|fillbiome|forceload|function|gamemode|gamerule|give|help|item|jfr|kick|kill|list|locate|loot|me|msg|particle|place|playsound|random|recipe|reload|return|ride|rotate|say|schedule|scoreboard|seed|setblock|setworldspawn|spawnpoint|spectate|spreadplayers|stopsound|summon|tag|team|teammsg|teleport|tell|tellraw|test|tick|time|title|tm|tp|trigger|w|weather|worldborder|xp)\b'
       scope: keyword.command.mcfunction
 
-  # Tags (like #minecraft:logs)
+  # Tags with states (like #minecraft:leaves[distance=5, persistent=false])
+  tags_with_states:
+    - match: '(?<!^)(#[a-z0-9_.-]+:[a-z0-9_/.-]+)'
+      scope: entity.name.tag.mcfunction
+      push:
+        - match: '\['
+          scope: punctuation.section.brackets.begin.blockstate.mcfunction
+          push: block_state_arguments
+        - match: '(?=\s|$|[^#a-z0-9_.-:\[])'
+          pop: true
+
+  # Plain tags without state handling
   tags:
     - match: '(?<!^)(#[a-z0-9_.-]+:[a-z0-9_/.-]+)'
       scope: entity.name.tag.mcfunction
 
-  # Resource locations (like minecraft:oak_log)
+  # Resource locations (like minecraft:oak_log) with block states
+  resource_locations_with_states:
+    - match: '(?<![#@])([a-z0-9_.-]+:[a-z0-9_/.-]+)'
+      scope: string.unquoted.resource.mcfunction
+      push:
+        - match: '\['
+          scope: punctuation.section.brackets.begin.blockstate.mcfunction
+          push: block_state_arguments
+        - match: '(?=\s|$|[^a-z0-9_.-:\[])'
+          pop: true
+
+  # Just the plain resource locations without state handling
   resource_locations:
     - match: '(?<![#@])([a-z0-9_.-]+:[a-z0-9_/.-]+)'
       scope: string.unquoted.resource.mcfunction
+
+  block_state_arguments:
+    - meta_content_scope: meta.blockstate.arguments.mcfunction
+    # Match argument names and equals sign separately
+    - match: '([a-z_][a-z0-9_]*)(=)'
+      captures:
+        1: entity.other.attribute-name.blockstate.mcfunction
+        2: keyword.operator.assignment.mcfunction
+    # Support for comma separators in block states
+    - match: ','
+      scope: punctuation.separator.blockstate.mcfunction
+    - include: resource_locations
+    - include: coordinates
+    - include: uuids
+    - include: number_ranges
+    - include: numbers
+    - include: strings
+    - include: nbt_data
+    - match: '\]'
+      scope: punctuation.section.brackets.end.blockstate.mcfunction
+      pop: true
 
   selectors:
     - match: '@(p|r|a|e|s|n)'
@@ -56,9 +100,13 @@ contexts:
       captures:
         1: entity.other.attribute-name.selector.mcfunction
         2: keyword.operator.assignment.mcfunction
-    - include: tags
+    # Support for comma separators in selectors
+    - match: ','
+      scope: punctuation.separator.selector.mcfunction
     - include: resource_locations
+    - include: tags
     - include: coordinates
+    - include: uuids
     - include: number_ranges
     - include: numbers
     - include: strings
@@ -66,6 +114,15 @@ contexts:
     - match: '\]'
       scope: variable.language.selector.mcfunction
       pop: true
+
+  # UUID highlighting patterns
+  uuids:
+    # Standard UUID format (f7a39418-72ca-4bf2-bc7e-ba9df67a4707)
+    - match: '\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'
+      scope: constant.other.uuid.mcfunction
+    # Numerical UUID format (0-0-0-0-0)
+    - match: '\b(\d+-\d+-\d+-\d+-\d+)\b'
+      scope: constant.other.uuid.mcfunction
 
   # Coordinates (~ and ^ prefixed numbers)
   coordinates:
@@ -82,13 +139,14 @@ contexts:
         1: keyword.operator.coordinate.local.mcfunction
 
   number_ranges:
-    - match: '(-?[0-9]+(\.[0-9]+)?)?(\.\.)(-?[0-9]+(\.[0-9]+)?)?'
+    - match: '\b(-?[0-9]+(\.[0-9]+)?)?(\.\.)(-?[0-9]+(\.[0-9]+)?)?\b'
       scope: constant.numeric.range.mcfunction
       captures:
         3: keyword.operator.range.mcfunction
 
   numbers:
-    - match: '(?<!\.)(-?[0-9]+(\.[0-9]+)?)(?!\.\.|\.)'
+    # More specific number matching to avoid capturing within words
+    - match: '(?<![a-zA-Z0-9_.-])(-?[0-9]+(\.[0-9]+)?)(?![a-zA-Z0-9_.-])'
       scope: constant.numeric.mcfunction
 
   strings:
@@ -147,6 +205,8 @@ contexts:
       scope: constant.numeric.short.nbt.mcfunction
     - match: '\b[+-]?[0-9]+l\b'
       scope: constant.numeric.long.nbt.mcfunction
+    # UUID support in NBT
+    - include: uuids
     # Arrays
     - match: '\['
       scope: punctuation.section.brackets.begin.nbt.mcfunction
