@@ -1,0 +1,46 @@
+%YAML 1.2
+---
+# Base syntax for mcfunction files
+name: Minecraft Function
+file_extensions: [mcfunction]
+scope: source.mcfunction
+
+variables:
+  # Common patterns used across multiple syntax files
+  identifier: '[a-zA-Z0-9_-]+'
+  namespace: '[a-z0-9_.-]+'
+  path: '[a-z0-9_/.-]+'
+
+contexts:
+  main:
+    - include: comments
+    - include: command_dispatcher
+
+  comments:
+    - match: '#.*$'
+      scope: comment.line.mcfunction
+
+  command_dispatcher:
+    # This will include all command syntaxes that were loaded
+    # Each command syntax file will define its own match pattern
+    - include: scope:source.mcfunction.commands
+
+  # Common patterns that can be included by command syntaxes
+  selectors:
+    - match: '@[aeprs]'
+      scope: variable.language.selector.mcfunction
+    - match: '\['
+      scope: punctuation.section.selector.begin.mcfunction
+      push: selector_arguments
+
+  selector_arguments:
+    - meta_scope: meta.selector.mcfunction
+    - match: '\]'
+      scope: punctuation.section.selector.end.mcfunction
+      pop: true
+    - match: ','
+      scope: punctuation.separator.selector.mcfunction
+    # Rest of selector argument syntax...
+
+  # More common contexts like NBT, resource identifiers, etc.
+  # ...

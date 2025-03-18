@@ -1,9 +1,17 @@
 %YAML 1.2
 ---
-# See http://www.sublimetext.com/docs/3/syntax.html
-file_extensions:
-  - mcfunction
+# Base mcfunction syntax definition
+# Common elements for all Minecraft versions
+name: Minecraft Function
+file_extensions: [mcfunction]
 scope: source.mcfunction
+
+variables:
+  identifier: '[a-zA-Z0-9_-]+'
+  namespace: '[a-z0-9_.-]+'
+  path: '[a-z0-9_/.-]+'
+  resource_location: '(?<![#@]){{namespace}}:{{path}}'
+  tag: '(?<!^)(#{{namespace}}:{{path}})'
 
 contexts:
   # The prototype context is prepended to all contexts but those setting
@@ -12,9 +20,7 @@ contexts:
     - include: comments
 
   main:
-    # The main context is the initial starting point of our syntax.
-    # Include other contexts from here (or specify them directly).
-    - include: keywords
+    - include: command_dispatcher
     - include: tags_with_states
     - include: resource_locations_with_states
     - include: selectors
@@ -27,14 +33,24 @@ contexts:
     - include: strings
     - include: nbt_data
 
-  keywords:
-    # Command names
+  # Comments are shared across all Minecraft versions
+  comments:
+    - match: '#.*$'
+      scope: comment.line.mcfunction
+
+  # Command dispatcher - this will include command syntaxes based on version
+  command_dispatcher:
+    - include: common_commands
+    - include: scope:source.mcfunction.commands
+
+  # Commands common to all supported versions
+  common_commands:
     - match: '\b(advancement|attribute|bossbar|clear|clone|damage|data|datapack|debug|defaultgamemode|difficulty|effect|enchant|execute|experience|fill|fillbiome|forceload|function|gamemode|gamerule|give|help|item|jfr|kick|kill|list|locate|loot|me|msg|particle|place|playsound|random|recipe|reload|return|ride|rotate|say|schedule|scoreboard|seed|setblock|setworldspawn|spawnpoint|spectate|spreadplayers|stopsound|summon|tag|team|teammsg|teleport|tell|tellraw|test|tick|time|title|tm|tp|trigger|w|weather|worldborder|xp)\b'
       scope: keyword.command.mcfunction
 
   # Tags with states (like #minecraft:leaves[distance=5, persistent=false])
   tags_with_states:
-    - match: '(?<!^)(#[a-z0-9_.-]+:[a-z0-9_/.-]+)'
+    - match: '{{tag}}'
       scope: entity.name.tag.mcfunction
       push:
         - match: '\['
@@ -45,12 +61,12 @@ contexts:
 
   # Plain tags without state handling
   tags:
-    - match: '(?<!^)(#[a-z0-9_.-]+:[a-z0-9_/.-]+)'
+    - match: '{{tag}}'
       scope: entity.name.tag.mcfunction
 
   # Resource locations (like minecraft:oak_log) with block states
   resource_locations_with_states:
-    - match: '(?<![#@])([a-z0-9_.-]+:[a-z0-9_/.-]+)'
+    - match: '{{resource_location}}'
       scope: string.unquoted.resource.mcfunction
       push:
         - match: '\['
@@ -61,7 +77,7 @@ contexts:
 
   # Just the plain resource locations without state handling
   resource_locations:
-    - match: '(?<![#@])([a-z0-9_.-]+:[a-z0-9_/.-]+)'
+    - match: '{{resource_location}}'
       scope: string.unquoted.resource.mcfunction
 
   block_state_arguments:
@@ -116,17 +132,25 @@ contexts:
         3: punctuation.section.advancements.begin.mcfunction
       push: advancement_contents
 
-    # Other generic argument patterns AFTER our specialized ones
-    - match: '([a-z_][a-z0-9_]*)(=)'
+    # Regular arguments
+    - match: '\b({{identifier}})(=)'
       captures:
         1: entity.other.attribute-name.selector.mcfunction
         2: keyword.operator.assignment.mcfunction
+
+    # Support for negation in selector arguments
+    - match: '!'
+      scope: keyword.operator.logical.mcfunction
+
+    # Support for comparison operators
+    - match: '(<=|>=|<|>)'
+      scope: keyword.operator.comparison.mcfunction
 
     # Support for comma separators in selectors
     - match: ','
       scope: punctuation.separator.selector.mcfunction
 
-    # Include other contexts that might be relevant in selector arguments
+    # Include various value types
     - include: resource_locations
     - include: tags
     - include: coordinates
@@ -138,264 +162,190 @@ contexts:
     - include: strings
     - include: nbt_data
 
-    # Close the selector arguments
+    # End of selector arguments
     - match: '\]'
       scope: variable.language.selector.mcfunction
       pop: true
 
-  # Define a common end_selector context that handles the closing bracket
-  end_selector:
-    - match: '\]'
-      scope: variable.language.selector.mcfunction
-      set: main  # Force return to main context, bypassing all intermediate contexts
-
-  # Separate context for score contents
   score_contents:
-    - meta_scope: meta.scores.mcfunction
-    - include: end_selector  # Include the common closing context
-    - match: '}'
+    - meta_content_scope: meta.score.mcfunction
+    - match: '\}'
       scope: punctuation.section.scores.end.mcfunction
       pop: true
-    - match: ','
-      scope: punctuation.separator.scores.mcfunction
-    - match: '([\w\.]+)(=)'
+
+    # Match score criteria
+    - match: '([a-zA-Z0-9_.+-]+)(=)'
       captures:
         1: variable.other.score.mcfunction
         2: keyword.operator.assignment.mcfunction
-    - match: '(\d+)(\.\.)'
-      captures:
-        1: constant.numeric.integer.mcfunction
-        2: keyword.operator.range.mcfunction
-    - match: '(\.\.)?(\d+)'
-      captures:
-        1: keyword.operator.range.mcfunction
-        2: constant.numeric.integer.mcfunction
-    - match: '\d+'
-      scope: constant.numeric.integer.mcfunction
 
-  # Separate context for advancement contents
+    # Support for comparison operators
+    - match: '(<=|>=|<|>)'
+      scope: keyword.operator.comparison.mcfunction
+
+    # Support for comma separators
+    - match: ','
+      scope: punctuation.separator.score.mcfunction
+
+    # Include number ranges
+    - include: number_ranges
+
   advancement_contents:
-    - meta_scope: meta.advancements.mcfunction
-    - include: end_selector  # Include the common closing context
-    - match: '}'
+    - meta_content_scope: meta.advancements.mcfunction
+    - match: '\}'
       scope: punctuation.section.advancements.end.mcfunction
       pop: true
+
+    # Match advancement criteria
+    - match: '({{path}})(=)'
+      captures:
+        1: string.unquoted.resource.mcfunction
+        2: keyword.operator.assignment.mcfunction
+
+    # Match advancement namespace:path
+    - match: '({{namespace}}):({{path}})(=)'
+      captures:
+        1: entity.name.namespace.mcfunction
+        2: string.unquoted.resource.mcfunction
+        3: keyword.operator.assignment.mcfunction
+
+    # Support for comma separators
     - match: ','
-      scope: punctuation.separator.advancements.mcfunction
+      scope: punctuation.separator.advancement.mcfunction
 
-    # Include resource_locations for the left side of the assignment
-    # but make sure we can continue processing after it
-    - match: '(?=([a-z0-9_.-]+:[a-z0-9_/.-]+))'
-      push:
-        - include: resource_locations
-        # After matching the resource location, handle the =value part
-        - match: '(=)'
-          scope: keyword.operator.assignment.mcfunction
-          pop: true
-
-    # Include boolean values
-    - include: boolean_values
-
-    # Handle opening bracket for criteria
+    # Include sub-criteria
     - match: '{'
-      scope: punctuation.section.advancement-criteria.begin.mcfunction
-      push: advancement_criteria_contents
-
-  # Separate context for advancement criteria
-  advancement_criteria_contents:
-    - meta_scope: meta.advancement-criteria.mcfunction
-    - include: end_selector
-    - match: '}'
-      scope: punctuation.section.advancement-criteria.end.mcfunction
-      pop: true
-    - match: ','
-      scope: punctuation.separator.advancement-criteria.mcfunction
-
-    # Include resource_locations for the left side of the assignment
-    # but make sure we can continue processing after it
-    - match: '(?=([a-z0-9_.-]+:[a-z0-9_/.-]+))'
-      push:
-        - include: resource_locations
-        # After matching the resource location, handle the =value part
-        - match: '(=)'
-          scope: keyword.operator.assignment.mcfunction
-          pop: true
+      scope: punctuation.section.criteria.begin.mcfunction
+      push: advancement_criteria
 
     # Include boolean values
     - include: boolean_values
 
-  # UUID highlighting patterns
-  uuids:
-    # Standard UUID format (f7a39418-72ca-4bf2-bc7e-ba9df67a4707)
-    - match: '\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'
-      scope: constant.other.uuid.mcfunction
-    # Numerical UUID format (0-0-0-0-0)
-    - match: '\b(\d+-\d+-\d+-\d+-\d+)\b'
-      scope: constant.other.uuid.mcfunction
+  advancement_criteria:
+    - meta_content_scope: meta.advancement.criteria.mcfunction
+    - match: '\}'
+      scope: punctuation.section.criteria.end.mcfunction
+      pop: true
 
-  # Coordinates (~ and ^ prefixed numbers)
+    # Match criteria name
+    - match: '({{identifier}})(=)'
+      captures:
+        1: string.unquoted.criteria.mcfunction
+        2: keyword.operator.assignment.mcfunction
+
+    # Support for comma separators
+    - match: ','
+      scope: punctuation.separator.criteria.mcfunction
+
+    # Include boolean values
+    - include: boolean_values
+
   coordinates:
-    # Relative coordinates (~)
-    - match: '(~)(-?[0-9]*\.?[0-9]*)'
+    - match: '~-?[0-9]*\.?[0-9]+'
       scope: constant.numeric.coordinate.relative.mcfunction
-      captures:
-        1: keyword.operator.coordinate.relative.mcfunction
-
-    # Local coordinates (^)
-    - match: '(\^)(-?[0-9]*\.?[0-9]*)'
+    - match: '\^-?[0-9]*\.?[0-9]+'
       scope: constant.numeric.coordinate.local.mcfunction
-      captures:
-        1: keyword.operator.coordinate.local.mcfunction
+
+  uuids:
+    - match: '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+      scope: constant.other.uuid.mcfunction
 
   number_ranges:
-    # Match full ranges (e.g. 5..10)
-    - match: '\b(-?[0-9]+(\.[0-9]+)?)\s*(\.\.)\s*(-?[0-9]+(\.[0-9]+)?)\b'
+    - match: '(-?[0-9]+\.?[0-9]*)\.\.(-?[0-9]+\.?[0-9]*)'
       scope: constant.numeric.range.mcfunction
-      captures:
-        1: constant.numeric.value.mcfunction
-        3: keyword.operator.range.mcfunction
-        4: constant.numeric.value.mcfunction
-
-    # Match lower-bounded ranges (e.g. 10..)
-    - match: '\b(-?[0-9]+(\.[0-9]+)?)\s*(\.\.)\s*(?![0-9])'
-      scope: constant.numeric.range.mcfunction
-      captures:
-        1: constant.numeric.value.mcfunction
-        3: keyword.operator.range.mcfunction
-
-    # Match upper-bounded ranges (e.g. ..10)
-    - match: '(?<![0-9])\s*(\.\.)\s*(-?[0-9]+(\.[0-9]+)?)\b'
-      scope: constant.numeric.range.mcfunction
-      captures:
-        1: keyword.operator.range.mcfunction
-        2: constant.numeric.value.mcfunction
 
   numbers:
-    # More specific number matching to avoid capturing within words
-    - match: '(?<![a-zA-Z0-9_.-])(-?[0-9]+(\.[0-9]+)?)(?![a-zA-Z0-9_.-])'
+    - match: '-?[0-9]+\.?[0-9]*[bsLfd]?'
       scope: constant.numeric.mcfunction
 
-  # Boolean values (true/false)
   boolean_values:
     - match: '\b(true|false)\b'
-      scope: constant.numeric.boolean.mcfunction
+      scope: constant.language.boolean.mcfunction
 
-  # Negation operator
   negation:
     - match: '!'
-      scope: keyword.operator.logical.negation.mcfunction
+      scope: keyword.operator.logical.mcfunction
 
   strings:
-    # Double quoted strings
     - match: '"'
       scope: punctuation.definition.string.begin.mcfunction
       push:
         - meta_scope: string.quoted.double.mcfunction
-        - match: '\\.'
+        - match: '\\'
           scope: constant.character.escape.mcfunction
         - match: '"'
           scope: punctuation.definition.string.end.mcfunction
           pop: true
-        - match: $\n?
-          scope: invalid.illegal.unclosed-string.mcfunction
-          pop: true
-
-    # Single quoted strings (used in NBT data)
     - match: "'"
-      scope: punctuation.definition.string.begin.nbt.mcfunction
+      scope: punctuation.definition.string.begin.mcfunction
       push:
-        - meta_scope: string.quoted.single.nbt.mcfunction
-        - match: '\\.'
+        - meta_scope: string.quoted.single.mcfunction
+        - match: '\\'
           scope: constant.character.escape.mcfunction
         - match: "'"
-          scope: punctuation.definition.string.end.nbt.mcfunction
-          pop: true
-        - match: $\n?
-          scope: invalid.illegal.unclosed-string.mcfunction
+          scope: punctuation.definition.string.end.mcfunction
           pop: true
 
-  inside_string:
-    - meta_include_prototype: false
-    - meta_scope: string.quoted.double.mcfunction
-    - match: '\\.'
-      scope: constant.character.escape.mcfunction
-    - match: '"'
-      scope: punctuation.definition.string.end.mcfunction
-      pop: true
-
-  comments:
-    # Block comments with special header (documentation style)
-    - match: ^\s*(#>.*)$
-      scope: comment.block.documentation.header.mcfunction
-      push:
-        - meta_scope: comment.block.documentation.mcfunction
-        # Match continuation lines that start with # (with optional whitespace)
-        - match: ^\s*(#(?!>).*)$
-          scope: comment.block.documentation.content.mcfunction
-        # Exit the block comment when we hit a non-comment line or another header
-        - match: ^(?!\s*#|\s*$)
-          pop: true
-        - match: ^\s*(#>)
-          pop: true
-
-    # Regular line comments (only at start of line with optional whitespace)
-    - match: ^\s*#.*$
-      scope: comment.line.mcfunction
-
-  # NBT data highlighting
   nbt_data:
     - match: '{'
-      scope: punctuation.section.braces.begin.nbt.mcfunction
-      push:
-        - meta_scope: meta.nbt.mcfunction
-        - match: '}'
-          scope: punctuation.section.braces.end.nbt.mcfunction
-          pop: true
-        - include: nbt_content
+      scope: punctuation.section.block.begin.mcfunction
+      push: nbt_contents
 
-  nbt_content:
-    # Match key names and colons in NBT
-    - match: '([a-zA-Z0-9_]+)(:)'
+  nbt_contents:
+    - meta_content_scope: meta.nbt.mcfunction
+    - match: '\}'
+      scope: punctuation.section.block.end.mcfunction
+      pop: true
+
+    # Match key-value pairs
+    - match: '("(?:\\.|[^"\\])*"|\w+)([:=])'
       captures:
         1: entity.name.tag.nbt.mcfunction
-        2: punctuation.separator.key-value.nbt.mcfunction
-    # Match data types
-    - match: '\b(true|false)\b'
-      scope: constant.language.boolean.nbt.mcfunction
-    - match: '\b[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)f\b'
-      scope: constant.numeric.float.nbt.mcfunction
-    - match: '\b[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)d\b'
-      scope: constant.numeric.double.nbt.mcfunction
-    - match: '\b[+-]?[0-9]+b\b'
-      scope: constant.numeric.byte.nbt.mcfunction
-    - match: '\b[+-]?[0-9]+s\b'
-      scope: constant.numeric.short.nbt.mcfunction
-    - match: '\b[+-]?[0-9]+l\b'
-      scope: constant.numeric.long.nbt.mcfunction
-    # UUID support in NBT
-    - include: uuids
-    # Arrays
+        2: keyword.operator.assignment.mcfunction
+
+    # Support for comma separators in NBT
+    - match: ','
+      scope: punctuation.separator.nbt.mcfunction
+
+    # Include NBT arrays
     - match: '\['
       scope: punctuation.section.brackets.begin.nbt.mcfunction
-      push:
-        - meta_scope: meta.array.nbt.mcfunction
-        - match: '\]'
-          scope: punctuation.section.brackets.end.nbt.mcfunction
-          pop: true
-        - include: nbt_content
-    # Recursive NBT objects
+      push: nbt_array
+
+    # Include nested NBT
     - match: '{'
-      scope: punctuation.section.braces.begin.nbt.mcfunction
-      push:
-        - meta_scope: meta.nbt.mcfunction
-        - match: '}'
-          scope: punctuation.section.braces.end.nbt.mcfunction
-          pop: true
-        - include: nbt_content
-    # Include existing patterns for strings, etc.
-    - include: strings
-    - include: number_ranges
+      scope: punctuation.section.block.begin.mcfunction
+      push: nbt_contents
+
+    # Include various value types
+    - include: resource_locations
+    - include: coordinates
     - include: numbers
     - include: boolean_values
-    - include: negation
-    - include: resource_locations
+    - include: strings
+
+  nbt_array:
+    - meta_content_scope: meta.nbt.array.mcfunction
+    - match: '\]'
+      scope: punctuation.section.brackets.end.nbt.mcfunction
+      pop: true
+
+    # Support for comma separators in arrays
+    - match: ','
+      scope: punctuation.separator.array.mcfunction
+
+    # Include nested NBT
+    - match: '{'
+      scope: punctuation.section.block.begin.mcfunction
+      push: nbt_contents
+
+    # Include nested arrays
+    - match: '\['
+      scope: punctuation.section.brackets.begin.nbt.mcfunction
+      push: nbt_array
+
+    # Include various value types
+    - include: coordinates
+    - include: numbers
+    - include: boolean_values
+    - include: strings

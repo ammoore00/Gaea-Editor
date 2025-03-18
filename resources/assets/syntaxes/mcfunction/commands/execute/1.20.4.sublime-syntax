@@ -1,0 +1,273 @@
+  // execute command syntax definition for Minecraft 1.20.4
+  // File: execute/1.20.4.sublime-syntax
+    
+    %YAML 1.2
+  ---
+  name: Minecraft Function Execute Command (1.20.4)
+  scope: mcfunction.command.execute
+  file_extensions: []
+  hidden: true
+
+  variables:
+    # Core components
+    position: '(?:[~^]?-?\d*\.?\d*){3}'
+    target_selector: '@[aeprs](?:\[[^\]]*\])?'
+    entity_target: '(?:{{target_selector}}|[a-zA-Z0-9_\-\.]+)'
+
+  contexts:
+    main:
+      - match: '^execute\b'
+        scope: keyword.control.execute.mcfunction
+        push: execute_subcommands
+
+    execute_subcommands:
+      # Subcommands can be chained in any order before the 'run' terminal
+      - include: execute_align
+      - include: execute_anchored
+      - include: execute_as
+      - include: execute_at
+      - include: execute_facing
+      - include: execute_facing_entity
+      - include: execute_if_unless_block
+      - include: execute_if_unless_blocks
+      - include: execute_if_unless_data
+      - include: execute_if_unless_entity
+      - include: execute_if_unless_predicate
+      - include: execute_if_unless_score
+      - include: execute_in
+      - include: execute_on
+      - include: execute_positioned
+      - include: execute_positioned_as
+      - include: execute_positioned_over
+      - include: execute_rotated
+      - include: execute_rotated_as
+      - include: execute_store
+      - include: execute_run
+
+    # Sub-command definitions
+    execute_align:
+      - match: '\balign\b'
+        scope: keyword.operator.execute.align.mcfunction
+        push:
+          - match: '\b[xyz]{1,3}\b'
+            scope: constant.language.axis.mcfunction
+            pop: true
+
+    execute_anchored:
+      - match: '\banchored\b'
+        scope: keyword.operator.execute.anchored.mcfunction
+        push:
+          - match: '\b(eyes|feet)\b'
+            scope: constant.language.anchor.mcfunction
+            pop: true
+
+    execute_as:
+      - match: '\bas\b'
+        scope: keyword.operator.execute.as.mcfunction
+        push:
+          - match: '{{entity_target}}'
+            scope: variable.parameter.entity.mcfunction
+            pop: true
+
+    execute_at:
+      - match: '\bat\b'
+        scope: keyword.operator.execute.at.mcfunction
+        push:
+          - match: '{{entity_target}}'
+            scope: variable.parameter.entity.mcfunction
+            pop: true
+
+    execute_facing:
+      - match: '\bfacing\b'
+        scope: keyword.operator.execute.facing.mcfunction
+        push:
+          - match: '{{position}}'
+            scope: constant.numeric.position.mcfunction
+            pop: true
+
+    execute_facing_entity:
+      - match: '\bfacing entity\b'
+        scope: keyword.operator.execute.facing_entity.mcfunction
+        push:
+          - match: '{{entity_target}}'
+            scope: variable.parameter.entity.mcfunction
+            push:
+              - match: '\b(eyes|feet)\b'
+                scope: constant.language.anchor.mcfunction
+                pop: 2
+
+    execute_if_unless_block:
+      - match: '\b(if|unless) block\b'
+        captures:
+          1: keyword.control.conditional.mcfunction
+        scope: keyword.operator.execute.condition.mcfunction
+        push:
+          - match: '{{position}}'
+            scope: constant.numeric.position.mcfunction
+            push:
+              - match: '\S+'
+                scope: entity.name.block.mcfunction
+                pop: 2
+
+    execute_if_unless_blocks:
+      - match: '\b(if|unless) blocks\b'
+        captures:
+          1: keyword.control.conditional.mcfunction
+        scope: keyword.operator.execute.condition.mcfunction
+        push:
+          - match: '{{position}}'
+            scope: constant.numeric.position.mcfunction
+            push:
+              - match: '{{position}}'
+                scope: constant.numeric.position.mcfunction
+                push:
+                  - match: '{{position}}'
+                    scope: constant.numeric.position.mcfunction
+                    push:
+                      - match: '\b(all|masked)\b'
+                        scope: constant.language.comparison.mcfunction
+                        pop: 4
+
+    execute_if_unless_data:
+      - match: '\b(if|unless) data\b'
+        captures:
+          1: keyword.control.conditional.mcfunction
+        scope: keyword.operator.execute.condition.mcfunction
+        push:
+          - match: '\b(block|entity|storage)\b'
+            scope: storage.type.data.mcfunction
+            push:
+              - match: '\S+'
+                scope: variable.parameter.target.mcfunction
+                push:
+                  - match: '\S+'
+                    scope: string.quoted.nbt_path.mcfunction
+                    pop: 3
+
+    execute_if_unless_entity:
+      - match: '\b(if|unless) entity\b'
+        captures:
+          1: keyword.control.conditional.mcfunction
+        scope: keyword.operator.execute.condition.mcfunction
+        push:
+          - match: '{{entity_target}}'
+            scope: variable.parameter.entity.mcfunction
+            pop: true
+
+    execute_if_unless_predicate:
+      - match: '\b(if|unless) predicate\b'
+        captures:
+          1: keyword.control.conditional.mcfunction
+        scope: keyword.operator.execute.condition.mcfunction
+        push:
+          - match: '[a-z0-9_\-\.\:\/]+'
+            scope: variable.parameter.predicate.mcfunction
+            pop: true
+
+    execute_if_unless_score:
+      - match: '\b(if|unless) score\b'
+        captures:
+          1: keyword.control.conditional.mcfunction
+        scope: keyword.operator.execute.condition.mcfunction
+        push:
+          - match: '{{entity_target}}'
+            scope: variable.parameter.entity.mcfunction
+            push:
+              - match: '\S+'
+                scope: variable.parameter.scoreboard.mcfunction
+                push:
+                  - match: '\b(matches|<|<=|=|>=|>)\b'
+                    scope: keyword.operator.comparison.mcfunction
+                    push:
+                      - match: '-?\d+\.?\d*\.?\.\.-?\d+\.?\d*|\S+'
+                        scope: constant.numeric.score.mcfunction
+                        pop: 4
+
+    execute_in:
+      - match: '\bin\b'
+        scope: keyword.operator.execute.in.mcfunction
+        push:
+          - match: '\b(minecraft:[a-z_]+|overworld|the_nether|the_end)\b'
+            scope: constant.language.dimension.mcfunction
+            pop: true
+
+    execute_on:
+      - match: '\bon\b'
+        scope: keyword.operator.execute.on.mcfunction
+        push:
+          - match: '\b(attacker|controller|leasher|origin|owner|passengers|target|vehicle)\b'
+            scope: constant.language.relation.mcfunction
+            pop: true
+
+    execute_positioned:
+      - match: '\bpositioned\b'
+        scope: keyword.operator.execute.positioned.mcfunction
+        push:
+          - match: '{{position}}'
+            scope: constant.numeric.position.mcfunction
+            pop: true
+
+    execute_positioned_as:
+      - match: '\bpositioned as\b'
+        scope: keyword.operator.execute.positioned_as.mcfunction
+        push:
+          - match: '{{entity_target}}'
+            scope: variable.parameter.entity.mcfunction
+            pop: true
+
+    execute_positioned_over:
+      - match: '\bpositioned over\b'
+        scope: keyword.operator.execute.positioned_over.mcfunction
+        push:
+          - match: '\b(heightmap|heightmap_world_surface)\b'
+            scope: constant.language.heightmap.mcfunction
+            pop: true
+
+    execute_rotated:
+      - match: '\brotated\b'
+        scope: keyword.operator.execute.rotated.mcfunction
+        push:
+          - match: '~?-?\d*\.?\d* ~?-?\d*\.?\d*'
+            scope: constant.numeric.rotation.mcfunction
+            pop: true
+
+    execute_rotated_as:
+      - match: '\brotated as\b'
+        scope: keyword.operator.execute.rotated_as.mcfunction
+        push:
+          - match: '{{entity_target}}'
+            scope: variable.parameter.entity.mcfunction
+            pop: true
+
+    execute_store:
+      - match: '\bstore\b'
+        scope: keyword.operator.execute.store.mcfunction
+        push:
+          - match: '\b(result|success)\b'
+            scope: keyword.operator.store_mode.mcfunction
+            push:
+              - match: '\b(block|entity|storage|score|bossbar)\b'
+                scope: storage.type.destination.mcfunction
+                push: execute_store_destination
+
+    execute_store_destination:
+      - match: '\S+'
+        scope: variable.parameter.target.mcfunction
+        push:
+          - match: '\S+'
+            scope: variable.parameter.path.mcfunction
+            push:
+              - match: '\b(byte|short|int|long|float|double)\b'
+                scope: storage.type.datatype.mcfunction
+                push:
+                  - match: '-?\d*\.?\d*'
+                    scope: constant.numeric.scale.mcfunction
+                    pop: 4
+              - match: '\b(value|max)\b'
+                scope: constant.language.bossbar_component.mcfunction
+                pop: 3
+
+    execute_run:
+      - match: '\brun\b'
+        scope: keyword.control.execute.run.mcfunction
+        pop: true
