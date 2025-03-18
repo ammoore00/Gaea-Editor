@@ -99,14 +99,34 @@ contexts:
 
   selector_arguments:
     - meta_content_scope: meta.selector.arguments.mcfunction
-    # Match argument names and equals sign separately
+
+    # Score matching with consistent highlighting
+    - match: '\b(scores)(=)({)'
+      captures:
+        1: entity.other.attribute-name.selector.mcfunction
+        2: keyword.operator.assignment.mcfunction
+        3: punctuation.section.scores.begin.mcfunction
+      push: score_contents
+
+    # Advancement matching with consistent highlighting
+    - match: '\b(advancements)(=)({)'
+      captures:
+        1: entity.other.attribute-name.selector.mcfunction
+        2: keyword.operator.assignment.mcfunction
+        3: punctuation.section.advancements.begin.mcfunction
+      push: advancement_contents
+
+    # Other generic argument patterns AFTER our specialized ones
     - match: '([a-z_][a-z0-9_]*)(=)'
       captures:
         1: entity.other.attribute-name.selector.mcfunction
         2: keyword.operator.assignment.mcfunction
+
     # Support for comma separators in selectors
     - match: ','
       scope: punctuation.separator.selector.mcfunction
+
+    # Include other contexts that might be relevant in selector arguments
     - include: resource_locations
     - include: tags
     - include: coordinates
@@ -117,9 +137,92 @@ contexts:
     - include: negation
     - include: strings
     - include: nbt_data
+
+    # Close the selector arguments
     - match: '\]'
       scope: variable.language.selector.mcfunction
       pop: true
+
+  # Define a common end_selector context that handles the closing bracket
+  end_selector:
+    - match: '\]'
+      scope: variable.language.selector.mcfunction
+      set: main  # Force return to main context, bypassing all intermediate contexts
+
+  # Separate context for score contents
+  score_contents:
+    - meta_scope: meta.scores.mcfunction
+    - include: end_selector  # Include the common closing context
+    - match: '}'
+      scope: punctuation.section.scores.end.mcfunction
+      pop: true
+    - match: ','
+      scope: punctuation.separator.scores.mcfunction
+    - match: '([\w\.]+)(=)'
+      captures:
+        1: variable.other.score.mcfunction
+        2: keyword.operator.assignment.mcfunction
+    - match: '(\d+)(\.\.)'
+      captures:
+        1: constant.numeric.integer.mcfunction
+        2: keyword.operator.range.mcfunction
+    - match: '(\.\.)?(\d+)'
+      captures:
+        1: keyword.operator.range.mcfunction
+        2: constant.numeric.integer.mcfunction
+    - match: '\d+'
+      scope: constant.numeric.integer.mcfunction
+
+  # Separate context for advancement contents
+  advancement_contents:
+    - meta_scope: meta.advancements.mcfunction
+    - include: end_selector  # Include the common closing context
+    - match: '}'
+      scope: punctuation.section.advancements.end.mcfunction
+      pop: true
+    - match: ','
+      scope: punctuation.separator.advancements.mcfunction
+
+    # Include resource_locations for the left side of the assignment
+    # but make sure we can continue processing after it
+    - match: '(?=([a-z0-9_.-]+:[a-z0-9_/.-]+))'
+      push:
+        - include: resource_locations
+        # After matching the resource location, handle the =value part
+        - match: '(=)'
+          scope: keyword.operator.assignment.mcfunction
+          pop: true
+
+    # Include boolean values
+    - include: boolean_values
+
+    # Handle opening bracket for criteria
+    - match: '{'
+      scope: punctuation.section.advancement-criteria.begin.mcfunction
+      push: advancement_criteria_contents
+
+  # Separate context for advancement criteria
+  advancement_criteria_contents:
+    - meta_scope: meta.advancement-criteria.mcfunction
+    - include: end_selector
+    - match: '}'
+      scope: punctuation.section.advancement-criteria.end.mcfunction
+      pop: true
+    - match: ','
+      scope: punctuation.separator.advancement-criteria.mcfunction
+
+    # Include resource_locations for the left side of the assignment
+    # but make sure we can continue processing after it
+    - match: '(?=([a-z0-9_.-]+:[a-z0-9_/.-]+))'
+      push:
+        - include: resource_locations
+        # After matching the resource location, handle the =value part
+        - match: '(=)'
+          scope: keyword.operator.assignment.mcfunction
+          pop: true
+
+    # Include boolean values
+    - include: boolean_values
 
   # UUID highlighting patterns
   uuids:
@@ -175,7 +278,7 @@ contexts:
   # Boolean values (true/false)
   boolean_values:
     - match: '\b(true|false)\b'
-      scope: constant.language.boolean.mcfunction
+      scope: constant.numeric.boolean.mcfunction
 
   # Negation operator
   negation:
