@@ -22,6 +22,8 @@ contexts:
     - include: uuids
     - include: number_ranges
     - include: numbers
+    - include: boolean_values
+    - include: negation
     - include: strings
     - include: nbt_data
 
@@ -77,6 +79,8 @@ contexts:
     - include: uuids
     - include: number_ranges
     - include: numbers
+    - include: boolean_values
+    - include: negation
     - include: strings
     - include: nbt_data
     - match: '\]'
@@ -109,6 +113,8 @@ contexts:
     - include: uuids
     - include: number_ranges
     - include: numbers
+    - include: boolean_values
+    - include: negation
     - include: strings
     - include: nbt_data
     - match: '\]'
@@ -139,22 +145,71 @@ contexts:
         1: keyword.operator.coordinate.local.mcfunction
 
   number_ranges:
-    - match: '\b(-?[0-9]+(\.[0-9]+)?)?(\.\.)(-?[0-9]+(\.[0-9]+)?)?\b'
+    # Match full ranges (e.g. 5..10)
+    - match: '\b(-?[0-9]+(\.[0-9]+)?)\s*(\.\.)\s*(-?[0-9]+(\.[0-9]+)?)\b'
       scope: constant.numeric.range.mcfunction
       captures:
+        1: constant.numeric.value.mcfunction
         3: keyword.operator.range.mcfunction
+        4: constant.numeric.value.mcfunction
+
+    # Match lower-bounded ranges (e.g. 10..)
+    - match: '\b(-?[0-9]+(\.[0-9]+)?)\s*(\.\.)\s*(?![0-9])'
+      scope: constant.numeric.range.mcfunction
+      captures:
+        1: constant.numeric.value.mcfunction
+        3: keyword.operator.range.mcfunction
+
+    # Match upper-bounded ranges (e.g. ..10)
+    - match: '(?<![0-9])\s*(\.\.)\s*(-?[0-9]+(\.[0-9]+)?)\b'
+      scope: constant.numeric.range.mcfunction
+      captures:
+        1: keyword.operator.range.mcfunction
+        2: constant.numeric.value.mcfunction
 
   numbers:
     # More specific number matching to avoid capturing within words
     - match: '(?<![a-zA-Z0-9_.-])(-?[0-9]+(\.[0-9]+)?)(?![a-zA-Z0-9_.-])'
       scope: constant.numeric.mcfunction
 
+  # Boolean values (true/false)
+  boolean_values:
+    - match: '\b(true|false)\b'
+      scope: constant.language.boolean.mcfunction
+
+  # Negation operator
+  negation:
+    - match: '!'
+      scope: keyword.operator.logical.negation.mcfunction
+
   strings:
-    # Strings begin and end with quotes, and use backslashes as an escape
-    # character.
+    # Double quoted strings
     - match: '"'
       scope: punctuation.definition.string.begin.mcfunction
-      push: inside_string
+      push:
+        - meta_scope: string.quoted.double.mcfunction
+        - match: '\\.'
+          scope: constant.character.escape.mcfunction
+        - match: '"'
+          scope: punctuation.definition.string.end.mcfunction
+          pop: true
+        - match: $\n?
+          scope: invalid.illegal.unclosed-string.mcfunction
+          pop: true
+
+    # Single quoted strings (used in NBT data)
+    - match: "'"
+      scope: punctuation.definition.string.begin.nbt.mcfunction
+      push:
+        - meta_scope: string.quoted.single.nbt.mcfunction
+        - match: '\\.'
+          scope: constant.character.escape.mcfunction
+        - match: "'"
+          scope: punctuation.definition.string.end.nbt.mcfunction
+          pop: true
+        - match: $\n?
+          scope: invalid.illegal.unclosed-string.mcfunction
+          pop: true
 
   inside_string:
     - meta_include_prototype: false
@@ -166,14 +221,23 @@ contexts:
       pop: true
 
   comments:
-    # Comments begin with a # and finish at the end of the line.
-    - match: '^\#'
-      scope: punctuation.definition.comment.mcfunction
+    # Block comments with special header (documentation style)
+    - match: ^\s*(#>.*)$
+      scope: comment.block.documentation.header.mcfunction
       push:
-        # This is an anonymous context push for brevity.
-        - meta_scope: comment.line.hash.mcfunction
-        - match: $\n?
+        - meta_scope: comment.block.documentation.mcfunction
+        # Match continuation lines that start with # (with optional whitespace)
+        - match: ^\s*(#(?!>).*)$
+          scope: comment.block.documentation.content.mcfunction
+        # Exit the block comment when we hit a non-comment line or another header
+        - match: ^(?!\s*#|\s*$)
           pop: true
+        - match: ^\s*(#>)
+          pop: true
+
+    # Regular line comments (only at start of line with optional whitespace)
+    - match: ^\s*#.*$
+      scope: comment.line.mcfunction
 
   # NBT data highlighting
   nbt_data:
@@ -227,5 +291,8 @@ contexts:
         - include: nbt_content
     # Include existing patterns for strings, etc.
     - include: strings
+    - include: number_ranges
     - include: numbers
+    - include: boolean_values
+    - include: negation
     - include: resource_locations
