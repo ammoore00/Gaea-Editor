@@ -21,6 +21,9 @@ contexts:
 
   main:
     - include: command_dispatcher
+    - include: base_context
+
+  base_context:
     - include: tags_with_states
     - include: resource_locations_with_states
     - include: selectors

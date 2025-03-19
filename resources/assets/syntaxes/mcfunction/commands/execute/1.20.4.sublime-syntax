@@ -11,6 +11,8 @@ contexts:
       push: execute_command
 
   execute_command:
+    - include: scope:scource.mcfunction#base_context
+
     - match: '\b(execute)\b'
       scope: keyword.control.execute.mcfunction
 
