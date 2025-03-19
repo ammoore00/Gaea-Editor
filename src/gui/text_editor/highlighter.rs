@@ -92,12 +92,16 @@ fn load_syntax_set_for_version(version: MinecraftVersion) -> parsing::SyntaxSet 
             builder.add_from_folder(&path, false).unwrap();
         }
     }
-
-
+    
     for (command, version_map) in COMMAND_SYNTAX_PATHS.iter() {
-        // TODO: Fix this to account for new commands, since old versions may not have the command at all and will panic here
-        let command_version = version_map.range(..=version).next_back().unwrap().0;
-        builder.add_from_folder(format!("{}/{}/{}.sublime-syntax", COMMAND_SYNTAXES_DIR, command, command_version), true).expect(format!("Failed to load syntax for command: {}", &command).as_str());
+        let command_version = version_map.range(..=version).next_back();
+
+        if let Some(command_version) = command_version {
+            builder.add_from_folder(format!("{}/{}/{}.sublime-syntax", COMMAND_SYNTAXES_DIR, command, command_version.0), true).expect(format!("Failed to load syntax for command: {}", &command).as_str());
+        }
+        else {
+            // TODO: error handling - this isn't always an error if there are new commands, so figure something out
+        }
     }
 
     builder.build()
@@ -110,6 +114,7 @@ fn get_syntax_set_for_version(version: MinecraftVersion) -> &'static parsing::Sy
     let reference = SYNTAXES.get(&version).unwrap();
 
     // This transmute is safe because SYNTAXES is 'static
+    // This needs to be done because the highlighter expects static references to syntaxes
     unsafe {
         std::mem::transmute::<&parsing::SyntaxSet, &'static parsing::SyntaxSet>(reference.deref())
     }
@@ -261,8 +266,7 @@ pub struct Settings {
 pub struct Highlight(highlighting::StyleModifier);
 
 impl Highlight {
-    /// Returns the color of this [`iced::highlighter::Highlight`].
-    ///
+    /// Returns the color of this ['Highlight']
     /// If `None`, the original text color should be unchanged.
     pub fn color(&self) -> Option<Color> {
         self.0.foreground.map(|color| {
@@ -270,8 +274,7 @@ impl Highlight {
         })
     }
     
-    /// Returns the font of this [`Highlight`].
-    ///
+    /// Returns the font of this ['Highlight']
     /// If `None`, the original font should be unchanged.
     pub fn font(&self) -> Option<Font> {
         self.0.font_style.and_then(|style| {
