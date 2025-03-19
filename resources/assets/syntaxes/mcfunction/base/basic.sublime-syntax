@@ -1,8 +1,6 @@
 %YAML 1.2
 ---
-# Base mcfunction syntax definition
-# Common elements for all Minecraft versions
-name: Minecraft Function
+name: Basic Minecraft Command Elements
 file_extensions: [mcfunction]
 scope: source.mcfunction.basic
 

@@ -1,6 +1,6 @@
 %YAML 1.2
 ---
-name: Minecraft Execute Command
+name: Minecraft Command Dispatcher
 file_extensions: []
 scope: source.mcfunction.commands
 hidden: true

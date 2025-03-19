@@ -1,0 +1,139 @@
+%YAML 1.2
+---
+name: Minecraft Command Selectors
+file_extensions: []
+scope: source.mcfunction.selectors
+hidden: true
+
+variables:
+  identifier: '[a-zA-Z0-9_-]+'
+  namespace: '[a-z0-9_.-]+'
+  path: '[a-z0-9_/.-]+'
+
+contexts:
+  main:
+    - match: '@(p|r|a|e|s|n)'
+      scope: variable.language.selector.mcfunction
+      push:
+        - match: '\['
+          scope: variable.language.selector.mcfunction
+          push: selector_arguments
+        - match: '(?=\s|$|[^@\[])'
+          pop: true
+
+  selector_arguments:
+    - meta_content_scope: meta.selector.arguments.mcfunction
+
+    # Score matching with consistent highlighting
+    - match: '\b(scores)(=)({)'
+      captures:
+        1: entity.other.attribute-name.selector.mcfunction
+        2: keyword.operator.assignment.mcfunction
+        3: punctuation.section.scores.begin.mcfunction
+      push: score_contents
+
+    # Advancement matching with consistent highlighting
+    - match: '\b(advancements)(=)({)'
+      captures:
+        1: entity.other.attribute-name.selector.mcfunction
+        2: keyword.operator.assignment.mcfunction
+        3: punctuation.section.advancements.begin.mcfunction
+      push: advancement_contents
+
+    # Regular arguments
+    - match: '\b({{identifier}})(=)'
+      captures:
+        1: entity.other.attribute-name.selector.mcfunction
+        2: keyword.operator.assignment.mcfunction
+
+    # Support for negation in selector arguments
+    - match: '!'
+      scope: keyword.operator.logical.mcfunction
+
+    # Support for comparison operators
+    - match: '(<=|>=|<|>)'
+      scope: keyword.operator.comparison.mcfunction
+
+    # Support for comma separators in selectors
+    - match: ','
+      scope: punctuation.separator.selector.mcfunction
+
+    - include: scope:source.mcfunction.basic
+    - include: scope:source.mcfunction.resources
+
+    # End of selector arguments
+    - match: '\]'
+      scope: variable.language.selector.mcfunction
+      pop: true
+
+  score_contents:
+    - meta_content_scope: meta.score.mcfunction
+    - match: '\}'
+      scope: punctuation.section.scores.end.mcfunction
+      pop: true
+
+    # Match score criteria
+    - match: '([a-zA-Z0-9_.+-]+)(=)'
+      captures:
+        1: variable.other.score.mcfunction
+        2: keyword.operator.assignment.mcfunction
+
+    # Support for comparison operators
+    - match: '(<=|>=|<|>)'
+      scope: keyword.operator.comparison.mcfunction
+
+    # Support for comma separators
+    - match: ','
+      scope: punctuation.separator.score.mcfunction
+
+    # Include number ranges
+    - include: number_ranges
+
+  advancement_contents:
+    - meta_content_scope: meta.advancements.mcfunction
+    - match: '\}'
+      scope: punctuation.section.advancements.end.mcfunction
+      pop: true
+
+    # Match advancement criteria
+    - match: '({{path}})(=)'
+      captures:
+        1: string.unquoted.resource.mcfunction
+        2: keyword.operator.assignment.mcfunction
+
+    # Match advancement namespace:path
+    - include: scope:source.mcfunction.resources
+
+    - match: '='
+      scope: keyword.operator.assignment.mcfunction
+
+    # Support for comma separators
+    - match: ','
+      scope: punctuation.separator.advancement.mcfunction
+
+    # Include sub-criteria
+    - match: '{'
+      scope: punctuation.section.criteria.begin.mcfunction
+      push: advancement_criteria
+
+    # Include boolean values
+    - include: scope:source.mcfunction.basic#boolean_values
+
+  advancement_criteria:
+    - meta_content_scope: meta.advancement.criteria.mcfunction
+    - match: '\}'
+      scope: punctuation.section.criteria.end.mcfunction
+      pop: true
+
+    # Match criteria name
+    - match: '({{identifier}})(=)'
+      captures:
+        1: string.unquoted.criteria.mcfunction
+        2: keyword.operator.assignment.mcfunction
+
+    # Support for comma separators
+    - match: ','
+      scope: punctuation.separator.criteria.mcfunction
+
+    # Include boolean values
+    - include: scope:source.mcfunction.basic#boolean_values

@@ -13,10 +13,15 @@ contexts:
   main:
     # Command dispatcher
     - include: scope:source.mcfunction.commands
-    # Basic syntax (numbers, resource locations, etc)
-    - include: scope:source.mcfunction.basic
+    - include: base_context
 
   base_context:
+    # Basic syntax (numbers, resource locations, etc)
+    - include: scope:source.mcfunction.basic
+    # Selector syntax (e.g. @a, @e[...])
+    - include: scope:source.mcfunction.selectors
+    # Resource locatiosn and tags
+    - include: scope:source.mcfunction.resources
 
   # Comments are shared across all Minecraft versions
   comments:
