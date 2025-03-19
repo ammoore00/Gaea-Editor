@@ -1,19 +1,26 @@
 // Copyright 2019 Héctor Ramón, Iced contributors
 // This code is licensed under MIT license (see third-party-licenses/LICENSE-MIT or https://opensource.org/licenses/MIT)
 
+use std::collections::{BTreeMap, HashMap};
 /**
 Substantial portions of code duplicated from iced_highlighter::lib.rs
 Changes made to allow for non-built-in syntax highlighting
  */
 
 use std::ops::{Deref, Range};
+use std::path::PathBuf;
+use std::str::FromStr;
 use dashmap::DashMap;
 use iced::{Color, Font, font};
 use iced::advanced::text::highlighter::Format;
-use iced::highlighter::Highlighter;
 use once_cell::sync::Lazy;
 use syntect::{highlighting, parsing};
 use crate::version::MinecraftVersion;
+
+static THEMES: Lazy<highlighting::ThemeSet> =
+    Lazy::new(highlighting::ThemeSet::load_defaults);
+
+const LINES_PER_SNAPSHOT: usize = 50;
 
 static SYNTAXES: Lazy<DashMap<MinecraftVersion, parsing::SyntaxSet>> =
     Lazy::new(|| {
@@ -23,28 +30,70 @@ static SYNTAXES: Lazy<DashMap<MinecraftVersion, parsing::SyntaxSet>> =
         map
     });
 
-static THEMES: Lazy<highlighting::ThemeSet> =
-    Lazy::new(highlighting::ThemeSet::load_defaults);
+const BASE_SYNTAX_PATH: &str = "./resources/assets/syntaxes/mcfunction/base.sublime-syntax";
+const COMMAND_SYNTAXES_DIR: &str = "./resources/assets/syntaxes/mcfunction/commands";
 
-const LINES_PER_SNAPSHOT: usize = 50;
+/// Lookup map to store command file locations so that we don't have to search every time the version is changed
+/// Outer HashMap maps commands to syntaxes, then the inner BTreeMap stores sorted versions mapped to the appropriate syntax
+static COMMAND_SYNTAX_PATHS: Lazy<HashMap<String, BTreeMap<MinecraftVersion, PathBuf>>> = 
+    Lazy::new(|| {
+        load_command_syntaxes()
+    });
+
+fn load_command_syntaxes() -> HashMap<String, BTreeMap<MinecraftVersion, PathBuf>> {
+    let mut command_syntax_map = HashMap::new();
+
+    let command_syntaxes_path = PathBuf::from(COMMAND_SYNTAXES_DIR);
+
+    if let Ok(entries) = std::fs::read_dir( & command_syntaxes_path) {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                let command_name = entry
+                    .file_name()
+                    .into_string()
+                    .expect("Failed to convert directory name to string");
+
+                let mut version_map = BTreeMap::new();
+
+                if let Ok(files) = std::fs::read_dir(entry.path()) {
+                    for file in files.flatten() {
+                        if let Some(extension) = file.path().extension() {
+                            if extension == "sublime-syntax" {
+                                if let Some(version_string) = file
+                                    .path()
+                                    .file_stem()
+                                    .and_then( |stem | stem.to_str())
+                                {
+                                    if let Ok(version) = MinecraftVersion::from_str(&version_string) {
+                                        version_map.insert(version, file.path());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                command_syntax_map.insert(command_name, version_map);
+            }
+        }
+    }
+
+    command_syntax_map
+}
 
 fn load_syntax_set_for_version(version: MinecraftVersion) -> parsing::SyntaxSet {
     let mut builder = parsing::SyntaxSet::load_defaults_nonewlines().into_builder();
 
     // Load the base mcfunction syntax
-    builder.add_from_folder("./resources/assets/syntaxes/mcfunction/base.sublime-syntax", true).expect("Failed to load base syntax");
+    builder.add_from_folder(BASE_SYNTAX_PATH, true).expect("Failed to load base syntax");
 
     // Version-specific command syntaxes
     let version_str = version.as_str();
-    let commands_pattern = format!("./resources/assets/syntaxes/mcfunction/commands/*/{}.sublime-syntax", version_str);
-
-    // Use glob to find all command syntaxes for the specified version
-    for entry in glob::glob(&commands_pattern).expect("Failed to read command syntax pattern") {
-        if let Ok(path) = entry {
-            if let Err(err) = builder.add_from_folder(path, false) {
-                eprintln!("Failed to load syntax file: {}", err);
-            }
-        }
+    
+    for (command, version_map) in COMMAND_SYNTAX_PATHS.iter() {
+        // TODO: Fix this to account for new commands, since old versions may not have the command at all and will panic here
+        let command_version = version_map.range(..=version).next_back().unwrap().0;
+        builder.add_from_folder(format!("{}/{}/{}.sublime-syntax", COMMAND_SYNTAXES_DIR, command, command_version), true).expect(format!("Failed to load syntax for command: {}", &command).as_str());
     }
 
     builder.build()
