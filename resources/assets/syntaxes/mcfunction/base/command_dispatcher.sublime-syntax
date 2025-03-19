@@ -1,0 +1,11 @@
+%YAML 1.2
+---
+name: Minecraft Execute Command
+file_extensions: []
+scope: source.mcfunction.commands
+hidden: true
+
+contexts:
+  main:
+    - include: scope:source.mcfunction.commands.execute
+    - include: scope:source.mcfunction.commands.function

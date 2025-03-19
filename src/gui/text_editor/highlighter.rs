@@ -11,6 +11,7 @@ use std::ops::{Deref, Range};
 use std::path::PathBuf;
 use std::str::FromStr;
 use dashmap::DashMap;
+use glob::glob;
 use iced::{Color, Font, font};
 use iced::advanced::text::highlighter::Format;
 use once_cell::sync::Lazy;
@@ -30,7 +31,7 @@ static SYNTAXES: Lazy<DashMap<MinecraftVersion, parsing::SyntaxSet>> =
         map
     });
 
-const BASE_SYNTAX_PATH: &str = "./resources/assets/syntaxes/mcfunction/base.sublime-syntax";
+const BASE_SYNTAXES_DIR: &str = "./resources/assets/syntaxes/mcfunction/base";
 const COMMAND_SYNTAXES_DIR: &str = "./resources/assets/syntaxes/mcfunction/commands";
 
 /// Lookup map to store command file locations so that we don't have to search every time the version is changed
@@ -83,7 +84,15 @@ fn load_command_syntaxes() -> HashMap<String, BTreeMap<MinecraftVersion, PathBuf
 
 fn load_syntax_set_for_version(version: MinecraftVersion) -> parsing::SyntaxSet {
     let mut builder = parsing::SyntaxSet::load_defaults_nonewlines().into_builder();
-    builder.add_from_folder(BASE_SYNTAX_PATH, true).expect("Failed to load base syntax");
+
+    let pattern = format!("{}/*.sublime-syntax", BASE_SYNTAXES_DIR);
+
+    for entry_result in glob(&pattern).expect("Failed to read glob pattern") {
+        if let Ok(path) = entry_result {
+            builder.add_from_folder(&path, false).unwrap();
+        }
+    }
+
 
     for (command, version_map) in COMMAND_SYNTAX_PATHS.iter() {
         // TODO: Fix this to account for new commands, since old versions may not have the command at all and will panic here

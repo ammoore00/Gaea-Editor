@@ -1,0 +1,67 @@
+%YAML 1.2
+---
+# Base mcfunction syntax definition
+# Common elements for all Minecraft versions
+name: Minecraft Function
+file_extensions: [mcfunction]
+scope: source.mcfunction.basic
+
+variables:
+  identifier: '[a-zA-Z0-9_-]+'
+  namespace: '[a-z0-9_.-]+'
+  path: '[a-z0-9_/.-]+'
+  resource_location: '(?<![#@]){{namespace}}:{{path}}'
+  tag: '(?<!^)(#{{namespace}}:{{path}})'
+
+contexts:
+  main:
+    - include: uuids
+    - include: number_ranges
+    - include: numbers
+    - include: boolean_values
+    - include: negation
+    - include: strings
+
+  uuids:
+    - match: '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+      scope: constant.other.uuid.mcfunction
+
+  number_ranges:
+    - match: '(-?[0-9]+\.?[0-9]*)\.\.(-?[0-9]+\.?[0-9]*)'
+      scope: constant.numeric.range.mcfunction
+
+  numbers:
+    - match: '-?[0-9]+\.?[0-9]*[bsLfd]?'
+      scope: constant.numeric.mcfunction
+
+  boolean_values:
+    - match: '\b(true|false)\b'
+      scope: constant.language.boolean.mcfunction
+
+  negation:
+    - match: '!'
+      scope: keyword.operator.logical.mcfunction
+
+  # String literals
+  strings:
+    # Double-quoted strings
+    - match: '"'
+      scope: punctuation.definition.string.begin.mcfunction
+      push:
+        - meta_scope: string.quoted.double.mcfunction
+        - match: '"'
+          scope: punctuation.definition.string.end.mcfunction
+          pop: true
+        - match: '\\.'
+          scope: constant.character.escape.mcfunction
+
+    # Single-quoted strings
+    - match: \'
+      scope: punctuation.definition.string.begin.mcfunction
+      push:
+        - meta_scope: string.quoted.single.mcfunction
+        - match: \'
+          scope: punctuation.definition.string.end.mcfunction
+          pop: true
+        - match: '\\.'
+          scope: constant.character.escape.mcfunction

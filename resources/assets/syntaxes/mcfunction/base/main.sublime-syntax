@@ -1,0 +1,24 @@
+%YAML 1.2
+---
+# Base mcfunction syntax definition
+# Common elements for all Minecraft versions
+name: Minecraft Function
+file_extensions: [mcfunction]
+scope: source.mcfunction
+
+contexts:
+  prototype:
+    - include: comments
+
+  main:
+    # Command dispatcher
+    - include: scope:source.mcfunction.commands
+    # Basic syntax (numbers, resource locations, etc)
+    - include: scope:source.mcfunction.basic
+
+  base_context:
+
+  # Comments are shared across all Minecraft versions
+  comments:
+    - match: '^\s*#.*$'
+      scope: comment.line.mcfunction
