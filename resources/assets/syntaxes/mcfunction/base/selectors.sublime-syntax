@@ -46,14 +46,6 @@ contexts:
         1: entity.other.attribute-name.selector.mcfunction
         2: keyword.operator.assignment.mcfunction
 
-    # Support for negation in selector arguments
-    - match: '!'
-      scope: keyword.operator.logical.mcfunction
-
-    # Support for comparison operators
-    - match: '(<=|>=|<|>)'
-      scope: keyword.operator.comparison.mcfunction
-
     # Support for comma separators in selectors
     - match: ','
       scope: punctuation.separator.selector.mcfunction

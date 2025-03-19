@@ -17,6 +17,7 @@ contexts:
     - include: number_ranges
     - include: numbers
     - include: boolean_values
+    - include: comparison
     - include: negation
     - include: strings
 
@@ -35,6 +36,11 @@ contexts:
   boolean_values:
     - match: '\b(true|false)\b'
       scope: constant.language.boolean.mcfunction
+
+  comparison:
+    # Support for comparison operators
+    - match: '(<=|>=|<|>|=)'
+      scope: keyword.operator.comparison.mcfunction
 
   negation:
     - match: '!'
