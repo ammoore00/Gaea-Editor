@@ -77,19 +77,14 @@ fn load_command_syntaxes() -> HashMap<String, BTreeMap<MinecraftVersion, PathBuf
             }
         }
     }
-
+    
     command_syntax_map
 }
 
 fn load_syntax_set_for_version(version: MinecraftVersion) -> parsing::SyntaxSet {
     let mut builder = parsing::SyntaxSet::load_defaults_nonewlines().into_builder();
-
-    // Load the base mcfunction syntax
     builder.add_from_folder(BASE_SYNTAX_PATH, true).expect("Failed to load base syntax");
 
-    // Version-specific command syntaxes
-    let version_str = version.as_str();
-    
     for (command, version_map) in COMMAND_SYNTAX_PATHS.iter() {
         // TODO: Fix this to account for new commands, since old versions may not have the command at all and will panic here
         let command_version = version_map.range(..=version).next_back().unwrap().0;

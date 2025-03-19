@@ -6,7 +6,16 @@ use std::str::FromStr;
 
 pub enum MinecraftVersion {
     #[default]
+    V1_21_5,
+    V1_21_4,
+    V1_21_3,
+    V1_21_2,
+    V1_21_1,
+    V1_20_5,
     V1_20_4,
+    V1_20_3,
+    V1_20_2,
+    V1_20_1,
 }
 
 /// Custom error type for version parsing
@@ -29,14 +38,32 @@ impl MinecraftVersion {
     /// Returns the string representation of this version
     pub const fn as_str(&self) -> &'static str {
         match self {
+            MinecraftVersion::V1_21_5 => "1.21.5",
+            MinecraftVersion::V1_21_4 => "1.21.4",
+            MinecraftVersion::V1_21_3 => "1.21.3",
+            MinecraftVersion::V1_21_2 => "1.21.2",
+            MinecraftVersion::V1_21_1 => "1.21.1",
+            MinecraftVersion::V1_20_5 => "1.20.5",
             MinecraftVersion::V1_20_4 => "1.20.4",
+            MinecraftVersion::V1_20_3 => "1.20.3",
+            MinecraftVersion::V1_20_2 => "1.20.2",
+            MinecraftVersion::V1_20_1 => "1.20.1",
         }
     }
 
     /// Returns a numeric representation of the version for comparison
     pub const fn as_numeric_value(&self) -> u32 {
         match self {
+            MinecraftVersion::V1_21_5 => 12105,
+            MinecraftVersion::V1_21_4 => 12104,
+            MinecraftVersion::V1_21_3 => 12103,
+            MinecraftVersion::V1_21_2 => 12102,
+            MinecraftVersion::V1_21_1 => 12101,
+            MinecraftVersion::V1_20_5 => 12005,
             MinecraftVersion::V1_20_4 => 12004,
+            MinecraftVersion::V1_20_3 => 12003,
+            MinecraftVersion::V1_20_2 => 12002,
+            MinecraftVersion::V1_20_1 => 12001,
         }
     }
 }
@@ -52,7 +79,16 @@ impl FromStr for MinecraftVersion {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "1.21.5" => Ok(MinecraftVersion::V1_21_5),
+            "1.21.4" => Ok(MinecraftVersion::V1_21_4),
+            "1.21.3" => Ok(MinecraftVersion::V1_21_3),
+            "1.21.2" => Ok(MinecraftVersion::V1_21_2),
+            "1.21.1" => Ok(MinecraftVersion::V1_21_1),
+            "1.20.5" => Ok(MinecraftVersion::V1_20_5),
             "1.20.4" => Ok(MinecraftVersion::V1_20_4),
+            "1.20.3" => Ok(MinecraftVersion::V1_20_3),
+            "1.20.2" => Ok(MinecraftVersion::V1_20_2),
+            "1.20.1" => Ok(MinecraftVersion::V1_20_1),
             _ => Err(MinecraftVersionError::InvalidVersion(s.to_string())),
         }
     }

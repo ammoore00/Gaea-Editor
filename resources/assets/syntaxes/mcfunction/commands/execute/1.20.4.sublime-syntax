@@ -1,7 +1,7 @@
 %YAML 1.2
 ---
 name: Minecraft Function Execute Command (1.20.4)
-scope: mcfunction.command.execute
+scope: source.mcfunction.commands.execute
 file_extensions: []
 hidden: true
 
@@ -13,11 +13,14 @@ variables:
 
 contexts:
   main:
-    - match: '^execute\b'
+    - match: '\bexecute\b'
       scope: keyword.control.execute.mcfunction
       push: execute_subcommands
 
   execute_subcommands:
+    - match: '$'
+      pop: true
+
     # Subcommands can be chained in any order before the 'run' terminal
     - include: execute_align
     - include: execute_anchored
@@ -266,5 +269,10 @@ contexts:
 
   execute_run:
     - match: '\brun\b'
-      scope: keyword.control.execute.run.mcfunction
+      scope: keyword.operator.execute.run.mcfunction
+      set: after_execute
+
+  after_execute:
+    - match: '.*$'
+      scope: string.unquoted.command.mcfunction
       pop: true

@@ -1,0 +1,96 @@
+%YAML 1.2
+---
+name: Minecraft Function Command
+scope: source.mcfunction.commands.function
+file_extensions: []
+hidden: true
+
+variables:
+  namespace: '[a-z0-9_.-]+'
+  path: '[a-z0-9_/.-]+'
+  resource_location: '(?:{{namespace}}:)?{{path}}'
+  tag_resource: '#{{resource_location}}'
+
+contexts:
+  main:
+    - match: '\bfunction\b'
+      scope: keyword.control.function.mcfunction
+      push: function_arguments
+
+  function_arguments:
+    # Match namespace:path format or #namespace:path for tags
+    - match: '{{tag_resource}}'
+      scope: entity.name.tag.mcfunction
+      pop: true
+    - match: '{{resource_location}}'
+      scope: string.unquoted.resource.mcfunction
+      pop: true
+    # Handle extra arguments (for completeness)
+    - match: '\bif\b'
+      scope: keyword.control.conditional.mcfunction
+      push: function_condition
+    - match: '\bunless\b'
+      scope: keyword.control.conditional.mcfunction
+      push: function_condition
+    # Pop if nothing matches (end of line)
+    - match: '(?=$|\s)'
+      pop: true
+
+  function_condition:
+    # Handle score/entity conditions
+    - match: '\bscore\b'
+      scope: keyword.operator.comparison.mcfunction
+      push: function_score_condition
+    - match: '\bentity\b'
+      scope: keyword.operator.comparison.mcfunction
+      push: function_entity_condition
+    - match: '\bdata\b'
+      scope: keyword.operator.comparison.mcfunction
+      push: function_data_condition
+    - match: '\bpredicate\b'
+      scope: keyword.operator.comparison.mcfunction
+      push: function_predicate_condition
+    # Pop if nothing matches
+    - match: '(?=$|\s)'
+      pop: true
+
+  function_score_condition:
+    - match: '\S+'
+      scope: variable.parameter.target.mcfunction
+      push:
+        - match: '\S+'
+          scope: entity.name.scoreboard.mcfunction
+          push:
+            - match: '(==|<=|>=|<|>|matches)'
+              scope: keyword.operator.comparison.mcfunction
+              push:
+                - match: '\S+'
+                  scope: constant.numeric.mcfunction
+                  pop: 4
+    # Fallback
+    - match: '(?=$|\s)'
+      pop: true
+
+  function_entity_condition:
+    - match: '\S+'
+      scope: variable.parameter.entity.mcfunction
+      pop: 2
+    # Fallback
+    - match: '(?=$|\s)'
+      pop: 2
+
+  function_data_condition:
+    - match: '\S+'
+      scope: string.unquoted.mcfunction
+      pop: 2
+    # Fallback
+    - match: '(?=$|\s)'
+      pop: 2
+
+  function_predicate_condition:
+    - match: '{{resource_location}}'
+      scope: string.unquoted.resource.mcfunction
+      pop: 2
+    # Fallback
+    - match: '(?=$|\s)'
+      pop: 2
