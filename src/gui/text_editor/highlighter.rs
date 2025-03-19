@@ -6,18 +6,21 @@ Substantial portions of code duplicated from iced_highlighter::lib.rs
 Changes made to allow for non-built-in syntax highlighting
  */
 
-use std::ops::Range;
+use std::ops::{Deref, Range};
+use dashmap::DashMap;
 use iced::{Color, Font, font};
 use iced::advanced::text::highlighter::Format;
 use iced::highlighter::Highlighter;
 use once_cell::sync::Lazy;
 use syntect::{highlighting, parsing};
+use crate::version::MinecraftVersion;
 
-static SYNTAXES: Lazy<parsing::SyntaxSet> =
+static SYNTAXES: Lazy<DashMap<MinecraftVersion, parsing::SyntaxSet>> =
     Lazy::new(|| {
-        let mut builder = parsing::SyntaxSet::load_defaults_nonewlines().into_builder();
-        builder.add_from_folder("./resources/assets/syntaxes/mcfunction.sublime-syntax", false).unwrap();
-        builder.build()
+        let map = DashMap::new();
+        let default_version = MinecraftVersion::default();
+        map.insert(default_version, load_syntax_set_for_version(default_version));
+        map
     });
 
 static THEMES: Lazy<highlighting::ThemeSet> =
@@ -25,12 +28,62 @@ static THEMES: Lazy<highlighting::ThemeSet> =
 
 const LINES_PER_SNAPSHOT: usize = 50;
 
+fn load_syntax_set_for_version(version: MinecraftVersion) -> parsing::SyntaxSet {
+    let mut builder = parsing::SyntaxSet::load_defaults_nonewlines().into_builder();
+
+    // Load the base mcfunction syntax
+    builder.add_from_folder("./resources/assets/syntaxes/mcfunction/base.sublime-syntax", true).expect("Failed to load base syntax");
+
+    // Version-specific command syntaxes
+    let version_str = version.as_str();
+    let commands_pattern = format!("./resources/assets/syntaxes/mcfunction/commands/*/{}.sublime-syntax", version_str);
+
+    // Use glob to find all command syntaxes for the specified version
+    for entry in glob::glob(&commands_pattern).expect("Failed to read command syntax pattern") {
+        if let Ok(path) = entry {
+            if let Err(err) = builder.add_from_folder(path, false) {
+                eprintln!("Failed to load syntax file: {}", err);
+            }
+        }
+    }
+
+    builder.build()
+}
+
+fn get_syntax_set_for_version(version: MinecraftVersion) -> &'static parsing::SyntaxSet {
+    SYNTAXES.entry(version)
+        .or_insert_with(|| load_syntax_set_for_version(version));
+
+    let reference = SYNTAXES.get(&version).unwrap();
+
+    // This transmute is safe because SYNTAXES is 'static
+    unsafe {
+        std::mem::transmute::<&parsing::SyntaxSet, &'static parsing::SyntaxSet>(reference.deref())
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct MinecraftHighlighter {
+    version: MinecraftVersion,
     syntax: &'static parsing::SyntaxReference,
     highlighter: highlighting::Highlighter<'static>,
     caches: Vec<(parsing::ParseState, parsing::ScopeStack)>,
     current_line: usize,
+}
+
+impl MinecraftHighlighter {
+    pub fn set_minecraft_version(&mut self, version: MinecraftVersion) {
+        self.version = version;
+
+        // Pre-load the syntax set if it's not already loaded
+        if !SYNTAXES.contains_key(&version) {
+            SYNTAXES.insert(version, load_syntax_set_for_version(version));
+        }
+    }
+
+    pub fn get_minecraft_version(&self) -> MinecraftVersion {
+        self.version.clone()
+    }
 }
 
 impl iced::advanced::text::highlighter::Highlighter for MinecraftHighlighter {
@@ -41,9 +94,10 @@ impl iced::advanced::text::highlighter::Highlighter for MinecraftHighlighter {
     Box<dyn Iterator<Item = (Range<usize>, Self::Highlight)> + 'a>;
     
     fn new(settings: &Self::Settings) -> Self {
-        let syntax = SYNTAXES
-            .find_syntax_by_token(&settings.token)
-            .unwrap_or_else(|| SYNTAXES.find_syntax_plain_text());
+        let version = settings.version.clone();
+
+        let syntax_set = get_syntax_set_for_version(version);
+        let syntax = syntax_set.find_syntax_by_token(&settings.token).expect(format!("Failed to find syntax for token {}", settings.token).as_str());
         
         let highlighter = highlighting::Highlighter::new(
             &THEMES.themes[settings.theme.key()],
@@ -53,6 +107,7 @@ impl iced::advanced::text::highlighter::Highlighter for MinecraftHighlighter {
         let stack = parsing::ScopeStack::new();
         
         MinecraftHighlighter {
+            version,
             syntax,
             highlighter,
             caches: vec![(parser, stack)],
@@ -61,9 +116,10 @@ impl iced::advanced::text::highlighter::Highlighter for MinecraftHighlighter {
     }
     
     fn update(&mut self, new_settings: &Self::Settings) {
-        self.syntax = SYNTAXES
-            .find_syntax_by_token(&new_settings.token)
-            .unwrap_or_else(|| SYNTAXES.find_syntax_plain_text());
+        let version = new_settings.version.clone();
+
+        let syntax_set = get_syntax_set_for_version(version);
+        self.syntax = syntax_set.find_syntax_by_token(&new_settings.token).expect(format!("Failed to find syntax for token {}", new_settings.token).as_str());
         
         self.highlighter = highlighting::Highlighter::new(
             &THEMES.themes[new_settings.theme.key()],
@@ -108,7 +164,7 @@ impl iced::advanced::text::highlighter::Highlighter for MinecraftHighlighter {
         let (parser, stack) =
             self.caches.last_mut().expect("Caches must not be empty");
         
-        let ops = parser.parse_line(line, &SYNTAXES).unwrap_or_default();
+        let ops = parser.parse_line(line, get_syntax_set_for_version(self.version)).unwrap_or_default();
         
         let highlighter = &self.highlighter;
         
@@ -143,14 +199,8 @@ impl iced::advanced::text::highlighter::Highlighter for MinecraftHighlighter {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
-    /// The [`iced::highlighter::Theme`] of the [`Highlighter`].
-    ///
-    /// It dictates the color scheme that will be used for highlighting.
+    pub version: MinecraftVersion,
     pub theme: Theme,
-    /// The extension of the file or the name of the language to highlight.
-    ///
-    /// The [`Highlighter`] will use the token to automatically determine
-    /// the grammar to use for highlighting.
     pub token: String,
 }
 

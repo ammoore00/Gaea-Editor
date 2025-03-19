@@ -5,6 +5,7 @@ use iced::Font;
 use crate::gui::window::ApplicationWindow;
 
 mod gui;
+mod version;
 
 pub fn main() -> iced::Result {
     iced::application("Gaea - Minecraft Resource and Datapack Editor", ApplicationWindow::update, ApplicationWindow::view)
