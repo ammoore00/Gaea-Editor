@@ -11,7 +11,7 @@ use iced::widget::{Column, horizontal_space, row, Row, text, text_editor, toggle
 
 use crate::gui::widgets::{action, new_icon, open_icon, save_icon};
 use crate::gui::window;
-use crate::version::MinecraftVersion;
+use crate::data::version::MinecraftVersion;
 
 pub mod highlighter;
 

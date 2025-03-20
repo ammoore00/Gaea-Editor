@@ -34,6 +34,7 @@ impl Display for MinecraftVersionError {
 
 impl std::error::Error for MinecraftVersionError {}
 
+// TODO: Fix all this hardcoded nonsense
 impl MinecraftVersion {
     /// Returns the string representation of this version
     pub const fn as_str(&self) -> &'static str {
