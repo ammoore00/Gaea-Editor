@@ -1,2 +1,2 @@
 pub mod version;
-mod workspace;
+mod project;

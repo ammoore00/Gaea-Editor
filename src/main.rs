@@ -2,10 +2,13 @@
 
 use iced::Font;
 
-use crate::gui::window::ApplicationWindow;
+use application::gui::window::ApplicationWindow;
 
-mod gui;
-mod data;
+mod domain;
+mod application;
+mod infrastructure;
+mod repositories;
+mod services;
 
 pub fn main() -> iced::Result {
     iced::application("Gaea - Minecraft Resource and Datapack Editor", ApplicationWindow::update, ApplicationWindow::view)

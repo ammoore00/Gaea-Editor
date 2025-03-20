@@ -45,7 +45,7 @@ contexts:
 
   # Commands common to all supported versions
   common_commands:
-    - match: '\b(advancement|attribute|bossbar|clear|clone|damage|data|datapack|debug|defaultgamemode|difficulty|effect|enchant|execute|experience|fill|fillbiome|forceload|function|gamemode|gamerule|give|help|item|jfr|kick|kill|list|locate|loot|me|msg|particle|place|playsound|random|recipe|reload|return|ride|rotate|say|schedule|scoreboard|seed|setblock|setworldspawn|spawnpoint|spectate|spreadplayers|stopsound|summon|tag|team|teammsg|teleport|tell|tellraw|test|tick|time|title|tm|tp|trigger|w|weather|worldborder|xp)\b'
+    - match: '\b(advancement|attribute|bossbar|clear|clone|damage|domain|datapack|debug|defaultgamemode|difficulty|effect|enchant|execute|experience|fill|fillbiome|forceload|function|gamemode|gamerule|give|help|item|jfr|kick|kill|list|locate|loot|me|msg|particle|place|playsound|random|recipe|reload|return|ride|rotate|say|schedule|scoreboard|seed|setblock|setworldspawn|spawnpoint|spectate|spreadplayers|stopsound|summon|tag|team|teammsg|teleport|tell|tellraw|test|tick|time|title|tm|tp|trigger|w|weather|worldborder|xp)\b'
       scope: keyword.command.mcfunction
 
   # Tags with states (like #minecraft:leaves[distance=5, persistent=false])

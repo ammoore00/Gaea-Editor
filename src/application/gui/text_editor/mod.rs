@@ -9,9 +9,9 @@ use std::sync::Arc;
 use iced::{Center, Element, Fill, keyboard, Task, widget, Font};
 use iced::widget::{Column, horizontal_space, row, Row, text, text_editor, toggler};
 
-use crate::gui::widgets::{action, new_icon, open_icon, save_icon};
-use crate::gui::window;
-use crate::data::version::MinecraftVersion;
+use crate::application::gui::widgets::{action, new_icon, open_icon, save_icon};
+use crate::application::gui::window;
+use crate::domain::version::MinecraftVersion;
 
 pub mod highlighter;
 

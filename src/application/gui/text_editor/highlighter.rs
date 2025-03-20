@@ -16,7 +16,7 @@ use iced::{Color, Font, font};
 use iced::advanced::text::highlighter::Format;
 use once_cell::sync::Lazy;
 use syntect::{highlighting, parsing};
-use crate::data::version::MinecraftVersion;
+use crate::domain::version::MinecraftVersion;
 
 static THEMES: Lazy<highlighting::ThemeSet> =
     Lazy::new(highlighting::ThemeSet::load_defaults);
