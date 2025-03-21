@@ -80,6 +80,7 @@ impl ApplicationWindow {
     
     pub fn view(&self) -> Element<Message> {
         let header_menu = Container::new(iced::widget::text("Header Menu"));
+        let action_menu = Container::new(iced::widget::text("Action Menu"));
         
         let main_view = PaneGrid::new(&self.panes, |pane, state, is_maximized| {
             pane_grid::Content::new(
@@ -96,6 +97,7 @@ impl ApplicationWindow {
         
         let total_window = Column::new()
             .push(header_menu)
+            .push(action_menu)
             .push(main_view);
         
         Container::new(total_window)

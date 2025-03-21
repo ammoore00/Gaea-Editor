@@ -1,2 +1,2 @@
 pub mod version;
-mod project;
+pub mod project;

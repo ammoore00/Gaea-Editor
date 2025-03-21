@@ -6,9 +6,9 @@ use application::gui::window::ApplicationWindow;
 
 mod domain;
 mod application;
-mod infrastructure;
 mod repositories;
 mod services;
+mod database;
 
 pub fn main() -> iced::Result {
     iced::application("Gaea - Minecraft Resource and Datapack Editor", ApplicationWindow::update, ApplicationWindow::view)
