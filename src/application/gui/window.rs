@@ -3,6 +3,7 @@
 use iced::{Element, Length, Task, Theme};
 use iced::widget::{Column, Container, pane_grid, PaneGrid, Row};
 use iced::widget::pane_grid::Axis;
+use crate::application::gui::header::Header;
 use crate::application::gui::text_editor;
 use crate::application::gui::text_editor::{highlighter, TextEditor};
 
@@ -22,6 +23,7 @@ pub struct ApplicationWindow {
     panes: pane_grid::State<PaneState>,
     focus: Option<pane_grid::Pane>,
     
+    header: Header,
     text_editors: Vec<TextEditor>
 }
 
@@ -50,6 +52,7 @@ impl ApplicationWindow {
             panes,
             focus: None,
             
+            header: Header::new().0,
             text_editors: Vec::new(),
         };
         
@@ -79,7 +82,7 @@ impl ApplicationWindow {
     }
     
     pub fn view(&self) -> Element<Message> {
-        let header_menu = Container::new(iced::widget::text("Header Menu"));
+        let header_menu = Container::new(self.header.view());
         let action_menu = Container::new(iced::widget::text("Action Menu"));
         
         let main_view = PaneGrid::new(&self.panes, |pane, state, is_maximized| {

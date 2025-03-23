@@ -10,7 +10,7 @@ impl ActionBar {
         todo!()
     }
     
-    pub fn update(&mut self) -> Task<window::Message> {
+    pub fn update(&mut self, message: Message) -> Task<window::Message> {
         todo!()
     }
     
