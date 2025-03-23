@@ -1,1 +1,1 @@
-mod project_repo;
+pub mod project_repo;

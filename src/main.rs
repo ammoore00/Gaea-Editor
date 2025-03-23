@@ -6,8 +6,8 @@ use application::gui::window::ApplicationWindow;
 
 mod domain;
 mod application;
-mod repositories;
-mod services;
+pub mod repositories;
+pub mod services;
 mod database;
 
 pub fn main() -> iced::Result {

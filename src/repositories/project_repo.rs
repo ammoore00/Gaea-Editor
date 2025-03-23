@@ -1,11 +1,22 @@
 use std::path::PathBuf;
 use crate::domain::project::Project;
 
-pub fn load_project(path: &PathBuf) -> Result<Project> { todo!() }
-pub fn save_project(path: &PathBuf) -> Result<()> { todo!() }
-pub fn import_from_zip(path: &PathBuf) -> Result<Project> { todo!() }
-pub fn export_to_zip(path: &PathBuf) -> Result<PathBuf> { todo!() }
+pub trait ProjectProvider {
+    fn load_project(&self, path: &PathBuf) -> Result<Project>;
+    fn save_project(&self, path: &PathBuf) -> Result<()>;
+    fn import_from_zip(&self, path: &PathBuf) -> Result<Project>;
+    fn export_to_zip(&self, path: &PathBuf) -> Result<PathBuf>;
+}
 
-type Result<T> = std::result::Result<T, ProjectError>;
+pub struct ProjectRepository;
+
+impl ProjectProvider for ProjectRepository {
+    fn load_project(&self, path: &PathBuf) -> Result<Project> { todo!() }
+    fn save_project(&self, path: &PathBuf) -> Result<()> { todo!() }
+    fn import_from_zip(&self, path: &PathBuf) -> Result<Project> { todo!() }
+    fn export_to_zip(&self, path: &PathBuf) -> Result<PathBuf> { todo!() }
+}
+
+pub(crate) type Result<T> = std::result::Result<T, ProjectError>;
 #[derive(Debug, Clone)]
-struct ProjectError(String);
+pub(crate) struct ProjectError(String);
