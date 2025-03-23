@@ -1,2 +1,2 @@
 mod project_service;
-mod filesystem_service;
+pub(crate) mod filesystem_service;
