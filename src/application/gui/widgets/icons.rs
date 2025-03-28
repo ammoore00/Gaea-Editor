@@ -3,6 +3,7 @@
 use iced::{Element, Font};
 use iced::widget::{button, center, container, text, tooltip};
 
+// TODO: Move this function somewhere more appropriate
 pub fn action<'a, Message: Clone + 'a>(
     content: impl Into<Element<'a, Message>>,
     label: &'a str,
@@ -28,23 +29,21 @@ pub const SAVE_ICON: char = '\u{0e801}';
 pub const OPEN_ICON: char = '\u{0f115}';
 
 #[derive(Clone, Debug)]
-pub struct Icon<'a, Message> {
-    _marker: std::marker::PhantomData<&'a Message>,
+pub struct Icon {
     font: Font,
     codepoint: char,
 }
 
-impl<'a, Message> Icon<'a, Message> {
+impl Icon{
     pub fn new(codepoint: char) -> Self {
         Self {
-            _marker: Default::default(),
             font: Font::with_name("editor-icons"),
             codepoint,
         }
     }
 }
 
-impl<'a, Message, Theme, Renderer> Into<Element<'a, Message, Theme, Renderer>> for Icon<'a, Message>
+impl<'a, Message, Theme, Renderer> Into<Element<'a, Message, Theme, Renderer>> for Icon
 where
     Message: 'a + Clone,
     Renderer: 'a + iced::advanced::text::Renderer,

@@ -1,12 +1,12 @@
 use iced::advanced::{layout, Layout, Widget};
-use iced::{Length, Rectangle, Size};
+use iced::{widget, Alignment, Length, Rectangle, Size};
 use iced::advanced::graphics::core::Element;
 use iced::advanced::layout::{Limits, Node};
 use iced::advanced::renderer::Style;
 use iced::advanced::widget::{tree, Tree};
-use iced::widget::text::Text;
 use iced::mouse::Cursor;
-use iced::widget::{horizontal_rule, Row, Space};
+use iced::widget::{button, horizontal_rule, Button, Row, Rule, Space};
+use iced::widget::button::{Status, StyleFn};
 use crate::application::gui::widgets::icons::Icon;
 
 #[derive(Debug, Clone)]
@@ -96,6 +96,7 @@ where
     Theme: 'a + iced::widget::text::Catalog,
 {
     menu_items: Vec<MenuItem<'a, Message, Theme, Renderer>>,
+    is_submenu: bool,
 }
 
 impl<'a, Message, Theme, Renderer> Menu<'a, Message, Theme, Renderer>
@@ -107,6 +108,7 @@ where
     pub fn new() -> Self {
         Self {
             menu_items: Vec::new(),
+            is_submenu: false,
         }
     }
 
@@ -141,10 +143,232 @@ for Menu<'a, Message, Theme, Renderer>
 where
     Message: 'a + Clone,
     Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + iced::widget::text::Catalog,
+    Theme: 'a + widget::text::Catalog,
 {
     fn into(self) -> Element<'a, Message, Theme, Renderer> {
         Element::new(self)
+    }
+}
+
+enum MenuItemContent<'a, Message, Theme = iced::Theme, Renderer = iced::Renderer>
+where
+    Message: 'a + Clone,
+    Renderer: 'a + iced::advanced::text::Renderer,
+    Theme: 'a + widget::text::Catalog + button::Catalog,
+{
+    Separator(Rule<'a>),
+    Button(Button<'a, Message, Theme, Renderer>),
+    SubMenu(Menu<'a, Message, Theme, Renderer>),
+}
+
+
+impl<'a, Message, Theme, Renderer> From<MenuItemContent<'a, Message, Theme, Renderer>>
+for Element<'a, Message, Theme, Renderer>
+where
+    Message: 'a + Clone,
+    Renderer: 'a + iced::advanced::text::Renderer,
+    Theme: 'a + widget::text::Catalog + button::Catalog, 
+    Rule<'a>: Widget<Message, Theme, Renderer>
+{
+    fn from(content: MenuItemContent<'a, Message, Theme, Renderer>) -> Self {
+        match content {
+            MenuItemContent::Separator(rule) => Element::new(rule),
+            MenuItemContent::Button(button) => button.into(),
+            MenuItemContent::SubMenu(menu) => menu.into(),
+        }
+    }
+}
+
+pub struct MenuItemBuilder<'a, State, Message, Theme = iced::Theme, Renderer = iced::Renderer>
+where
+    Message: 'a + Clone,
+    Renderer: 'a + iced::advanced::text::Renderer,
+    Theme: 'a + widget::text::Catalog + button::Catalog,
+{
+    icon: Option<Icon>,
+    content: Option<MenuItemContent<'a, Message, Theme, Renderer>>,
+    _state: std::marker::PhantomData<&'a (State)>,
+}
+
+struct Initial;
+struct MenuButton;
+struct Submenu;
+struct Final;
+
+impl<'a, Message, Theme, Renderer> MenuItemBuilder<'a, Initial, Message, Theme, Renderer>
+where
+    Message: 'a + Clone,
+    Renderer: 'a + iced::advanced::text::Renderer,
+    Theme: 'a + widget::text::Catalog + button::Catalog,
+{
+    pub fn new() -> Self {
+        Self {
+            icon: None,
+            content: None,
+            _state: std::marker::PhantomData,
+        }
+    }
+    
+    pub fn separator(mut self) -> MenuItemBuilder<'a, Final, Message, Theme, Renderer> {
+        MenuItemBuilder {
+            icon: self.icon,
+            content: Some(MenuItemContent::Separator(horizontal_rule(2))),
+            _state: std::marker::PhantomData,
+        }
+    }
+
+    pub fn button(
+        self,
+        button_text: &'a str,
+    ) -> MenuItemBuilder<'a, MenuButton, Message, Theme, Renderer> {
+        let button = Button::new(button_text);
+        
+        MenuItemBuilder {
+            icon: self.icon,
+            content: Some(MenuItemContent::Button(button)),
+            _state: std::marker::PhantomData,
+        }
+    }
+
+    pub fn submenu(
+        self,
+        submenu: Menu<'a, Message, Theme, Renderer>,
+    ) -> MenuItemBuilder<'a, Submenu, Message, Theme, Renderer> {
+        let submenu = Menu {
+            menu_items: submenu.menu_items,
+            is_submenu: true,
+        };
+        
+        MenuItemBuilder {
+            icon: self.icon,
+            content: Some(MenuItemContent::SubMenu(submenu)),
+            _state: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<'a, Message, Theme, Renderer> MenuItemBuilder<'a, MenuButton, Message, Theme, Renderer>
+where
+    Message: 'a + Clone,
+    Renderer: 'a + iced::advanced::text::Renderer,
+    Theme: 'a + widget::text::Catalog + widget::button::Catalog,
+{
+    pub fn build(self) -> MenuItem<'a, Message, Theme, Renderer>
+    where
+        <Renderer as iced::advanced::text::Renderer>::Font: From<iced::Font>,
+        Rule<'a>: Widget<Message, Theme, Renderer>,
+    {
+        MenuItemBuilder::<'a, Final, Message, Theme, Renderer> {
+            icon: self.icon,
+            content: self.content,
+            _state: std::marker::PhantomData,
+        }.build()
+    }
+    
+    pub fn icon(mut self, icon: Icon) -> MenuItemBuilder<'a, Final, Message, Theme, Renderer> {
+        MenuItemBuilder {
+            icon: Some(icon),
+            content: self.content,
+            _state: std::marker::PhantomData,
+        }
+    }
+
+    pub fn on_press<F: Into<Message>>(mut self, action: F) -> Self {
+        if let Some(MenuItemContent::Button(mut button)) = self.content.take() {
+            button = button.on_press(action.into());
+            self.content = Some(MenuItemContent::Button(button));
+        }
+        else {
+            panic!("Invalid state! Tried to call button action with no button.")
+        }
+        self
+    }
+
+    pub fn on_press_with<F: Into<Message>>(mut self, action: impl Fn() -> Message + 'a) -> Self {
+        if let Some(MenuItemContent::Button(mut button)) = self.content.take() {
+            button = button.on_press_with(action);
+            self.content = Some(MenuItemContent::Button(button));
+        }
+        else {
+            panic!("Invalid state! Tried to call button action with no button.")
+        }
+        self
+    }
+
+    pub fn style(mut self, style: impl Fn(&Theme, Status) -> button::Style + 'a) -> Self
+    where
+        <Theme as button::Catalog>::Class<'a>: From<StyleFn<'a, Theme>>,
+    {
+        if let Some(MenuItemContent::Button(mut button)) = self.content.take() {
+            let button = button.style(style);
+            self.content = Some(MenuItemContent::Button(button));
+        }
+        else {
+            panic!("Invalid state! Tried to call button action with no button.")
+        }
+        self
+    }
+
+    pub fn tooltip(mut self, tooltip: &'a str) -> Self {
+        todo!()
+    }
+}
+
+impl<'a, Message, Theme, Renderer> MenuItemBuilder<'a, Submenu, Message, Theme, Renderer>
+where
+    Message: 'a + Clone,
+    Renderer: 'a + iced::advanced::text::Renderer,
+    Theme: 'a + widget::text::Catalog + widget::button::Catalog,
+{
+    pub fn build(self) -> MenuItem<'a, Message, Theme, Renderer>
+    where
+        <Renderer as iced::advanced::text::Renderer>::Font: From<iced::Font>,
+        Rule<'a>: Widget<Message, Theme, Renderer>,
+    {
+        MenuItemBuilder::<'a, Final, Message, Theme, Renderer> {
+            icon: self.icon,
+            content: self.content,
+            _state: std::marker::PhantomData,
+        }.build()
+    }
+    
+    pub fn icon(mut self, icon: Icon) -> MenuItemBuilder<'a, Final, Message, Theme, Renderer> {
+        MenuItemBuilder {
+            icon: Some(icon),
+            content: self.content,
+            _state: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<'a, Message, Theme, Renderer> MenuItemBuilder<'a, Final, Message, Theme, Renderer>
+where
+    Message: 'a + Clone,
+    Renderer: 'a + iced::advanced::text::Renderer,
+    Theme: 'a + widget::text::Catalog + button::Catalog
+{
+    pub fn build(self) -> MenuItem<'a, Message, Theme, Renderer>
+    where
+        <Renderer as iced::advanced::text::Renderer>::Font: From<iced::Font>,
+        Rule<'a>: Widget<Message, Theme, Renderer>,
+    {
+        let icon_or_space: Element<'a, Message, Theme, Renderer> = self.icon.map_or_else(
+            || Space::with_width(Length::Shrink).into(),
+            |icon| icon.into(),
+        );
+
+        let content: Element<'a, Message, Theme, Renderer> = self.content.expect("MenuItem content must be set before building.").into();
+        
+        let content = Row::new()
+            .push(icon_or_space)
+            .push(content);
+
+        MenuItem {
+            content: content.into(),
+            width: Length::Fill,
+            height: Length::Shrink,
+            padding: 0.0,
+        }
     }
 }
 
@@ -152,10 +376,8 @@ pub struct MenuItem<'a, Message, Theme = iced::Theme, Renderer = iced::Renderer>
 where
     Message: 'a + Clone,
     Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + iced::widget::text::Catalog,
+    Theme: 'a + widget::text::Catalog,
 {
-    item_type: MenuItemType<'a, Message, Theme, Renderer>,
-    // TODO: investigate if there is any way this can become desynced
     content: Element<'a, Message, Theme, Renderer>,
 
     width: Length,
@@ -163,110 +385,15 @@ where
     padding: f32,
 }
 
-enum MenuItemType<'a, Message, Theme = iced::Theme, Renderer = iced::Renderer>
-where
-    Message: 'a + Clone,
-    Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + iced::widget::text::Catalog,
-{
-    Separator,
-    Button {
-        label: Element<'a, Message, Theme, Renderer>,
-        icon: Option<Icon<'a, Message>>,
-    },
-    SubMenu {
-        menu: Menu<'a, Message, Theme, Renderer>,
-        icon: Option<Icon<'a, Message>>,
-    },
-}
-
 impl<'a, Message, Theme, Renderer> MenuItem<'a, Message, Theme, Renderer>
 where
     Message: 'a + Clone,
     Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + iced::widget::text::Catalog + iced::widget::rule::Catalog,
+    Theme: 'a + widget::text::Catalog + button::Catalog,
     // TODO: Is this where clause appropriate?
-    Icon<'a, Message>: Into<Element<'a, Message, Theme, Renderer>>
+    Icon: Into<Element<'a, Message, Theme, Renderer>>
 {
-    fn new(item_type: MenuItemType<'a, Message, Theme, Renderer>) -> Self {
-        let mut menu_item = Self {
-            item_type,
-            content: Element::new(Row::new()),
-            
-            width: Length::Fill,
-            height: Length::Shrink,
-            padding: 5.0,
-        };
-
-        menu_item.compute_content()
-    }
     
-    fn compute_content(mut self) -> Self {
-        match self.item_type {
-            MenuItemType::Separator => {
-                let row = Row::new().push(horizontal_rule(2));
-                self.content = row.into();
-                self
-            }
-            MenuItemType::Button { label, icon } => {
-                let icon_element: Element<'a, Message, Theme, Renderer> = match icon {
-                    // TODO: above where clause added to fix this into() call - investigate whether that is appropriate
-                    Some(icon) => icon.clone().into(),
-                    None => Space::new(Length::Shrink, Length::Shrink).into(),
-                };
-
-                let row = Row::new()
-                    .push(icon_element)
-                    .push(label);
-                
-                self.content = row.into();
-                self
-            }
-            MenuItemType::SubMenu { menu, icon } => {
-                
-            }
-        }
-    }
-    
-    pub fn button(label: impl Into<Text<'a, Theme, Renderer>>) -> Self 
-    where
-        Renderer: 'a + iced::advanced::text::Renderer,
-    {
-        // TODO: maybe make this more expansive to include any sub-widget?
-        Self::new(MenuItemType::Button {
-            label: label.into().into(),
-            icon: None,
-        })
-    }
-    
-    pub fn sub_menu(menu: impl Into<Menu<'a, Message, Theme, Renderer>>) -> Self {
-        Self::new(MenuItemType::SubMenu {
-            menu: menu.into(),
-            icon: None,
-        })
-    }
-
-    /// Icons can only be added to Buttons and Submenus
-    pub fn icon(mut self, icon: Icon<'a, Message>) -> Result<Self, String> {
-        match &mut self.item_type {
-            MenuItemType::Button { icon: existing_icon, .. } => {
-                *existing_icon = Some(icon);
-                Ok(self.compute_content())
-            }
-            MenuItemType::SubMenu { icon: existing_icon, .. } => {
-                *existing_icon = Some(icon);
-                Ok(self.compute_content())
-            }
-            MenuItemType::Separator => {
-                Err("Cannot add an icon to a separator!".to_string())
-            }
-        }
-    }
-
-    pub fn padding(mut self, padding: f32) -> Self {
-        self.padding = padding;
-        self.compute_content()
-    }
 }
 
 impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
@@ -290,19 +417,7 @@ where
             self.height,
             self.padding,
             |limits| {
-                match &self.item_type {
-                    MenuItemType::Separator => {}
-                    MenuItemType::Button { label, icon } => {
-                        
-                    }
-                    MenuItemType::SubMenu { menu, icon } => {
-                        menu.layout(
-                            &mut tree.children[0],
-                            renderer,
-                            limits
-                        )
-                    }
-                }
+                todo!()
             },
         )
     }
