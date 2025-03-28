@@ -8,147 +8,7 @@ use iced::mouse::Cursor;
 use iced::widget::{button, horizontal_rule, text, Button, Row, Rule, Space};
 use iced::widget::button::{Status, StyleFn};
 use crate::application::gui::widgets::icons::Icon;
-
-#[derive(Debug, Clone)]
-struct MenuBarState {
-    active_menu: Option<usize>,
-}
-
-impl Default for MenuBarState {
-    fn default() -> Self {
-        Self {
-            active_menu: None,
-        }
-    }
-}
-
-pub struct MenuBar<'a, Message, Theme = iced::Theme, Renderer = iced::Renderer>
-where
-    Message: 'a + Clone,
-    Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + text::Catalog,
-{
-    menus: Vec<Menu<'a, Message, Theme, Renderer>>,
-    state: MenuBarState,
-}
-
-impl<'a, Message, Theme, Renderer> MenuBar<'a, Message, Theme, Renderer>
-where
-    Message: 'a + Clone,
-    Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + text::Catalog,
-{
-    pub fn new() -> Self {
-        Self {
-            menus: Vec::new(),
-            state: MenuBarState::default(),
-        }
-    }
-}
-
-impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-for MenuBar<'a, Message, Theme, Renderer>
-where
-    Message: 'a + Clone,
-    Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + text::Catalog,
-{
-    fn size(&self) -> Size<Length> {
-        Size {
-            width: Length::Fill,
-            height: Length::Shrink,
-        }
-    }
-
-    fn layout(&self, tree: &mut Tree, renderer: &Renderer, limits: &Limits) -> Node {
-        todo!()
-    }
-
-    fn draw(&self, tree: &Tree, renderer: &mut Renderer, theme: &Theme, style: &Style, layout: Layout<'_>, cursor: Cursor, viewport: &Rectangle) {
-        todo!()
-    }
-
-    fn tag(&self) -> tree::Tag {
-        tree::Tag::of::<MenuBarState>()
-    }
-
-    fn state(&self) -> tree::State {
-        tree::State::Some(Box::new(self.state.clone()))
-    }
-}
-
-impl<'a, Message, Theme, Renderer> Into<Element<'a, Message, Theme, Renderer>>
-for MenuBar<'a, Message, Theme, Renderer>
-where
-    Message: 'a + Clone,
-    Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + text::Catalog,
-{
-    fn into(self) -> Element<'a, Message, Theme, Renderer> {
-        Element::new(self)
-    }
-}
-
-pub struct Menu<'a, Message, Theme = iced::Theme, Renderer = iced::Renderer>
-where
-    Message: 'a + Clone,
-    Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + text::Catalog,
-{
-    menu_items: Vec<MenuItem<'a, Message, Theme, Renderer>>,
-    is_submenu: bool,
-}
-
-impl<'a, Message, Theme, Renderer> Menu<'a, Message, Theme, Renderer>
-where
-    Message: 'a + Clone,
-    Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + text::Catalog,
-{
-    pub fn new() -> Self {
-        Self {
-            menu_items: Vec::new(),
-            is_submenu: false,
-        }
-    }
-
-    fn add_item(&mut self, item: MenuItem<'a, Message, Theme, Renderer>) {
-        self.menu_items.push(item);
-    }
-}
-
-impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-for Menu<'a, Message, Theme, Renderer>
-where
-    Message: 'a + Clone,
-    Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + text::Catalog,
-{
-    fn size(&self) -> Size<Length> {
-        // Should add all menu item heights together, and find the maximum width of all items
-        todo!()
-    }
-
-    fn layout(&self, tree: &mut Tree, renderer: &Renderer, limits: &Limits) -> Node {
-        todo!()
-    }
-
-    fn draw(&self, tree: &Tree, renderer: &mut Renderer, theme: &Theme, style: &Style, layout: Layout<'_>, cursor: Cursor, viewport: &Rectangle) {
-        todo!()
-    }
-}
-
-impl<'a, Message, Theme, Renderer> Into<Element<'a, Message, Theme, Renderer>>
-for Menu<'a, Message, Theme, Renderer>
-where
-    Message: 'a + Clone,
-    Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + text::Catalog,
-{
-    fn into(self) -> Element<'a, Message, Theme, Renderer> {
-        Element::new(self)
-    }
-}
+use crate::application::gui::widgets::menu::menu::Menu;
 
 enum MenuItemContent<'a, Message, Theme = iced::Theme, Renderer = iced::Renderer>
 where
@@ -234,11 +94,9 @@ where
         self,
         submenu: Menu<'a, Message, Theme, Renderer>,
     ) -> MenuItemBuilder<'a, Submenu, Message, Theme, Renderer> {
-        let submenu = Menu {
-            menu_items: submenu.menu_items,
-            is_submenu: true,
-        };
-        
+        let mut submenu = submenu;
+        submenu.set_submenu();
+
         MenuItemBuilder {
             icon: self.icon,
             content: Some(MenuItemContent::SubMenu(submenu)),
