@@ -9,7 +9,7 @@ use std::sync::Arc;
 use iced::{Center, Element, Fill, keyboard, Task, widget, Font};
 use iced::widget::{Column, horizontal_space, row, Row, text, text_editor, toggler};
 
-use crate::application::gui::widgets::icons::{action, new_icon, open_icon, save_icon};
+use crate::application::gui::widgets::icons::{action, Icon, NEW_ICON, OPEN_ICON, SAVE_ICON};
 use crate::application::gui::window;
 use crate::domain::version::MinecraftVersion;
 
@@ -143,14 +143,14 @@ impl<'a> TextEditor {
     pub(crate) fn view(&self) -> Element<window::Message> {
         // Row macro didn't like external function calls
         let controls = Row::new()
-            .push(action(new_icon(), "New file", Some(make_message(Message::NewFile))))
+            .push(action(Icon::new(NEW_ICON), "New file", Some(make_message(Message::NewFile))))
             .push(action(
-                open_icon(),
+                Icon::new(OPEN_ICON),
                 "Open file",
                 (!self.is_loading).then_some(make_message(Message::OpenFile))
             ))
             .push(action(
-                save_icon(),
+                Icon::new(SAVE_ICON),
                 "Save file",
                 self.is_dirty.then_some(make_message(Message::SaveFile))
             ))

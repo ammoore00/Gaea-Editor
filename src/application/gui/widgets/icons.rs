@@ -23,20 +23,36 @@ pub fn action<'a, Message: Clone + 'a>(
     }
 }
 
-pub fn new_icon<'a, Message>() -> Element<'a, Message> {
-    icon('\u{0e800}')
+pub const NEW_ICON: char = '\u{0e800}';
+pub const SAVE_ICON: char = '\u{0e801}';
+pub const OPEN_ICON: char = '\u{0f115}';
+
+#[derive(Clone, Debug)]
+pub struct Icon<'a, Message> {
+    _marker: std::marker::PhantomData<&'a Message>,
+    font: Font,
+    codepoint: char,
 }
 
-pub fn save_icon<'a, Message>() -> Element<'a, Message> {
-    icon('\u{0e801}')
+impl<'a, Message> Icon<'a, Message> {
+    pub fn new(codepoint: char) -> Self {
+        Self {
+            _marker: Default::default(),
+            font: Font::with_name("editor-icons"),
+            codepoint,
+        }
+    }
 }
 
-pub fn open_icon<'a, Message>() -> Element<'a, Message> {
-    icon('\u{0f115}')
-}
-
-pub fn icon<'a, Message>(codepoint: char) -> Element<'a, Message> {
-    const ICON_FONT: Font = Font::with_name("editor-icons");
-    
-    text(codepoint).font(ICON_FONT).into()
+impl<'a, Message, Theme, Renderer> Into<Element<'a, Message, Theme, Renderer>> for Icon<'a, Message>
+where
+    Message: 'a + Clone,
+    Renderer: 'a + iced::advanced::text::Renderer,
+    Theme: 'a + text::Catalog,
+    <Renderer as iced::advanced::text::Renderer>::Font: From<Font>,
+{
+    fn into(self) -> Element<'a, Message, Theme, Renderer> {
+        let renderer_font: <Renderer as iced::advanced::text::Renderer>::Font = self.font.into();
+        text(self.codepoint).font(renderer_font).into()
+    }
 }
