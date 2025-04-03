@@ -31,7 +31,7 @@ where
         }
     }
 
-    pub fn add_item(&mut self, item: MenuItem<'a, Message, Theme, Renderer>) {
+    pub fn push(&mut self, item: MenuItem<'a, Message, Theme, Renderer>) {
         self.menu_items.push(item);
     }
     
@@ -52,8 +52,30 @@ where
     Theme: 'a + text::Catalog,
 {
     fn size(&self) -> Size<Length> {
-        // Should add all menu item heights together, and find the maximum width of all items
-        todo!()
+        // Adds all menu item heights together, and find the maximum width of all items
+        // TODO: verify AI code
+        let mut total_height = Length::Shrink;
+        let mut max_width = Length::Shrink;
+
+        for item in &self.menu_items {
+            let item_size = item.size();
+
+            if let Length::Fixed(height) = item_size.height {
+                total_height = match total_height {
+                    Length::Fixed(current) => Length::Fixed(current + height),
+                    _ => Length::Fixed(height),
+                };
+            }
+
+            if let Length::Fixed(width) = item_size.width {
+                max_width = match max_width {
+                    Length::Fixed(current_max) => Length::Fixed(current_max.max(width)),
+                    _ => Length::Fixed(width),
+                };
+            }
+        }
+
+        Size::new(max_width, total_height)
     }
 
     fn layout(&self, tree: &mut Tree, renderer: &Renderer, limits: &Limits) -> Node {
