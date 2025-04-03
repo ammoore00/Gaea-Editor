@@ -33,3 +33,4 @@ glob = "0.3.2"
 sea-orm = {  version = "1.1.7", features = ["runtime-tokio", "sqlx-sqlite", "with-json", "macros"] }
 
 uuid = { version = "1.16.0", features = ["v7", "serde"] }
+thiserror = "1.0.69"

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io;
 use std::path::PathBuf;
 use uuid::Uuid;
 use crate::domain::project::{Project, ProjectID, ProjectSettings};
@@ -69,10 +70,14 @@ impl ProjectProvider for ProjectRepository {
 }
 
 pub type Result<T> = std::result::Result<T, ProjectRepoError>;
-#[derive(Debug, Clone)]
+#[derive(Debug, thiserror::Error)]
 pub enum ProjectRepoError {
-    FilesystemError(String),
+    #[error(transparent)]
+    FilesystemError(#[from] io::Error),
+    #[error("File Already Exists!")]
     FileAlreadyExists,
-    InvalidPath,
+    #[error("Invalid Path: {0}!")]
+    InvalidPath(String),
+    #[error("Unsaved Changes!")]
     UnsavedChanges
 }

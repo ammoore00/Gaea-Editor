@@ -64,22 +64,20 @@ impl ProjectService {
 
 type Result<T> = std::result::Result<T, ProjectServiceError>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, thiserror::Error)]
 pub enum ProjectServiceError {
-    RepoError(ProjectRepoError),
-    ProjectSettingsError(ProjectSettingsError),
+    #[error(transparent)]
+    RepoError(#[from] ProjectRepoError),
+    #[error(transparent)]
+    ProjectSettingsError(#[from] ProjectSettingsError),
 }
 
-impl From<ProjectRepoError> for ProjectServiceError {
-    fn from(err: ProjectRepoError) -> Self {
-        ProjectServiceError::RepoError(err)
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, thiserror::Error)]
 pub enum ProjectSettingsError {
-    InvalidName,
-    InvalidMCVersion
+    #[error("Invalid Name: {0}!")]
+    InvalidName(String),
+    #[error("Invalid MC Version: {0}!")]
+    InvalidMCVersion(String),
 }
 
 //------ Tests ------//

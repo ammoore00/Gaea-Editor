@@ -19,6 +19,7 @@ dependencies = [
  "serde_with",
  "syntect",
  "syntect_minecraft_highlighting",
+ "thiserror 1.0.69",
  "tokio",
  "uuid",
  "zip",
