@@ -37,3 +37,4 @@ thiserror = "1.0.69"
 
 paste = "1.0"
 anyhow = "1.0.97"
+regex = "1.11.1"
