@@ -1,108 +1,129 @@
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
+use once_cell::sync::Lazy;
+
+pub mod versions {
+    use super::MinecraftVersion;
+    
+    macro_rules! define_versions {
+        ($(($major:expr, $minor:expr)),* $(,)?) => {
+            $(
+                paste::paste! {
+                    pub const [<V1_ $major _ $minor>]: MinecraftVersion = MinecraftVersion { major: $major, minor: $minor };
+                }
+            )*
+            
+            pub const ALL: &[MinecraftVersion] = &[
+                $(
+                    paste::paste! {
+                        [<V1_ $major _ $minor>]
+                    },
+                )*
+            ];
+        }
+    }
+
+    // Define all versions in one place
+    define_versions![
+        (16, 5),
+        (17, 1),
+        (18, 2),
+        (19, 4),
+        (20, 1),
+        (20, 4),
+        // Add more as needed
+    ];
+}
+
+static VERSION_REGISTRY: Lazy<HashMap<String, MinecraftVersion>> = Lazy::new(|| {
+    let mut map = HashMap::new();
+    for &version in versions::ALL {
+        map.insert(version.to_string(), version);
+    }
+    map
+});
 
 /// Represents supported Minecraft versions
-#[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq)]
-
-pub enum MinecraftVersion {
-    #[default]
-    V1_21_5,
-    V1_21_4,
-    V1_21_3,
-    V1_21_2,
-    V1_21_1,
-    V1_20_5,
-    V1_20_4,
-    V1_20_3,
-    V1_20_2,
-    V1_20_1,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MinecraftVersion {
+    major: u8,
+    minor: u8,
 }
 
-/// Custom error type for version parsing
-#[derive(Debug, Clone)]
-pub enum MinecraftVersionError {
-    InvalidVersion(String),
-}
-
-impl Display for MinecraftVersionError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MinecraftVersionError::InvalidVersion(v) => write!(f, "Invalid Minecraft version: {}", v),
-        }
-    }
-}
-
-impl std::error::Error for MinecraftVersionError {}
-
-// TODO: Fix all this hardcoded nonsense
-impl MinecraftVersion {
-    /// Returns the string representation of this version
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            MinecraftVersion::V1_21_5 => "1.21.5",
-            MinecraftVersion::V1_21_4 => "1.21.4",
-            MinecraftVersion::V1_21_3 => "1.21.3",
-            MinecraftVersion::V1_21_2 => "1.21.2",
-            MinecraftVersion::V1_21_1 => "1.21.1",
-            MinecraftVersion::V1_20_5 => "1.20.5",
-            MinecraftVersion::V1_20_4 => "1.20.4",
-            MinecraftVersion::V1_20_3 => "1.20.3",
-            MinecraftVersion::V1_20_2 => "1.20.2",
-            MinecraftVersion::V1_20_1 => "1.20.1",
-        }
-    }
-
-    /// Returns a numeric representation of the version for comparison
-    pub const fn as_numeric_value(&self) -> u32 {
-        match self {
-            MinecraftVersion::V1_21_5 => 12105,
-            MinecraftVersion::V1_21_4 => 12104,
-            MinecraftVersion::V1_21_3 => 12103,
-            MinecraftVersion::V1_21_2 => 12102,
-            MinecraftVersion::V1_21_1 => 12101,
-            MinecraftVersion::V1_20_5 => 12005,
-            MinecraftVersion::V1_20_4 => 12004,
-            MinecraftVersion::V1_20_3 => 12003,
-            MinecraftVersion::V1_20_2 => 12002,
-            MinecraftVersion::V1_20_1 => 12001,
-        }
+impl Default for MinecraftVersion {
+    fn default() -> Self {
+        Self::latest()
     }
 }
 
 impl Display for MinecraftVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+        write!(f, "1.{}.{}", self.major, self.minor)
+    }
+}
+
+impl MinecraftVersion {
+    /// Get all supported versions
+    pub fn all() -> &'static [MinecraftVersion] {
+        versions::ALL
+    }
+
+    /// Get a specific version by major and minor numbers
+    pub fn get(major: u8, minor: u8) -> Option<MinecraftVersion> {
+        let version = MinecraftVersion { major, minor };
+        if VERSION_REGISTRY.values().any(|&v| v == version) {
+            Some(version)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the latest supported version
+    pub fn latest() -> MinecraftVersion {
+        *versions::ALL.iter().max().unwrap()
     }
 }
 
 impl FromStr for MinecraftVersion {
-    type Err = MinecraftVersionError;
+    type Err = VersionParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "1.21.5" => Ok(MinecraftVersion::V1_21_5),
-            "1.21.4" => Ok(MinecraftVersion::V1_21_4),
-            "1.21.3" => Ok(MinecraftVersion::V1_21_3),
-            "1.21.2" => Ok(MinecraftVersion::V1_21_2),
-            "1.21.1" => Ok(MinecraftVersion::V1_21_1),
-            "1.20.5" => Ok(MinecraftVersion::V1_20_5),
-            "1.20.4" => Ok(MinecraftVersion::V1_20_4),
-            "1.20.3" => Ok(MinecraftVersion::V1_20_3),
-            "1.20.2" => Ok(MinecraftVersion::V1_20_2),
-            "1.20.1" => Ok(MinecraftVersion::V1_20_1),
-            _ => Err(MinecraftVersionError::InvalidVersion(s.to_string())),
+        // Direct lookup in registry first (fast path)
+        if let Some(&version) = VERSION_REGISTRY.get(s) {
+            return Ok(version);
+        }
+
+        // Parse manually if not found directly
+        let parts: Vec<&str> = s.split('.').collect();
+
+        match parts.len() {
+            3 => {
+                // Ensure first part is "1" (all modern Minecraft versions start with 1)
+                if parts[0] != "1" {
+                    return Err(VersionParseError::InvalidVersion(s.to_string()));
+                }
+
+                // Parse major version (second part)
+                let major = parts[1].parse::<u8>().map_err(|_| VersionParseError::NotNumeric(s.to_string()))?;
+
+                // Parse minor version (third part if exists, or 0)
+                let minor = parts[2].parse::<u8>().map_err(|_| VersionParseError::NotNumeric(s.to_string()))?;
+
+                // Check if this is a valid/supported version
+                Self::get(major, minor).ok_or_else(|| VersionParseError::InvalidVersion(s.to_string()))
+            },
+            _ => Err(VersionParseError::InvalidFormat(s.to_string())),
         }
     }
 }
 
-impl PartialOrd for MinecraftVersion {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for MinecraftVersion {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.as_numeric_value().cmp(&other.as_numeric_value())
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum VersionParseError {
+    #[error("Invalid Minecraft version format: {0}")]
+    InvalidFormat(String),
+    #[error("Non-numeric contents in Minecraft version: {0}")]
+    NotNumeric(String),
+    #[error("No recognized Minecraft version matching: {0}")]
+    InvalidVersion(String),
 }
