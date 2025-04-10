@@ -7,7 +7,9 @@ name = "DatapackGen"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "dashmap",
+ "futures",
  "glob",
  "iced",
  "iced_aw",

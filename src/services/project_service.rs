@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use crate::domain::project::{ProjectID, ProjectSettings};
 use crate::repositories::project_repo::{ProjectProvider, ProjectRepoError, ProjectRepository};
 use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
@@ -28,14 +28,14 @@ impl ProjectService {
         &self,
         settings: ProjectSettings,
         overwrite_existing: bool,
-    ) -> Result<&ProjectID> {
+    ) -> Result<ProjectID> {
         self.validate_project_settings(&settings)?;
         let id = self.project_provider.add_project(settings, overwrite_existing)?;
         Ok(id)
     }
 
-    pub fn open_project(&self, path: &PathBuf) -> Result<&ProjectID> {
-        let id = self.project_provider.open_project(path)?;
+    pub async fn open_project(&self, path: &Path) -> Result<ProjectID> {
+        let id = self.project_provider.open_project(path).await?;
         Ok(id)
     }
 
@@ -44,15 +44,15 @@ impl ProjectService {
         Ok(())
     }
 
-    pub fn save_project(&self, project_id: ProjectID) -> Result<()> {
+    pub async fn save_project(&self, project_id: ProjectID) -> Result<()> {
         todo!()
     }
 
-    pub fn import_from_zip(&self, path: &PathBuf) -> Result<&ProjectID> {
+    pub async fn import_from_zip(&self, path: &Path) -> Result<ProjectID> {
         todo!()
     }
 
-    pub fn export_to_zip(&self, id: &ProjectID, path: &PathBuf) -> Result<()> {
+    pub async fn export_to_zip(&self, id: &ProjectID, path: &Path) -> Result<()> {
         todo!()
     }
 
@@ -84,29 +84,61 @@ pub enum ProjectSettingsError {
 
 #[cfg(test)]
 mod test {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use crate::domain::project::{Project, ProjectID, ProjectSettings};
+    use crate::repositories::project_repo;
     use crate::repositories::project_repo::ProjectProvider;
+    
+    mod create_project {
+        use super::*;
+        
+        #[test]
+        fn test_create_project() {}
 
-    #[test]
-    fn test_create_project() {
-        // Given correctly formatted info, when I try to create a project
+        #[test]
+        fn test_create_project_invalid_name() {}
 
-        // Then it should create a correct project
+        #[test]
+        fn test_create_project_invalid_mc_version() {}
     }
+    
+    mod open_project {
+        use super::*;
+        
+        #[test]
+        fn test_open_project() {}
 
-    #[test]
-    fn test_open_project() {
-
+        #[test]
+        fn test_open_project_non_existent() {}
     }
+    
+    mod close_project {
+        use super::*;
+        
+        #[test]
+        fn test_close_project() {}
 
-    #[test]
-    fn test_close_project() {
+        #[test]
+        fn test_close_project_unsaved_changes() {}
 
+        #[test]
+        fn test_close_project_not_open() {}
+    }
+    
+    mod save_project {
+        use super::*;
+
+        #[test]
+        fn test_save_project() {}
+
+        #[test]
+        fn test_save_project_no_changes() {}
+
+        #[test]
+        fn test_save_project_io_error() {}
     }
 
     struct MockProjectProvider;
-
     impl MockProjectProvider {
         fn new() -> Self {
             MockProjectProvider {
@@ -115,28 +147,29 @@ mod test {
         }
     }
 
+    #[async_trait::async_trait]
     impl ProjectProvider for MockProjectProvider {
-        fn add_project(&self, project_settings: ProjectSettings, overwrite_existing: bool) -> crate::repositories::project_repo::Result<&ProjectID> {
+        fn add_project(&self, project_settings: ProjectSettings, overwrite_existing: bool) -> project_repo::Result<ProjectID> {
             todo!()
         }
 
-        fn get_project(&self, id: ProjectID) -> Option<Project> {
+        fn get_project(&self, id: ProjectID) -> Option<&Project> {
             todo!()
         }
 
-        fn get_project_mut(&mut self, id: ProjectID) -> Option<&Project> {
+        fn get_project_mut(&mut self, id: ProjectID) -> Option<&mut Project> {
             todo!()
         }
 
-        fn open_project(&self, path: &PathBuf) -> crate::repositories::project_repo::Result<&ProjectID> {
+        async fn open_project(&self, path: &Path) -> project_repo::Result<ProjectID> {
             todo!()
         }
 
-        fn close_project(&self, id: ProjectID) -> crate::repositories::project_repo::Result<()> {
+        fn close_project(&self, id: ProjectID) -> project_repo::Result<()> {
             todo!()
         }
 
-        fn save_project(&self, id: ProjectID) -> crate::repositories::project_repo::Result<()> {
+        async fn save_project(&self, id: ProjectID) -> project_repo::Result<()> {
             todo!()
         }
 

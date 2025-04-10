@@ -1,15 +1,17 @@
 use std::fs::File;
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 
-pub trait FilesystemProvider {
-    fn save_file(&self, file: File);
-    fn load_file(&self, path: &PathBuf) -> Result<File, std::io::Error>;
-    fn delete_file(&self, path: &PathBuf) -> Result<(), std::io::Error>;
-    fn create_directory(&self, path: &PathBuf) -> Result<(), std::io::Error>;
-    fn create_directory_recursive(&self, path: &PathBuf) -> Result<(), std::io::Error>;
-    fn delete_directory(&self, path: &PathBuf) -> Result<(), std::io::Error>;
-    fn list_directory(&self, path: &PathBuf) -> Result<Vec<PathBuf>, std::io::Error>;
-    fn validate_path(&self, path: &PathBuf) -> PathValidationStatus;
+#[async_trait::async_trait]
+pub trait FilesystemProvider: Send + Sync {
+    async fn save_file(&self, file: File);
+    async fn load_file(&self, path: &Path) -> Result<File, io::Error>;
+    async fn delete_file(&self, path: &Path) -> Result<(), io::Error>;
+    async fn create_directory(&self, path: &Path) -> Result<(), io::Error>;
+    async fn create_directory_recursive(&self, path: &Path) -> Result<(), io::Error>;
+    async fn delete_directory(&self, path: &Path) -> Result<(), io::Error>;
+    async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>, io::Error>;
+    async fn validate_path(&self, path: &Path) -> PathValidationStatus;
 }
 
 pub struct FilesystemService;
@@ -20,36 +22,37 @@ impl FilesystemService {
     }
 }
 
+#[async_trait::async_trait]
 impl FilesystemProvider for FilesystemService {
-    fn save_file(&self, file: File) {
+    async fn save_file(&self, file: File) {
         todo!()
     }
 
-    fn load_file(&self, path: &PathBuf) -> Result<File, std::io::Error> {
+    async fn load_file(&self, path: &Path) -> Result<File, std::io::Error> {
         todo!()
     }
 
-    fn delete_file(&self, path: &PathBuf) -> Result<(), std::io::Error> {
+    async fn delete_file(&self, path: &Path) -> Result<(), std::io::Error> {
         todo!()
     }
 
-    fn create_directory(&self, path: &PathBuf) -> Result<(), std::io::Error> {
-        todo!()
-    }
-    
-    fn create_directory_recursive(&self, path: &PathBuf) -> Result<(), std::io::Error> {
+    async fn create_directory(&self, path: &Path) -> Result<(), std::io::Error> {
         todo!()
     }
 
-    fn delete_directory(&self, path: &PathBuf) -> Result<(), std::io::Error> {
+    async fn create_directory_recursive(&self, path: &Path) -> Result<(), std::io::Error> {
         todo!()
     }
 
-    fn list_directory(&self, path: &PathBuf) -> Result<Vec<PathBuf>, std::io::Error> {
+    async fn delete_directory(&self, path: &Path) -> Result<(), std::io::Error> {
         todo!()
     }
 
-    fn validate_path(&self, path: &PathBuf) -> PathValidationStatus {
+    async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
+        todo!()
+    }
+
+    async fn validate_path(&self, path: &Path) -> PathValidationStatus {
         todo!()
     }
 }
@@ -60,5 +63,5 @@ pub enum PathValidationStatus {
     /// All directories exist, but the file pointed to does not
     MissingFile,
     /// One or more directories are missing, indicated by the index
-    MissingDirectories{ missing_segment_index: u64 },
+    MissingDirectories{ missing_segment_index: usize },
 }

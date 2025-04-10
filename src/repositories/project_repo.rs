@@ -1,58 +1,63 @@
-use std::collections::HashMap;
 use std::io;
-use std::path::PathBuf;
+use std::path::Path;
+use dashmap::DashMap;
 use uuid::Uuid;
 use crate::domain::project::{Project, ProjectID, ProjectSettings};
-use crate::services::filesystem_service::FilesystemService;
+use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 
 static PROJECT_EXTENSION: &str = "json";
 
+#[async_trait::async_trait]
 pub trait ProjectProvider {
-    fn add_project(&self, project_settings: ProjectSettings, overwrite_existing: bool) -> Result<&ProjectID>;
-    fn get_project(&self, id: ProjectID) -> Option<Project>;
-    fn get_project_mut(&mut self, id: ProjectID) -> Option<&Project>;
+    fn add_project(&self, project_settings: ProjectSettings, overwrite_existing: bool) -> Result<ProjectID>;
+    fn get_project(&self, id: ProjectID) -> Option<&Project>;
+    fn get_project_mut(&mut self, id: ProjectID) -> Option<&mut Project>;
 
-    fn open_project(&self, path: &PathBuf) -> Result<&ProjectID>;
+    async fn open_project(&self, path: &Path) -> Result<ProjectID>;
     fn close_project(&self, id: ProjectID) -> Result<()>;
-    fn save_project(&self, id: ProjectID) -> Result<()>;
+    async fn save_project(&self, id: ProjectID) -> Result<()>;
 
     fn get_project_extension(&self) -> &'static str;
 }
 
-pub struct ProjectRepository {
-    filesystem_provider: Box<dyn crate::services::filesystem_service::FilesystemProvider>,
-    projects: HashMap<Uuid, Project>,
+pub struct ProjectRepository<T: FilesystemProvider = FilesystemService> {
+    filesystem_provider: T,
+    projects: DashMap<Uuid, Project>,
 }
 
-impl Default for ProjectRepository {
+impl Default for ProjectRepository<FilesystemService> {
     fn default() -> Self {
         Self {
-            filesystem_provider: Box::new(FilesystemService::new()),
-            projects: HashMap::new(),
+            filesystem_provider: FilesystemService::new(),
+            projects: DashMap::new(),
         }
     }
 }
 
-impl ProjectRepository {
-    pub fn new() -> Self {
-        ProjectRepository::default()
+impl<T: FilesystemProvider> ProjectRepository<T> {
+    pub fn new(filesystem_provider: T) -> Self {
+        Self {
+            filesystem_provider: filesystem_provider,
+            projects: DashMap::new(),
+        }
     }
 }
 
-impl ProjectProvider for ProjectRepository {
-    fn add_project(&self, project: ProjectSettings, overwrite_existing: bool) -> Result<&ProjectID> {
+#[async_trait::async_trait]
+impl<T: FilesystemProvider> ProjectProvider for ProjectRepository<T> {
+    fn add_project(&self, project: ProjectSettings, overwrite_existing: bool) -> Result<ProjectID> {
         todo!()
     }
 
-    fn get_project(&self, id: ProjectID) -> Option<Project> {
+    fn get_project(&self, id: ProjectID) -> Option<&Project> {
         todo!()
     }
 
-    fn get_project_mut(&mut self, id: ProjectID) -> Option<&Project> {
+    fn get_project_mut(&mut self, id: ProjectID) -> Option<&mut Project> {
         todo!()
     }
 
-    fn open_project(&self, path: &PathBuf) -> Result<&ProjectID> {
+    async fn open_project(&self, path: &Path) -> Result<ProjectID> {
         todo!()
     }
 
@@ -60,7 +65,7 @@ impl ProjectProvider for ProjectRepository {
         todo!()
     }
 
-    fn save_project(&self, id: ProjectID) -> Result<()> {
+    async fn save_project(&self, id: ProjectID) -> Result<()> {
         todo!()
     }
 
