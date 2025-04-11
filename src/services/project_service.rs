@@ -1,14 +1,18 @@
 use std::path::Path;
-use crate::domain::project::{ProjectID, ProjectSettings};
-use crate::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
+use crate::data::domain::project::{ProjectID, ProjectSettings};
+use crate::persistence::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
 use crate::services::undo_service::{self, UndoService};
+use crate::services::zip_service;
+use crate::services::zip_service::ZipService;
 
 pub struct ProjectService<
     ProjectProvider: project_repo::ProjectProvider = ProjectRepository,
     UndoProvider: undo_service::UndoProvider = UndoService,
+    ZipProvider: zip_service::ZipProvider = ZipService,
 > {
     project_provider: ProjectProvider,
     undo_provider: UndoProvider,
+    zip_provider: ZipProvider,
 }
 
 impl Default for ProjectService {
@@ -16,22 +20,26 @@ impl Default for ProjectService {
         Self {
             project_provider: ProjectRepository::default(),
             undo_provider: UndoService::default(),
+            zip_provider: ZipService::default(),
         }
     }
 }
 
-impl<ProjectProvider, UndoProvider> ProjectService<ProjectProvider, UndoProvider>
+impl<ProjectProvider, UndoProvider, ZipProvider> ProjectService<ProjectProvider, UndoProvider, ZipProvider>
 where
     ProjectProvider: project_repo::ProjectProvider,
     UndoProvider: undo_service::UndoProvider,
+    ZipProvider: zip_service::ZipProvider,
 {
     pub fn new(
             project_provider: ProjectProvider,
             undo_provider: UndoProvider,
+            zip_provider: ZipProvider,
     ) -> Self {
         ProjectService {
             project_provider,
             undo_provider,
+            zip_provider,
         }
     }
 
@@ -96,9 +104,9 @@ pub enum ProjectSettingsError {
 #[cfg(test)]
 mod test {
     use std::path::{Path, PathBuf};
-    use crate::domain::project::{Project, ProjectID, ProjectSettings};
-    use crate::repositories::project_repo;
-    use crate::repositories::project_repo::ProjectProvider;
+    use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
+    use crate::persistence::repositories::project_repo;
+    use crate::persistence::repositories::project_repo::ProjectProvider;
 
     struct MockProjectProvider;
     impl MockProjectProvider {

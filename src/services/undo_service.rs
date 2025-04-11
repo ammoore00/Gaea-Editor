@@ -4,8 +4,8 @@ use std::result;
 use std::sync::{Arc, Mutex};
 use dashmap::DashMap;
 use tokio::sync::RwLock;
-use crate::domain::project::ProjectID;
-use crate::domain::resource::resource::ResourceID;
+use crate::data::domain::project::ProjectID;
+use crate::data::domain::resource::resource::ResourceID;
 
 pub trait UndoProvider {
     fn execute(&self, command_data: CommandData) -> Result<()>;

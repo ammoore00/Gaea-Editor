@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::{NoContext, Timestamp, Uuid};
-use crate::domain::version::MinecraftVersion;
+use crate::data::domain::version::MinecraftVersion;
 
 pub struct Project {
     settings: ProjectSettings,

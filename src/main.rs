@@ -5,11 +5,10 @@ use iced::Font;
 
 use application::gui::window::ApplicationWindow;
 
-mod domain;
 mod application;
-pub mod repositories;
 pub mod services;
-mod database;
+mod data;
+mod persistence;
 
 pub fn main() -> iced::Result {
     iced::application("Gaea - Minecraft Resource and Datapack Editor", ApplicationWindow::update, ApplicationWindow::view)

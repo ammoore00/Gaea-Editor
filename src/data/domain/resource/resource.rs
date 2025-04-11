@@ -3,8 +3,10 @@ use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::str::FromStr;
 use regex::Regex;
+use serde::{Deserializer, Serializer};
 use uuid::Uuid;
 
+#[derive(Debug, Clone)]
 pub struct ResourceLocation {
     namespace: String,
     value: String,
@@ -47,6 +49,24 @@ impl FromStr for ResourceLocation {
                 .then(|| Self { namespace: "minecraft".to_string(), value: s.to_string() })
                 .ok_or(ResourceLocationError(format!("Invalid resource location: {}", s)))
         }
+    }
+}
+
+impl serde::Serialize for ResourceLocation {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer
+    {
+        todo!()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ResourceLocation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>
+    {
+        todo!()
     }
 }
 

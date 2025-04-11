@@ -4,3 +4,4 @@ mod translation_service;
 mod resource;
 mod download_service;
 mod undo_service;
+mod zip_service;

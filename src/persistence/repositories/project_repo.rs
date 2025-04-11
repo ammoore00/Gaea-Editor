@@ -2,7 +2,7 @@ use std::io;
 use std::path::Path;
 use dashmap::DashMap;
 use uuid::Uuid;
-use crate::domain::project::{Project, ProjectID, ProjectSettings};
+use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
 use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 
 static PROJECT_EXTENSION: &str = "json";

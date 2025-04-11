@@ -1,4 +1,4 @@
-use crate::domain::resource::resource::{ResourceCategory, ResourceData, ResourcePath};
+use crate::data::domain::resource::resource::{ResourceCategory, ResourceData, ResourcePath};
 
 #[derive(Clone, Debug)]
 struct Advancement;
