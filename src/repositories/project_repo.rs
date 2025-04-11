@@ -20,8 +20,8 @@ pub trait ProjectProvider {
     fn get_project_extension(&self) -> &'static str;
 }
 
-pub struct ProjectRepository<T: FilesystemProvider = FilesystemService> {
-    filesystem_provider: T,
+pub struct ProjectRepository<Provider: FilesystemProvider = FilesystemService> {
+    filesystem_provider: Provider,
     projects: DashMap<Uuid, Project>,
 }
 
@@ -34,8 +34,8 @@ impl Default for ProjectRepository<FilesystemService> {
     }
 }
 
-impl<T: FilesystemProvider> ProjectRepository<T> {
-    pub fn new(filesystem_provider: T) -> Self {
+impl<Provider: FilesystemProvider> ProjectRepository<Provider> {
+    pub fn new(filesystem_provider: Provider) -> Self {
         Self {
             filesystem_provider: filesystem_provider,
             projects: DashMap::new(),
@@ -44,7 +44,7 @@ impl<T: FilesystemProvider> ProjectRepository<T> {
 }
 
 #[async_trait::async_trait]
-impl<T: FilesystemProvider> ProjectProvider for ProjectRepository<T> {
+impl<Provider: FilesystemProvider> ProjectProvider for ProjectRepository<Provider> {
     fn add_project(&self, project: ProjectSettings, overwrite_existing: bool) -> Result<ProjectID> {
         todo!()
     }
@@ -85,4 +85,9 @@ pub enum ProjectRepoError {
     InvalidPath(String),
     #[error("Unsaved Changes!")]
     UnsavedChanges
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
 }

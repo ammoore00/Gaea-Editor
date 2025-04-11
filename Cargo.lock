@@ -9,7 +9,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "dashmap",
- "futures",
  "glob",
  "iced",
  "iced_aw",

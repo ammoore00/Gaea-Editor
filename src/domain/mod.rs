@@ -1,3 +1,3 @@
 pub mod version;
 pub mod project;
-mod resource;
+pub mod resource;

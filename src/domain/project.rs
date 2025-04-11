@@ -32,14 +32,20 @@ impl Project {
 pub struct ProjectSettings {
     pub name: String,
     pub path: PathBuf,
-    minecraft_version: MinecraftVersion, // TODO: implement more complex version management
+    pub project_version: ProjectVersion,
     pub project_type: ProjectType,
 }
 
 impl ProjectSettings {
-    fn get_minecraft_version(&self) -> MinecraftVersion {
-        self.minecraft_version
+    fn get_project_version(&self) -> ProjectVersion {
+        self.project_version.clone()
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProjectVersion {
+    // TODO: implement more complex version management
+    pub version: MinecraftVersion,
 }
 
 pub type ProjectID = Uuid;

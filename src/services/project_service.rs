@@ -3,21 +3,23 @@ use crate::domain::project::{ProjectID, ProjectSettings};
 use crate::repositories::project_repo::{ProjectProvider, ProjectRepoError, ProjectRepository};
 use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 
-pub struct ProjectService {
-    project_provider: Box<dyn ProjectProvider>,
+pub struct ProjectService<
+    Provider: ProjectProvider = ProjectRepository,
+> {
+    project_provider: Provider,
 }
 
-impl Default for ProjectService {
+impl Default for ProjectService<ProjectRepository> {
     fn default() -> Self {
         Self {
-            project_provider: Box::new(ProjectRepository::default()),
+            project_provider: ProjectRepository::default(),
         }
     }
 }
 
-impl ProjectService {
+impl<Provider: ProjectProvider> ProjectService<Provider> {
     pub fn new(
-            project_provider: Box<dyn ProjectProvider>
+            project_provider: Provider
     ) -> Self {
         ProjectService {
             project_provider

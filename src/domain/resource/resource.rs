@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::str::FromStr;
 use regex::Regex;
+use uuid::Uuid;
 
 pub struct ResourceLocation {
     namespace: String,
@@ -150,3 +151,5 @@ impl<T: ResourcePath + ResourceData> Resource<T> {
         }
     }
 }
+
+pub type ResourceID = Uuid;
