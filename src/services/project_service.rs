@@ -1,28 +1,37 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use crate::domain::project::{ProjectID, ProjectSettings};
-use crate::repositories::project_repo::{ProjectProvider, ProjectRepoError, ProjectRepository};
-use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
+use crate::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
+use crate::services::undo_service::{self, UndoService};
 
 pub struct ProjectService<
-    Provider: ProjectProvider = ProjectRepository,
+    ProjectProvider: project_repo::ProjectProvider = ProjectRepository,
+    UndoProvider: undo_service::UndoProvider = UndoService,
 > {
-    project_provider: Provider,
+    project_provider: ProjectProvider,
+    undo_provider: UndoProvider,
 }
 
-impl Default for ProjectService<ProjectRepository> {
+impl Default for ProjectService {
     fn default() -> Self {
         Self {
             project_provider: ProjectRepository::default(),
+            undo_provider: UndoService::default(),
         }
     }
 }
 
-impl<Provider: ProjectProvider> ProjectService<Provider> {
+impl<ProjectProvider, UndoProvider> ProjectService<ProjectProvider, UndoProvider>
+where
+    ProjectProvider: project_repo::ProjectProvider,
+    UndoProvider: undo_service::UndoProvider,
+{
     pub fn new(
-            project_provider: Provider
+            project_provider: ProjectProvider,
+            undo_provider: UndoProvider,
     ) -> Self {
         ProjectService {
-            project_provider
+            project_provider,
+            undo_provider,
         }
     }
 
@@ -90,55 +99,6 @@ mod test {
     use crate::domain::project::{Project, ProjectID, ProjectSettings};
     use crate::repositories::project_repo;
     use crate::repositories::project_repo::ProjectProvider;
-    
-    mod create_project {
-        use super::*;
-        
-        #[test]
-        fn test_create_project() {}
-
-        #[test]
-        fn test_create_project_invalid_name() {}
-
-        #[test]
-        fn test_create_project_invalid_mc_version() {}
-    }
-    
-    mod open_project {
-        use super::*;
-        
-        #[test]
-        fn test_open_project() {}
-
-        #[test]
-        fn test_open_project_non_existent() {}
-    }
-    
-    mod close_project {
-        use super::*;
-        
-        #[test]
-        fn test_close_project() {}
-
-        #[test]
-        fn test_close_project_unsaved_changes() {}
-
-        #[test]
-        fn test_close_project_not_open() {}
-    }
-    
-    mod save_project {
-        use super::*;
-
-        #[test]
-        fn test_save_project() {}
-
-        #[test]
-        fn test_save_project_no_changes() {}
-
-        #[test]
-        fn test_save_project_io_error() {}
-    }
 
     struct MockProjectProvider;
     impl MockProjectProvider {
@@ -178,5 +138,65 @@ mod test {
         fn get_project_extension(&self) -> &'static str {
             todo!()
         }
+    }
+    
+    mod create_project {
+        use super::*;
+        
+        /// Test creating a project
+        #[test]
+        fn test_create_project() {}
+
+        /// Test attempting to create a project with an invalid name
+        #[test]
+        fn test_create_project_invalid_name() {}
+
+        /// Test attempting to create a project with an invalid Minecraft version
+        #[test]
+        fn test_create_project_invalid_mc_version() {}
+    }
+    
+    mod open_project {
+        use super::*;
+        
+        /// Test opening a project
+        #[test]
+        fn test_open_project() {}
+
+        /// Test trying to open a project that doesn't exist
+        #[test]
+        fn test_open_project_non_existent() {}
+    }
+    
+    mod close_project {
+        use super::*;
+        
+        /// Test closing a project
+        #[test]
+        fn test_close_project() {}
+
+        /// Test trying to close a project which has unsaved changes
+        #[test]
+        fn test_close_project_unsaved_changes() {}
+
+        /// Test trying to close a project which is not open
+        #[test]
+        fn test_close_project_not_open() {}
+    }
+    
+    mod save_project {
+        use super::*;
+
+        /// Test saving a project
+        #[test]
+        fn test_save_project() {}
+
+        /// Test trying to save a project with no changes to save
+        #[test]
+        fn test_save_project_no_changes() {}
+
+        /// Test trying to save a project, but there was an IO error
+        #[test]
+        fn test_save_project_io_error() {}
     }
 }
