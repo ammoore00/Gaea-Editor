@@ -1,5 +1,5 @@
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use dashmap::DashMap;
 use uuid::Uuid;
 use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
@@ -15,7 +15,7 @@ pub trait ProjectProvider {
 
     async fn open_project(&self, path: &Path) -> Result<ProjectID>;
     fn close_project(&self, id: ProjectID) -> Result<()>;
-    async fn save_project(&self, id: ProjectID) -> Result<()>;
+    async fn save_project(&self, id: ProjectID) -> Result<&PathBuf>;
 
     fn get_project_extension(&self) -> &'static str;
 }
@@ -65,7 +65,7 @@ impl<Provider: FilesystemProvider> ProjectProvider for ProjectRepository<Provide
         todo!()
     }
 
-    async fn save_project(&self, id: ProjectID) -> Result<()> {
+    async fn save_project(&self, id: ProjectID) -> Result<&PathBuf> {
         todo!()
     }
 

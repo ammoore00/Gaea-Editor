@@ -7,13 +7,12 @@ use crate::data::serialization::ResourceLocation as SerializationResourceLocatio
 pub struct ResourceLocationAdapter;
 impl Adapter<SerializationResourceLocation, DomainResourceLocation> for ResourceLocationAdapter {
     type ConversionError = ResourceLocationError;
-    type SerializedConversionError = Infallible;
     
     fn serialized_to_domain(serialized: &SerializationResourceLocation) -> Result<DomainResourceLocation, Self::ConversionError> {
         DomainResourceLocation::from_str(serialized.to_string().as_str())
     }
 
-    fn domain_to_serialized(domain: &DomainResourceLocation) -> Result<SerializationResourceLocation, Self::SerializedConversionError> {
+    fn domain_to_serialized(domain: &DomainResourceLocation) -> Result<SerializationResourceLocation, Infallible> {
         Ok(SerializationResourceLocation::new(domain.to_string().as_str()))
     }
 }
