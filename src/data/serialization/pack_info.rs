@@ -1,5 +1,5 @@
-use crate::data::domain::resource::resource::ResourceLocation;
-use crate::data::serialization::text::TextComponent;
+use crate::data::serialization::ResourceLocation;
+use crate::data::serialization::TextComponent;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PackInfo {
@@ -46,5 +46,10 @@ pub struct Overlay {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Language {
-    
+    // TODO: Figure out how to store this
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 }
