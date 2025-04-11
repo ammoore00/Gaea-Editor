@@ -13,10 +13,13 @@ pub struct ResourceLocation {
 }
 
 impl ResourceLocation {
-    pub fn new(namespace: String, value: String) -> Result<Self, ResourceLocationError> {
+    pub fn new(namespace: &str, value: &str) -> Result<Self, ResourceLocationError> {
         let loc = format!("{}:{}", namespace, value);
         Self::validate(loc.as_str())
-            .then(|| Self { namespace, value })
+            .then(|| Self {
+                namespace: namespace.to_string(),
+                value: value.to_string(), 
+            })
             .ok_or(ResourceLocationError(format!("Invalid resource location: {}", loc)))
     }
 

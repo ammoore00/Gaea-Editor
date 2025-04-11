@@ -4,8 +4,9 @@ mod pack_info;
 mod resource_location;
 
 pub trait Adapter<Serialized, Domain> {
-    type Err: Error;
+    type ConversionError: Error;
+    type SerializedConversionError: Error = Self::ConversionError;
     
-    fn serialize_to_domain(serialized: &Serialized) -> Result<Domain, Self::Err>;
-    fn domain_to_serialized(domain: &Domain) -> Result<Serialized, Self::Err>;
+    fn serialized_to_domain(serialized: &Serialized) -> Result<Domain, Self::ConversionError>;
+    fn domain_to_serialized(domain: &Domain) -> Result<Serialized, Self::SerializedConversionError>;
 }

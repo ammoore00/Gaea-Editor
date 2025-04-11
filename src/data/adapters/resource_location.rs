@@ -1,21 +1,68 @@
+use std::convert::Infallible;
+use std::str::FromStr;
 use crate::data::adapters::Adapter;
 use crate::data::domain::resource::resource::{ResourceLocation as DomainResourceLocation, ResourceLocationError};
 use crate::data::serialization::ResourceLocation as SerializationResourceLocation;
 
 pub struct ResourceLocationAdapter;
 impl Adapter<SerializationResourceLocation, DomainResourceLocation> for ResourceLocationAdapter {
-    type Err = ResourceLocationError;
+    type ConversionError = ResourceLocationError;
+    type SerializedConversionError = Infallible;
     
-    fn serialize_to_domain(serialized: &SerializationResourceLocation) -> Result<DomainResourceLocation, Self::Err> {
-        todo!()
+    fn serialized_to_domain(serialized: &SerializationResourceLocation) -> Result<DomainResourceLocation, Self::ConversionError> {
+        DomainResourceLocation::from_str(serialized.to_string().as_str())
     }
 
-    fn domain_to_serialized(domain: &DomainResourceLocation) -> Result<SerializationResourceLocation, Self::Err> {
-        todo!()
+    fn domain_to_serialized(domain: &DomainResourceLocation) -> Result<SerializationResourceLocation, Self::SerializedConversionError> {
+        Ok(SerializationResourceLocation::new(domain.to_string().as_str()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    
+    #[test]
+    fn test_serialized_to_domain() {
+        let serialized = SerializationResourceLocation::new("minecraft:foo");
+        let domain = ResourceLocationAdapter::serialized_to_domain(&serialized).unwrap();
+        assert_eq!(domain.to_string(), "minecraft:foo");
+
+        let serialized = SerializationResourceLocation::new("foo:bar");
+        let domain = ResourceLocationAdapter::serialized_to_domain(&serialized).unwrap();
+        assert_eq!(domain.to_string(), "foo:bar");
+    }
+    
+    #[test]
+    fn test_domain_to_serialized() {
+        let domain = DomainResourceLocation::new("minecraft", "foo").unwrap();
+        let serialized = ResourceLocationAdapter::domain_to_serialized(&domain).unwrap();
+        assert_eq!(serialized.to_string(), "minecraft:foo");
+
+        let domain = DomainResourceLocation::new("foo", "bar").unwrap();
+        let serialized = ResourceLocationAdapter::domain_to_serialized(&domain).unwrap();
+        assert_eq!(serialized.to_string(), "foo:bar");
+    }
+    
+    #[test]
+    fn test_serialized_to_domain_no_namespace() {
+        let serialized = SerializationResourceLocation::new("foo");
+        let domain = ResourceLocationAdapter::serialized_to_domain(&serialized).unwrap();
+        assert_eq!(domain.to_string(), "minecraft:foo");
+    }
+    
+    #[test]
+    fn test_serialized_to_domain_invalid() {
+        let serialized = SerializationResourceLocation::new("foo:bar:baz");
+        let domain = ResourceLocationAdapter::serialized_to_domain(&serialized);
+        assert!(domain.is_err());
+
+        let serialized = SerializationResourceLocation::new("@#$%($%&U");
+        let domain = ResourceLocationAdapter::serialized_to_domain(&serialized);
+        assert!(domain.is_err());
+        
+        let serialized = SerializationResourceLocation::new("MINECRAFT:FOO");
+        let domain = ResourceLocationAdapter::serialized_to_domain(&serialized);
+        assert!(domain.is_err());
+    }
 }
