@@ -376,18 +376,26 @@ mod test {
 
     /// Test multiple standard commands running concurrently accessing different resources
     #[test]
-    fn test_concurrent_commands() {}
+    fn test_concurrent_commands() {
+        panic!("Unimplemented test!")
+    }
 
     /// Test multiple standard commands running concurrently accessing the same resource,
     /// which should lock the resource and force sequential execution
     #[test]
-    fn test_concurrent_commands_shared_resource() {}
+    fn test_concurrent_commands_shared_resource() {
+        panic!("Unimplemented test!")
+    }
 
     /// Test that multiple global commands will lock and run sequentially
     #[test]
-    fn test_concurrent_global_commands() {}
+    fn test_concurrent_global_commands() {
+        panic!("Unimplemented test!")
+    }
 
     /// Test that global commands lock standard commands until they are done
     #[test]
-    fn test_concurrent_commands_mixed() {}
+    fn test_concurrent_commands_mixed() {
+        panic!("Unimplemented test!")
+    }
 }

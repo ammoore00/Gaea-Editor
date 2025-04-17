@@ -9,7 +9,7 @@ static PROJECT_EXTENSION: &str = "json";
 
 #[async_trait::async_trait]
 pub trait ProjectProvider {
-    fn add_project(&self, project_settings: ProjectSettings, overwrite_existing: bool) -> Result<ProjectID>;
+    fn add_project(&mut self, project_settings: ProjectSettings, overwrite_existing: bool) -> Result<ProjectID>;
     fn get_project(&self, id: ProjectID) -> Option<&Project>;
     fn get_project_mut(&mut self, id: ProjectID) -> Option<&mut Project>;
 
@@ -45,7 +45,7 @@ impl<Provider: FilesystemProvider> ProjectRepository<Provider> {
 
 #[async_trait::async_trait]
 impl<Provider: FilesystemProvider> ProjectProvider for ProjectRepository<Provider> {
-    fn add_project(&self, project: ProjectSettings, overwrite_existing: bool) -> Result<ProjectID> {
+    fn add_project(&mut self, project: ProjectSettings, overwrite_existing: bool) -> Result<ProjectID> {
         todo!()
     }
 

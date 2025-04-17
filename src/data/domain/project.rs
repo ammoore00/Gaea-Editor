@@ -3,9 +3,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::{NoContext, Timestamp, Uuid};
 use crate::data::domain::version::MinecraftVersion;
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Project {
     settings: ProjectSettings,
-    id: Uuid,
+    id: ProjectID,
 }
 
 impl Project {
@@ -23,12 +24,17 @@ impl Project {
         &self.settings
     }
     
-    pub fn get_id(&self) -> &Uuid {
+    pub fn get_id(&self) -> &ProjectID {
         &self.id
+    }
+    
+    #[cfg(test)]
+    pub fn set_id(&mut self, id: ProjectID) {
+        self.id = id;
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ProjectSettings {
     pub name: String,
     pub path: PathBuf,
@@ -42,7 +48,7 @@ impl ProjectSettings {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ProjectVersion {
     // TODO: implement more complex version management
     pub version: MinecraftVersion,
@@ -50,7 +56,7 @@ pub struct ProjectVersion {
 
 pub type ProjectID = Uuid;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum ProjectType {
     DataPack,
     ResourcePack,
