@@ -51,8 +51,8 @@ where
         settings: ProjectSettings,
         overwrite_existing: bool,
     ) -> Result<ProjectID> {
-        self.validate_project_settings(&settings)?;
-        let id = self.project_provider.borrow_mut().add_project(settings, overwrite_existing)?;
+        let sanitized_settings = self.sanitize_project_settings(settings)?;
+        let id = self.project_provider.borrow_mut().add_project(sanitized_settings, overwrite_existing)?;
         Ok(id)
     }
 
@@ -83,9 +83,18 @@ where
         todo!()
     }
 
-    fn validate_project_settings(&self, settings: &ProjectSettings) -> Result<()> {
-        // TODO: Implement project settings validation
-        Ok(())
+    /// Consumes project settings, then returns a sanitized version of it,
+    /// or an error if it is unrecoverable
+    fn sanitize_project_settings(&self, mut settings: ProjectSettings) -> Result<ProjectSettings> {
+        let options = sanitize_filename::Options {
+            replacement: "_",
+            ..sanitize_filename::Options::default()
+        };
+        
+        let sanitized_path = settings.path.iter().map(|path_segment| sanitize_filename::sanitize_with_options(path_segment.to_string_lossy(), options.clone())).collect();
+        
+        settings.path = sanitized_path;
+        Ok(settings)
     }
 }
 
@@ -101,10 +110,6 @@ pub enum ProjectServiceError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectSettingsError {
-    #[error("Invalid Name: {0}!")]
-    InvalidName(String),
-    #[error("Invalid MC Version: {0}!")]
-    InvalidMCVersion(String),
 }
 
 //------ Tests ------//
@@ -163,6 +168,12 @@ mod test {
     impl ProjectProvider for MockProjectProvider {
         fn add_project(&mut self, project_settings: ProjectSettings, overwrite_existing: bool) -> project_repo::Result<ProjectID> {
             self.call_tracker.lock().unwrap().borrow_mut().add_project_calls += 1;
+            
+            if let Some(project) = &self.project {
+                if !overwrite_existing && project.get_settings().path == project_settings.path {
+                    return Err(ProjectRepoError::FileAlreadyExists)
+                }
+            }
             
             if self.settings.fail_calls {
                 return Err(ProjectRepoError::FilesystemError(std::io::Error::new(std::io::ErrorKind::Other, "Mock error!")));
@@ -257,16 +268,14 @@ mod test {
     mod create_project {
         use crate::data::domain::project::{ProjectType, ProjectVersion};
         use crate::data::domain::version;
-        use crate::services::project_service::ProjectService;
+        use crate::services::project_service::{ProjectService, ProjectServiceError};
         use super::*;
         
         /// Test creating a project
         #[test]
         fn test_create_project() {
-            let mock_project_provider = MockProjectProvider::default();
-
             let project_service = ProjectService::new(
-                mock_project_provider,
+                MockProjectProvider::default(),
                 MockZipProvider::new(),
                 MockProjectAdapter::new(),
             );
@@ -317,37 +326,99 @@ mod test {
         /// Test creating a project
         #[test]
         fn test_create_project_special_characters() {
-            // Given valid project settings with special characters
+            let project_service = ProjectService::new(
+                MockProjectProvider::default(),
+                MockZipProvider::new(),
+                MockProjectAdapter::new(),
+            );
+
+            // Given valid project settings
+
+            let project_settings = ProjectSettings {
+                // 测试项目 means "Test Project" in simplified chinese
+                name: "测试项目".to_string(),
+                path: "test/file/测试项目".into(),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::DataPack,
+            };
 
             // When I create a project
 
+            let project_id = project_service.create_project(project_settings.clone(), false).unwrap();
+
             // It should create the new project
 
-            panic!("Unimplemented test!")
+            // Verify that the project created by the service matches one manually created
+            let project_provider = project_service.project_provider.borrow();
+            let created_project = project_provider.get_project(project_id).unwrap();
+
+            let mut comparison_project = Project::new(project_settings.clone());
+            comparison_project.set_id(project_id);
+
+            assert_eq!(*created_project, comparison_project);
+
+            // Verify individual settings
+            let created_settings = created_project.get_settings();
+            assert_eq!(created_settings.name, project_settings.name);
+            assert_eq!(created_settings.path, project_settings.path);
+            assert_eq!(created_settings.project_version, project_settings.project_version);
+            assert_eq!(created_settings.project_type, project_settings.project_type);
+
+            // Validate that a valid UUID was supplied
+            assert_ne!(project_id, ProjectID::nil());
+
+            // Verify calls to the provider
+            let call_tracker = project_provider.call_tracker.lock().unwrap();
+            let call_tracker = call_tracker.borrow();
+            assert_eq!(call_tracker.add_project_calls, 1);
+            assert_eq!(call_tracker.open_project_calls, 0);
+            assert_eq!(call_tracker.close_project_calls, 0);
+            assert_eq!(call_tracker.save_project_calls, 0);
         }
 
-        /// Test attempting to create a project with an invalid name
+        /// Test attempting to create a project with an invalid path
         #[test]
-        fn test_create_project_invalid_name() {
-            // Given project settings with an invalid name
-            
-            // When I try to create the project
-            
-            // It should return an appropriate error
+        fn test_create_project_invalid_path() {
+            let project_service = ProjectService::new(
+                MockProjectProvider::default(),
+                MockZipProvider::new(),
+                MockProjectAdapter::new(),
+            );
 
-            panic!("Unimplemented test!")
-        }
+            // Given valid project settings
 
-        /// Test attempting to create a project with an invalid Minecraft version
-        #[test]
-        fn test_create_project_invalid_mc_version() {
-            // Given project settings with an invalid Minecraft version
-            
-            // When I try to create the project
-            
-            // It should return an appropriate error
+            let project_settings = ProjectSettings {
+                name: "Test Project".to_string(),
+                path: Path::new("test?/invalid</path>").into(),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::DataPack,
+            };
 
-            panic!("Unimplemented test!")
+            // When I create a project
+
+            let project_id = project_service.create_project(project_settings.clone(), false).unwrap();
+
+            // It should create the new project
+            let project_provider = project_service.project_provider.borrow();
+            let created_project = project_provider.get_project(project_id).unwrap();
+
+            // Verify individual settings
+            let created_settings = created_project.get_settings();
+            assert_eq!(created_settings.name, project_settings.name);
+            assert_eq!(created_settings.path.to_string_lossy(), "test_/invalid_/path_");
+            assert_eq!(created_settings.project_version, project_settings.project_version);
+            assert_eq!(created_settings.project_type, project_settings.project_type);
+
+            // Validate that a valid UUID was supplied
+            assert_ne!(project_id, ProjectID::nil());
+
+            // Verify calls to the provider
+            let call_tracker = project_provider.call_tracker.lock().unwrap();
+            let call_tracker = call_tracker.borrow();
+            assert_eq!(call_tracker.add_project_calls, 1);
+            assert_eq!(call_tracker.open_project_calls, 0);
+            assert_eq!(call_tracker.close_project_calls, 0);
+            assert_eq!(call_tracker.save_project_calls, 0);
         }
         
         /// Test attempting to create a project while one already exists with the same name
@@ -355,11 +426,29 @@ mod test {
         fn test_create_duplicate_project() {
             // Given a project that already exists
             
+            let project_settings = ProjectSettings {
+                name: "Test Project".to_string(),
+                path: "test/file/path".into(),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::DataPack,
+            };
+            
+            let existing_project = Project::new(project_settings.clone());
+            
+            let project_service = ProjectService::new(
+                MockProjectProvider::with_project(existing_project),
+                MockZipProvider::new(),
+                MockProjectAdapter::new(),
+            );
+            
             // When I try to create that project again
             
+            let result = project_service.create_project(project_settings.clone(), false);
+            
             // It should return an appropriate error
-
-            panic!("Unimplemented test!")
+            
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::RepoError(ProjectRepoError::FileAlreadyExists))));
         }
         
         /// Test creating a new project while one already exists with the same name
@@ -368,23 +457,28 @@ mod test {
         fn test_overwrite_existing_project() {
             // Given a project that already exists
 
-            // When I try to overwrite that project
-            
-            // It should create the new project
+            let project_settings = ProjectSettings {
+                name: "Test Project".to_string(),
+                path: "test/file/path".into(),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::DataPack,
+            };
 
-            panic!("Unimplemented test!")
-        }
+            let existing_project = Project::new(project_settings.clone());
 
-        /// Test trying to overwrite a project but without permission to modify the original
-        #[test]
-        fn test_overwrite_existing_project_io_error() {
-            // Given a project that already exists, but without write permission
+            let project_service = ProjectService::new(
+                MockProjectProvider::with_project(existing_project),
+                MockZipProvider::new(),
+                MockProjectAdapter::new(),
+            );
 
-            // When I try to overwrite that project
+            // When I try to create that project again with the overwrite flag set
 
-            // It should return an appropriate error, and the existing project should remain
+            let result = project_service.create_project(project_settings.clone(), true);
 
-            panic!("Unimplemented test!")
+            // It should create the project
+
+            assert!(result.is_ok());
         }
         
         /// Test thread safety when multiple threads try to create the same project
@@ -404,11 +498,30 @@ mod test {
         fn test_create_project_provider_failure() {
             // Given an error from the repo
             
-            // When I try to create a new project
-            
-            // The error should be handled gracefully
+            let project_service = ProjectService::new(
+                MockProjectProvider::with_settings(MockProjectProviderSettings {
+                    fail_calls: true,
+                    ..Default::default()
+                }),
+                MockZipProvider::new(),
+                MockProjectAdapter::new(),
+            );
 
-            panic!("Unimplemented test!")
+            let project_settings = ProjectSettings {
+                name: "Test Project".to_string(),
+                path: "test/file/path".into(),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::DataPack,
+            };
+            
+            // When I try to create a new project
+
+            let result = project_service.create_project(project_settings.clone(), false);
+
+            // It should return an appropriate error
+
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::RepoError(ProjectRepoError::FilesystemError(_)))));
         }
     }
     
