@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
-use crate::data::adapters::project::ProjectAdapter;
-use crate::data::domain::project::{ProjectID, ProjectSettings};
+use crate::data::adapters::Adapter;
+use crate::data::adapters::project;
+use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
 use crate::data::serialization::project::Project as SerializedProject;
 use crate::persistence::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
 use crate::services::zip_service;
@@ -9,9 +10,11 @@ use crate::services::zip_service::ZipService;
 pub struct ProjectService<
     ProjectProvider: project_repo::ProjectProvider = ProjectRepository,
     ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
+    ProjectAdapter: Adapter<SerializedProject, Project> = project::ProjectAdapter,
 > {
     project_provider: ProjectProvider,
     zip_provider: ZipProvider,
+    project_adapter: ProjectAdapter,
 }
 
 impl Default for ProjectService {
@@ -19,22 +22,26 @@ impl Default for ProjectService {
         Self {
             project_provider: ProjectRepository::default(),
             zip_provider: ZipService::default(),
+            project_adapter: project::ProjectAdapter::default(),
         }
     }
 }
 
-impl<ProjectProvider, ZipProvider> ProjectService<ProjectProvider, ZipProvider>
+impl<ProjectProvider, ZipProvider, ProjectAdapter> ProjectService<ProjectProvider, ZipProvider, ProjectAdapter>
 where
     ProjectProvider: project_repo::ProjectProvider,
     ZipProvider: zip_service::ZipProvider<SerializedProject>,
+    ProjectAdapter: Adapter<SerializedProject, Project>,
 {
     pub fn new(
         project_provider: ProjectProvider,
         zip_provider: ZipProvider,
+        project_adapter: ProjectAdapter,
     ) -> Self {
         ProjectService {
             project_provider,
             zip_provider,
+            project_adapter,
         }
     }
 
@@ -105,8 +112,10 @@ pub enum ProjectSettingsError {
 mod test {
     use std::path::{Path, PathBuf};
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
+    use crate::data::serialization::project::Project as SerializedProject;
     use crate::persistence::repositories::project_repo;
     use crate::persistence::repositories::project_repo::ProjectProvider;
+    use crate::services::zip_service::ZipProvider;
 
     struct MockProjectProvider;
     impl MockProjectProvider {
@@ -144,6 +153,26 @@ mod test {
         }
 
         fn get_project_extension(&self) -> &'static str {
+            todo!()
+        }
+    }
+    
+    struct MockZipProvider;
+    impl MockZipProvider {
+        fn new() -> Self {
+            MockZipProvider {
+
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ZipProvider<SerializedProject> for MockZipProvider {
+        async fn extract(&self, path: &Path) -> crate::services::zip_service::Result<SerializedProject> {
+            todo!()
+        }
+
+        async fn zip(&self, path: &Path, data: &SerializedProject) -> crate::services::zip_service::Result<()> {
             todo!()
         }
     }

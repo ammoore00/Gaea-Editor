@@ -5,6 +5,12 @@ use crate::data::serialization::project::Project as SerializedProject;
 
 pub(crate) struct ProjectAdapter;
 
+impl Default for ProjectAdapter {
+    fn default() -> Self {
+        Self {}
+    }
+}
+
 impl Adapter<SerializedProject, DomainProject> for ProjectAdapter {
     type ConversionError = ProjectConversionError;
 
