@@ -18,7 +18,7 @@ zip = "2.4"
 iced = { version = "0.13.1", features = ["highlighter", "tokio", "debug"] }
 iced_aw = { version = "0.12.0", features = ["default"] }
 
-tokio = { version = "1.43.0", features = ["fs"] }
+tokio = { version = "1.44", features = ["fs"] }
 
 rfd = "0.13"
 
