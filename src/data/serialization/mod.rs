@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 mod pack_info;
+pub mod project;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(untagged)]

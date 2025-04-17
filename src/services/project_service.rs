@@ -1,12 +1,14 @@
 use std::path::{Path, PathBuf};
+use crate::data::adapters::project::ProjectAdapter;
 use crate::data::domain::project::{ProjectID, ProjectSettings};
+use crate::data::serialization::project::Project as SerializedProject;
 use crate::persistence::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
 use crate::services::zip_service;
 use crate::services::zip_service::ZipService;
 
 pub struct ProjectService<
     ProjectProvider: project_repo::ProjectProvider = ProjectRepository,
-    ZipProvider: zip_service::ZipProvider = ZipService,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
 > {
     project_provider: ProjectProvider,
     zip_provider: ZipProvider,
@@ -24,7 +26,7 @@ impl Default for ProjectService {
 impl<ProjectProvider, ZipProvider> ProjectService<ProjectProvider, ZipProvider>
 where
     ProjectProvider: project_repo::ProjectProvider,
-    ZipProvider: zip_service::ZipProvider,
+    ZipProvider: zip_service::ZipProvider<SerializedProject>,
 {
     pub fn new(
         project_provider: ProjectProvider,

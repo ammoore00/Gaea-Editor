@@ -3,6 +3,7 @@ use std::error::Error;
 
 mod pack_info;
 mod resource_location;
+pub(crate) mod project;
 
 pub trait Adapter<Serialized, Domain> {
     type ConversionError: Error;

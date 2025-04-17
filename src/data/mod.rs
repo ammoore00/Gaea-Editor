@@ -1,3 +1,3 @@
-mod adapters;
+pub(crate) mod adapters;
 pub mod domain;
-mod serialization;
+pub(crate) mod serialization;
