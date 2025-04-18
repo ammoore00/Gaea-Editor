@@ -13,15 +13,15 @@ pub trait ProjectProvider {
     fn get_project(&self, id: ProjectID) -> Option<&Project>;
     fn get_project_mut(&mut self, id: ProjectID) -> Option<&mut Project>;
 
-    async fn open_project(&self, path: &Path) -> Result<ProjectID>;
-    fn close_project(&self, id: ProjectID) -> Result<()>;
+    async fn open_project(&mut self, path: &Path) -> Result<ProjectID>;
+    fn close_project(&mut self, id: ProjectID) -> Result<()>;
     async fn save_project(&self, id: ProjectID) -> Result<&PathBuf>;
 
     fn get_project_extension(&self) -> &'static str;
 }
 
-pub struct ProjectRepository<Provider: FilesystemProvider = FilesystemService> {
-    filesystem_provider: Provider,
+pub struct ProjectRepository<Filesystem: FilesystemProvider = FilesystemService> {
+    filesystem_provider: Filesystem,
     projects: DashMap<Uuid, Project>,
 }
 
@@ -34,8 +34,8 @@ impl Default for ProjectRepository<FilesystemService> {
     }
 }
 
-impl<Provider: FilesystemProvider> ProjectRepository<Provider> {
-    pub fn new(filesystem_provider: Provider) -> Self {
+impl<Filesystem: FilesystemProvider> ProjectRepository<Filesystem> {
+    pub fn new(filesystem_provider: Filesystem) -> Self {
         Self {
             filesystem_provider: filesystem_provider,
             projects: DashMap::new(),
@@ -44,7 +44,7 @@ impl<Provider: FilesystemProvider> ProjectRepository<Provider> {
 }
 
 #[async_trait::async_trait]
-impl<Provider: FilesystemProvider> ProjectProvider for ProjectRepository<Provider> {
+impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Filesystem> {
     fn add_project(&mut self, project: ProjectSettings, overwrite_existing: bool) -> Result<ProjectID> {
         todo!()
     }
@@ -57,11 +57,11 @@ impl<Provider: FilesystemProvider> ProjectProvider for ProjectRepository<Provide
         todo!()
     }
 
-    async fn open_project(&self, path: &Path) -> Result<ProjectID> {
+    async fn open_project(&mut self, path: &Path) -> Result<ProjectID> {
         todo!()
     }
 
-    fn close_project(&self, id: ProjectID) -> Result<()> {
+    fn close_project(&mut self, id: ProjectID) -> Result<()> {
         todo!()
     }
 
@@ -75,16 +75,39 @@ impl<Provider: FilesystemProvider> ProjectProvider for ProjectRepository<Provide
 }
 
 pub type Result<T> = std::result::Result<T, ProjectRepoError>;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectRepoError {
     #[error(transparent)]
-    FilesystemError(#[from] io::Error),
+    Filesystem(#[from] io::Error),
+    #[error(transparent)]
+    Create(#[from] ProjectCreationError),
+    #[error(transparent)]
+    Open(#[from] ProjectOpenError),
+    #[error("Could not save project!")]
+    Save,
+    #[error(transparent)]
+    Close(#[from] ProjectCloseError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProjectCreationError {
     #[error("File Already Exists!")]
     FileAlreadyExists,
     #[error("Invalid Path: {0}!")]
     InvalidPath(String),
-    #[error("Unsaved Changes!")]
-    UnsavedChanges
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProjectOpenError {
+    #[error("File Already Open!")]
+    AlreadyOpen,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProjectCloseError {
+    #[error("File Not Open!")]
+    FileNotOpen,
 }
 
 #[cfg(test)]

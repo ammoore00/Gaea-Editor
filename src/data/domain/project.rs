@@ -11,12 +11,9 @@ pub struct Project {
 
 impl Project {
     pub fn new(settings: ProjectSettings) -> Self {
-        let timestamp = Timestamp::from_unix(NoContext, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(), 0);
-        let id = Uuid::new_v7(timestamp);
-        
-        Project {
+        Self {
             settings,
-            id
+            id: Self::generate_id()
         }
     }
     
@@ -26,6 +23,18 @@ impl Project {
     
     pub fn get_id(&self) -> &ProjectID {
         &self.id
+    }
+    
+    fn generate_id() -> ProjectID {
+        let timestamp = Timestamp::from_unix(NoContext, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(), 0);
+        let id = Uuid::new_v7(timestamp);
+        
+        id
+    }
+
+    #[cfg(test)]
+    pub fn generate_test_id() -> ProjectID {
+        Self::generate_id()
     }
     
     #[cfg(test)]
