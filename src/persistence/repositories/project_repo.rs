@@ -15,7 +15,7 @@ pub trait ProjectProvider {
 
     async fn open_project(&mut self, path: &Path) -> Result<ProjectID>;
     fn close_project(&mut self, id: ProjectID) -> Result<()>;
-    async fn save_project(&self, id: ProjectID) -> Result<&PathBuf>;
+    async fn save_project(&self, id: ProjectID) -> Result<PathBuf>;
 
     fn get_project_extension(&self) -> &'static str;
 }
@@ -65,7 +65,7 @@ impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Files
         todo!()
     }
 
-    async fn save_project(&self, id: ProjectID) -> Result<&PathBuf> {
+    async fn save_project(&self, id: ProjectID) -> Result<PathBuf> {
         todo!()
     }
 

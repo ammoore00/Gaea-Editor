@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, RwLock};
 use crate::data::adapters::Adapter;
 use crate::data::adapters::project;
 use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
@@ -13,7 +14,7 @@ pub struct ProjectService<
     ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
     ProjectAdapter: Adapter<SerializedProject, Project> = project::ProjectAdapter,
 > {
-    project_provider: RefCell<ProjectProvider>,
+    project_provider: Arc<RwLock<ProjectProvider>>,
     zip_provider: ZipProvider,
     project_adapter: ProjectAdapter,
 }
@@ -21,7 +22,7 @@ pub struct ProjectService<
 impl Default for ProjectService {
     fn default() -> Self {
         Self {
-            project_provider: RefCell::new(ProjectRepository::default()),
+            project_provider: Arc::new(RwLock::new(ProjectRepository::default())),
             zip_provider: ZipService::default(),
             project_adapter: project::ProjectAdapter::default(),
         }
@@ -40,7 +41,7 @@ where
         project_adapter: ProjectAdapter,
     ) -> Self {
         ProjectService {
-            project_provider: RefCell::new(project_provider),
+            project_provider: Arc::new(RwLock::new(project_provider)),
             zip_provider,
             project_adapter,
         }
@@ -52,32 +53,41 @@ where
         overwrite_existing: bool,
     ) -> Result<ProjectID> {
         let sanitized_settings = self.sanitize_project_settings(settings)?;
-        let id = self.project_provider.borrow_mut().add_project(sanitized_settings, overwrite_existing)?;
+        let id = self.project_provider.write().unwrap().add_project(sanitized_settings, overwrite_existing)?;
         Ok(id)
     }
 
     pub async fn open_project(&self, path: &Path) -> Result<ProjectID> {
-        let id = self.project_provider.borrow_mut().open_project(path).await?;
+        let id = self.project_provider.write().unwrap().open_project(path).await?;
         Ok(id)
     }
 
     pub fn close_project(&self, project_id: ProjectID) -> Result<()> {
-        if let Some(project) = self.project_provider.borrow().get_project(project_id) {
-            if project.has_unsaved_changes() {
-                return Err(ProjectServiceError::UnsavedChanges);
-            }
-            // Else continue
-        }
-        else {
-            return Err(ProjectServiceError::ProjectDoesNotExist);
+        let mut project_provider = self.project_provider.write().unwrap();
+        let project = project_provider.get_project(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
+
+        if project.has_unsaved_changes() {
+            return Err(ProjectServiceError::CannotCloseUnsavedChanges);
         }
         
-        self.project_provider.borrow_mut().close_project(project_id)?;
+        project_provider.close_project(project_id)?;
         Ok(())
     }
 
-    pub async fn save_project(&self, project_id: ProjectID) -> Result<&PathBuf> {
-        todo!()
+    pub async fn save_project(&self, project_id: ProjectID) -> Result<PathBuf> {
+        let mut project_provider = self.project_provider.write().unwrap();
+        let project = project_provider.get_project(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
+
+        if !project.has_unsaved_changes() {
+            return Err(ProjectServiceError::NoChangesToSave);
+        }
+
+        let path = project.get_settings().path.clone();
+        project_provider.save_project(project_id).await?;
+        // TODO: Make this thread safe
+        let project = project_provider.get_project_mut(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
+        project.clear_unsaved_changes();
+        Ok(path)
     }
 
     pub async fn from_zip(&self, path: &Path) -> Result<ProjectID> {
@@ -116,8 +126,10 @@ pub enum ProjectServiceError {
     RepoError(#[from] ProjectRepoError),
     #[error(transparent)]
     ProjectSettingsError(#[from] ProjectSettingsError),
-    #[error("Project has unsaved changes!")]
-    UnsavedChanges,
+    #[error("Cannot close with unsaved changes!")]
+    CannotCloseUnsavedChanges,
+    #[error("No changes to save!")]
+    NoChangesToSave,
     #[error("Project does not exist!")]
     ProjectDoesNotExist,
 }
@@ -254,14 +266,20 @@ mod test {
             Ok(())
         }
 
-        async fn save_project(&self, id: ProjectID) -> project_repo::Result<&PathBuf> {
+        async fn save_project(&self, id: ProjectID) -> project_repo::Result<PathBuf> {
             self.call_tracker.lock().unwrap().borrow_mut().save_project_calls += 1;
 
             if self.settings.fail_calls {
                 return Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::Other, "Mock error!")));
             }
+
+            if !self.is_project_open {
+                return Err(ProjectRepoError::Close(ProjectCloseError::FileNotOpen));
+            }
             
-            todo!()
+            self.project.clone()
+                .map(|project| project.get_settings().path.clone())
+                .ok_or(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::NotFound, "Project not found")))
         }
 
         fn get_project_extension(&self) -> &'static str {
@@ -342,7 +360,7 @@ mod test {
             // It should create the new project
 
             // Verify that the project created by the service matches one manually created
-            let project_provider = project_service.project_provider.borrow();
+            let project_provider = project_service.project_provider.read().unwrap();
             let created_project = project_provider.get_project(project_id).unwrap();
 
             let mut comparison_project = Project::new(project_settings.clone());
@@ -388,7 +406,7 @@ mod test {
             // It should create the new project
 
             // Verify that the project created by the service matches one manually created
-            let project_provider = project_service.project_provider.borrow();
+            let project_provider = project_service.project_provider.read().unwrap();
             let created_project = project_provider.get_project(project_id).unwrap();
 
             let mut comparison_project = Project::new(project_settings.clone());
@@ -423,7 +441,7 @@ mod test {
             let project_id = project_service.create_project(project_settings.clone(), false).unwrap();
 
             // It should create the new project
-            let project_provider = project_service.project_provider.borrow();
+            let project_provider = project_service.project_provider.read().unwrap();
             let created_project = project_provider.get_project(project_id).unwrap();
 
             // Verify individual settings
@@ -510,7 +528,7 @@ mod test {
 
             // Only one project should be created with no other side effects`
 
-            // TODO: Implement concurrency test`
+            // TODO: Implement test`
         }
         
         /// Test graceful error handling when the project provider returns an error 
@@ -577,7 +595,7 @@ mod test {
             
             // It should be opened properly
             
-            let project_provider = project_service.project_provider.borrow();
+            let project_provider = project_service.project_provider.read().unwrap();
             let opened_project = project_provider.get_project(project_id).unwrap();
             
             assert!(project_provider.is_project_open);
@@ -663,7 +681,7 @@ mod test {
             
             // Only one should succeed with no other side effects
 
-            // TODO: Implement concurrency test
+            // TODO: Implement test
         }
 
         /// Test graceful error handling when the provider returns an error
@@ -732,7 +750,7 @@ mod test {
             
             assert!(result.is_ok());
             
-            let project_provider = project_service.project_provider.borrow();
+            let project_provider = project_service.project_provider.read().unwrap();
             assert!(!project_provider.is_project_open);
 
             // Verify calls to the provider
@@ -753,8 +771,7 @@ mod test {
                 project_type: ProjectType::DataPack,
             };
 
-            let mut existing_project = Project::new(project_settings.clone());
-            existing_project.flag_unsaved_changes();
+            let mut existing_project = Project::with_unsaved_changes(project_settings.clone());
 
             let project_service = ProjectService::new(
                 MockProjectProvider::with_open_project(existing_project.clone()),
@@ -769,7 +786,7 @@ mod test {
             // It should return an appropriate error
 
             assert!(result.is_err());
-            assert!(matches!(result, Err(ProjectServiceError::UnsavedChanges)));
+            assert!(matches!(result, Err(ProjectServiceError::CannotCloseUnsavedChanges)));
         }
 
         /// Test trying to close a project which is not open
@@ -830,7 +847,7 @@ mod test {
 
             // Only one should succeed with no other side effects
 
-            // TODO: Implement concurrency test
+            // TODO: Implement test
         }
 
         /// Test graceful error handling when the provider returns an error
@@ -871,26 +888,75 @@ mod test {
     }
     
     mod save_project {
+        use crate::data::domain::project::{ProjectType, ProjectVersion};
+        use crate::data::domain::version;
+        use crate::services::project_service::ProjectServiceError;
         use super::*;
 
         /// Test saving a project
-        #[test]
-        fn test_save_project() {
+        #[tokio::test]
+        async fn test_save_project() {
             // Given a project with unsaved changes
+
+            let project_settings = ProjectSettings {
+                name: "Test Project".to_string(),
+                path: "test/file/path".into(),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::DataPack,
+            };
+
+            let project = Project::with_unsaved_changes(project_settings.clone());
+            let project_id = project.get_id();
+
+            let project_service = ProjectService::new(
+                MockProjectProvider::with_open_project(project),
+                MockZipProvider::new(),
+                MockProjectAdapter::new(),
+            );
             
             // When I save it
             
+            let result = project_service.save_project(project_id).await;
+            
             // It should be saved
 
-            panic!("Unimplemented test!")
+            assert!(result.is_ok());
+            
+            assert_eq!(result.unwrap().as_path(), Path::new("test/file/path"));
+            
+            assert!(!project_service.project_provider.read().unwrap().project.as_ref().unwrap().has_unsaved_changes());
+
+            // Verify calls to the provider
+            let project_provider = project_service.project_provider.read().unwrap();
+            let call_tracker = project_provider.call_tracker.lock().unwrap();
+            let call_tracker = call_tracker.borrow();
+            assert_eq!(call_tracker.save_project_calls, 1);
         }
 
         /// Test trying to save a project with no changes to save
-        #[test]
-        fn test_save_project_no_changes() {
+        #[tokio::test]
+        async fn test_save_project_no_changes() {
             // Given a project with no unsaved changes
+
+            let project_settings = ProjectSettings {
+                name: "Test Project".to_string(),
+                path: "test/file/path".into(),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::DataPack,
+            };
+
+            let project = Project::new(project_settings.clone());
+            let project_id = project.get_id();
+
+            let project_service = ProjectService::new(
+                MockProjectProvider::with_open_project(project),
+                MockZipProvider::new(),
+                MockProjectAdapter::new(),
+            );
             
             // When I try to save it
+
+            let result = project_service.save_project(project_id).await;
 
             // It should return an appropriate error
             
@@ -898,7 +964,8 @@ mod test {
             // an error here so that code calling the service knows about it and can present it
             // to the user as appropriate
 
-            panic!("Unimplemented test!")
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::NoChangesToSave)));
         }
 
         /// Test thread safety when multiple threads try to save the same project
@@ -910,19 +977,44 @@ mod test {
 
             // Only one should succeed with no other side effects
 
-            // TODO: Implement concurrency test
+            // TODO: Implement test
         }
 
         /// Test graceful error handling when the provider returns an error
-        #[test]
-        fn test_save_project_provider_failure() {
+        #[tokio::test]
+        async fn test_save_project_provider_failure() {
             // Given an error from the repo
+
+            let project_settings = ProjectSettings {
+                name: "Test Project".to_string(),
+                path: "test/file/path".into(),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::DataPack,
+            };
+
+            let project = Project::with_unsaved_changes(project_settings.clone());
+            let project_id = project.get_id();
+
+            let mut project_provider = MockProjectProvider::with_open_project(project.clone());
+            project_provider.settings = MockProjectProviderSettings {
+                fail_calls: true,
+                ..Default::default()
+            };
+
+            let project_service = ProjectService::new(
+                project_provider,
+                MockZipProvider::new(),
+                MockProjectAdapter::new(),
+            );
 
             // When I try to save a project
 
-            // The error should be handled gracefully
+            let result = project_service.save_project(project_id).await;
 
-            panic!("Unimplemented test!")
+            // It should return an appropriate error
+
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::RepoError(ProjectRepoError::Filesystem(_)))));
         }
     }
     
@@ -938,7 +1030,7 @@ mod test {
             
             // It should return a new datapack project
 
-            panic!("Unimplemented test!")
+            // TODO: Implement test
         }
 
         /// Test importing a resourcepack from a zip as a new project
@@ -950,7 +1042,7 @@ mod test {
 
             // It should return a new resourcepack project
 
-            panic!("Unimplemented test!")
+            // TODO: Implement test
         }
 
         /// Test trying to import an invalid zip file
@@ -962,7 +1054,7 @@ mod test {
             
             // It should return an appropriate error
 
-            panic!("Unimplemented test!")
+            // TODO: Implement test
         }
         
         /// Test trying to import a non-zip file as a zip
@@ -974,7 +1066,7 @@ mod test {
 
             // It should return an appropriate error
 
-            panic!("Unimplemented test!")
+            // TODO: Implement test
         }
         
         /// Test graceful error handling when the filesystem returns an error
@@ -986,7 +1078,7 @@ mod test {
 
             // The error should be handled gracefully
 
-            panic!("Unimplemented test!")
+            // TODO: Implement test
         }
 
         /// Test graceful error handling when the provider returns an error
@@ -998,7 +1090,7 @@ mod test {
 
             // The error should be handled gracefully
 
-            panic!("Unimplemented test!")
+            // TODO: Implement test
         }
     }
     
@@ -1014,7 +1106,7 @@ mod test {
 
             // It should return a valid zip file
 
-            panic!("Unimplemented test!")
+            // TODO: Implement test
         }
 
         /// Test exporting a project with resource and data components to multiple zip files
@@ -1026,7 +1118,7 @@ mod test {
 
             // Both zips should be returned properly
 
-            panic!("Unimplemented test!")
+            // TODO: Implement test
         }
 
         /// Test attempting to create a project while one already exists with the same name
@@ -1038,7 +1130,7 @@ mod test {
 
             // It should return an appropriate error
 
-            panic!("Unimplemented test!")
+            // TODO: Implement test
         }
 
         /// Test creating a new project while one already exists with the same name
@@ -1051,7 +1143,7 @@ mod test {
 
             // It should create the new project
 
-            panic!("Unimplemented test!")
+            // TODO: Implement test
         }
 
         /// Test graceful error handling when the filesystem returns an error
@@ -1063,7 +1155,7 @@ mod test {
 
             // The error should be handled gracefully
 
-            panic!("Unimplemented test!")
+            // TODO: Implement test
         }
     }
 }

@@ -19,6 +19,14 @@ impl Project {
             unsaved_changes: false,
         }
     }
+
+    #[cfg(test)]
+    pub fn with_unsaved_changes(settings: ProjectSettings) -> Self {
+        Self {
+            unsaved_changes: true,
+            ..Self::new(settings)
+        }
+    }
     
     pub fn get_settings(&self) -> &ProjectSettings {
         &self.settings
@@ -27,11 +35,11 @@ impl Project {
     pub fn get_id(&self) -> ProjectID {
         self.id.clone()
     }
-    
+
     pub fn has_unsaved_changes(&self) -> bool {
         self.unsaved_changes
     }
-    
+
     pub fn flag_unsaved_changes(&mut self) {
         self.unsaved_changes = true;
     }
@@ -39,11 +47,11 @@ impl Project {
     pub fn clear_unsaved_changes(&mut self) {
         self.unsaved_changes = false;
     }
-    
+
     fn generate_id() -> ProjectID {
         let timestamp = Timestamp::from_unix(NoContext, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(), 0);
         let id = Uuid::new_v7(timestamp);
-        
+
         id
     }
 
@@ -51,7 +59,7 @@ impl Project {
     pub fn generate_test_id() -> ProjectID {
         Self::generate_id()
     }
-    
+
     #[cfg(test)]
     pub fn set_id(&mut self, id: ProjectID) {
         self.id = id;
