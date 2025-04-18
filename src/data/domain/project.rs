@@ -7,13 +7,16 @@ use crate::data::domain::version::MinecraftVersion;
 pub struct Project {
     settings: ProjectSettings,
     id: ProjectID,
+    // TODO: make this more comprehensive
+    unsaved_changes: bool,
 }
 
 impl Project {
     pub fn new(settings: ProjectSettings) -> Self {
         Self {
             settings,
-            id: Self::generate_id()
+            id: Self::generate_id(),
+            unsaved_changes: false,
         }
     }
     
@@ -21,8 +24,20 @@ impl Project {
         &self.settings
     }
     
-    pub fn get_id(&self) -> &ProjectID {
-        &self.id
+    pub fn get_id(&self) -> ProjectID {
+        self.id.clone()
+    }
+    
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.unsaved_changes
+    }
+    
+    pub fn flag_unsaved_changes(&mut self) {
+        self.unsaved_changes = true;
+    }
+
+    pub fn clear_unsaved_changes(&mut self) {
+        self.unsaved_changes = false;
     }
     
     fn generate_id() -> ProjectID {

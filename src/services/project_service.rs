@@ -62,6 +62,16 @@ where
     }
 
     pub fn close_project(&self, project_id: ProjectID) -> Result<()> {
+        if let Some(project) = self.project_provider.borrow().get_project(project_id) {
+            if project.has_unsaved_changes() {
+                return Err(ProjectServiceError::UnsavedChanges);
+            }
+            // Else continue
+        }
+        else {
+            return Err(ProjectServiceError::ProjectDoesNotExist);
+        }
+        
         self.project_provider.borrow_mut().close_project(project_id)?;
         Ok(())
     }
@@ -106,6 +116,10 @@ pub enum ProjectServiceError {
     RepoError(#[from] ProjectRepoError),
     #[error(transparent)]
     ProjectSettingsError(#[from] ProjectSettingsError),
+    #[error("Project has unsaved changes!")]
+    UnsavedChanges,
+    #[error("Project does not exist!")]
+    ProjectDoesNotExist,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -125,7 +139,7 @@ mod test {
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
     use crate::data::serialization::project::Project as SerializedProject;
     use crate::persistence::repositories::project_repo;
-    use crate::persistence::repositories::project_repo::{ProjectCreationError, ProjectOpenError, ProjectProvider, ProjectRepoError};
+    use crate::persistence::repositories::project_repo::{ProjectCloseError, ProjectCreationError, ProjectOpenError, ProjectProvider, ProjectRepoError};
     use crate::services::project_service::ProjectService;
     use crate::services::zip_service;
     use crate::services::zip_service::ZipProvider;
@@ -138,7 +152,7 @@ mod test {
         save_project_calls: usize,
     }
 
-    #[derive(Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone)]
     struct MockProjectProviderSettings {
         fail_calls: bool,
     }
@@ -156,6 +170,14 @@ mod test {
         fn with_project(project: Project) -> Self {
             Self {
                 project: Some(project),
+                ..Self::default()
+            }
+        }
+        
+        fn with_open_project(project: Project) -> Self {
+            Self {
+                project: Some(project),
+                is_project_open: true,
                 ..Self::default()
             }
         }
@@ -186,7 +208,7 @@ mod test {
             let project = Project::new(project_settings);
             self.project = Some(project);
             let id = self.project.as_ref().unwrap().get_id();
-            Ok(*id)
+            Ok(id)
         }
 
         fn get_project(&self, id: ProjectID) -> Option<&Project> {
@@ -211,7 +233,7 @@ mod test {
             match &self.project {
                 Some(project) => {
                     self.is_project_open = true;
-                    Ok(*project.get_id())
+                    Ok(project.get_id())
                 },
                 None => Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::NotFound, "Project not found"))),
             }
@@ -224,7 +246,12 @@ mod test {
                 return Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::Other, "Mock error!")));
             }
             
-            todo!()
+            if !self.is_project_open {
+                return Err(ProjectRepoError::Close(ProjectCloseError::FileNotOpen));
+            }
+            
+            self.is_project_open = false;
+            Ok(())
         }
 
         async fn save_project(&self, id: ProjectID) -> project_repo::Result<&PathBuf> {
@@ -610,12 +637,9 @@ mod test {
             };
 
             let existing_project = Project::new(project_settings.clone());
-
-            let mut project_provider = MockProjectProvider::with_project(existing_project);
-            project_provider.is_project_open = true;
             
             let project_service = ProjectService::new(
-                project_provider,
+                MockProjectProvider::with_open_project(existing_project),
                 MockZipProvider::new(),
                 MockProjectAdapter::new(),
             );
@@ -675,42 +699,126 @@ mod test {
     }
     
     mod close_project {
+        use crate::data::domain::project::{ProjectType, ProjectVersion};
+        use crate::data::domain::version;
+        use crate::services::project_service::ProjectServiceError;
         use super::*;
         
         /// Test closing a project
         #[test]
         fn test_close_project() {
             // Given an open project
+
+            let project_settings = ProjectSettings {
+                name: "Test Project".to_string(),
+                path: "test/file/path".into(),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::DataPack,
+            };
+
+            let existing_project = Project::new(project_settings.clone());
+
+            let project_service = ProjectService::new(
+                MockProjectProvider::with_open_project(existing_project.clone()),
+                MockZipProvider::new(),
+                MockProjectAdapter::new(),
+            );
             
             // When I close it
             
+            let result = project_service.close_project(existing_project.get_id());
+                
             // It should be closed properly
+            
+            assert!(result.is_ok());
+            
+            let project_provider = project_service.project_provider.borrow();
+            assert!(!project_provider.is_project_open);
 
-            panic!("Unimplemented test!")
+            // Verify calls to the provider
+            let call_tracker = project_provider.call_tracker.lock().unwrap();
+            let call_tracker = call_tracker.borrow();
+            assert_eq!(call_tracker.close_project_calls, 1);
         }
 
         /// Test trying to close a project which has unsaved changes
         #[test]
         fn test_close_project_unsaved_changes() {
             // Given a project with unsaved changes
+
+            let project_settings = ProjectSettings {
+                name: "Test Project".to_string(),
+                path: "test/file/path".into(),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::DataPack,
+            };
+
+            let mut existing_project = Project::new(project_settings.clone());
+            existing_project.flag_unsaved_changes();
+
+            let project_service = ProjectService::new(
+                MockProjectProvider::with_open_project(existing_project.clone()),
+                MockZipProvider::new(),
+                MockProjectAdapter::new(),
+            );
             
             // When I try to close it
+
+            let result = project_service.close_project(existing_project.get_id());
             
             // It should return an appropriate error
 
-            panic!("Unimplemented test!")
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::UnsavedChanges)));
         }
 
         /// Test trying to close a project which is not open
         #[test]
         fn test_close_project_not_open() {
             // Given a project which is not open
+
+            let project_settings = ProjectSettings {
+                name: "Test Project".to_string(),
+                path: "test/file/path".into(),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::DataPack,
+            };
+
+            let existing_project = Project::new(project_settings.clone());
+
+            let project_service = ProjectService::new(
+                MockProjectProvider::with_project(existing_project.clone()),
+                MockZipProvider::new(),
+                MockProjectAdapter::new(),
+            );
             
             // When I try to close it
 
+            let result = project_service.close_project(existing_project.get_id());
+
             // It should return an appropriate error
 
-            panic!("Unimplemented test!")
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::RepoError(ProjectRepoError::Close(ProjectCloseError::FileNotOpen)))));
+        }
+
+        /// Test trying to close a project which does not exist
+        #[test]
+        fn test_close_project_nonexistent() {
+            let project_service = default_test_service();
+            
+            // Given a project which does not exist
+            
+            let project_id = Project::generate_test_id();
+
+            // When I try to close it
+
+            let result = project_service.close_project(project_id);
+
+            // It should return an appropriate error
+
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::ProjectDoesNotExist)));
         }
 
         /// Test thread safety when multiple threads try to close the same project
@@ -730,11 +838,35 @@ mod test {
         fn test_create_project_provider_failure() {
             // Given an error from the repo
 
+            let project_settings = ProjectSettings {
+                name: "Test Project".to_string(),
+                path: "test/file/path".into(),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::DataPack,
+            };
+            
+            let project = Project::new(project_settings.clone());
+            
+            let mut project_provider = MockProjectProvider::with_open_project(project.clone());
+            project_provider.settings = MockProjectProviderSettings {
+                fail_calls: true,
+                ..Default::default()
+            };
+
+            let project_service = ProjectService::new(
+                project_provider,
+                MockZipProvider::new(),
+                MockProjectAdapter::new(),
+            );
+
             // When I try to close a project
 
-            // The error should be handled gracefully
+            let result = project_service.close_project(project.get_id());
 
-            panic!("Unimplemented test!")
+            // It should return an appropriate error
+
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::RepoError(ProjectRepoError::Filesystem(_)))));
         }
     }
     
