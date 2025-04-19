@@ -10,6 +10,7 @@ where
 {
     async fn extract(&self, path: &Path) -> Result<T>;
     async fn zip(&self, path: &Path, data: &T, overwrite_existing: bool) -> Result<()>;
+    async fn cleanup_file(&self, path: &Path) -> Result<()>;
 }
 
 pub(crate) type Result<T> = std::result::Result<T, ZipError>;
@@ -50,6 +51,10 @@ where
     }
 
     async fn zip(&self, path: &Path, data: &T, overwrite_existing: bool) -> Result<()> {
+        todo!()
+    }
+
+    async fn cleanup_file(&self, path: &Path) -> Result<()> {
         todo!()
     }
 }
