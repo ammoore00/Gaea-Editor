@@ -367,7 +367,8 @@ mod test {
     use std::sync::RwLock;
     use crate::data::adapters::Adapter;
     use crate::data::adapters::project::{ProjectConversionError, SerializedProjectData};
-    use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
+    use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
+    use crate::data::domain::version;
     use crate::data::serialization::project::Project as SerializedProject;
     use crate::persistence::repositories::project_repo;
     use crate::persistence::repositories::project_repo::{ProjectCloseError, ProjectCreationError, ProjectOpenError, ProjectProvider, ProjectRepoError};
@@ -607,6 +608,29 @@ mod test {
             MockZipProvider::new(),
         ).with_adapter()
     }
+
+    fn test_service_with_project_provider<'a>(project_provider: MockProjectProvider<'a>) -> ProjectService<'a, MockProjectProvider<'a>, MockZipProvider, MockProjectAdapter> {
+        ProjectServiceBuilder::new(
+            project_provider,
+            MockZipProvider::new(),
+        ).with_adapter()
+    }
+
+    fn test_service_with_zip_provider<'a>(zip_provider: MockZipProvider) -> ProjectService<'a, MockProjectProvider<'a>, MockZipProvider, MockProjectAdapter> {
+        ProjectServiceBuilder::new(
+            MockProjectProvider::default(),
+            zip_provider,
+        ).with_adapter()
+    }
+    
+    fn default_test_project_settings() -> ProjectSettings {
+        ProjectSettings {
+            name: "Test Project".to_string(),
+            path: Some("test/file/path".into()),
+            project_version: ProjectVersion { version: version::versions::V1_20_4 },
+            project_type: ProjectType::DataPack,
+        }
+    }
     
     mod create_project {
         use crate::data::domain::project::{ProjectType, ProjectVersion};
@@ -621,12 +645,7 @@ mod test {
 
             // Given valid project settings
             
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
+            let project_settings = default_test_project_settings();
             
             // When I create a project
             
@@ -739,11 +758,7 @@ mod test {
             };
 
             let existing_project = Project::new(project_settings.clone());
-
-            let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_project(existing_project),
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+            let project_service = test_service_with_project_provider(MockProjectProvider::with_project(existing_project));
             
             // When I try to create that project again
 
@@ -764,19 +779,9 @@ mod test {
         fn test_overwrite_existing_project() {
             // Given a project that already exists
 
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
-
+            let project_settings = default_test_project_settings();
             let existing_project = Project::new(project_settings.clone());
-
-            let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_project(existing_project),
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+            let project_service = test_service_with_project_provider(MockProjectProvider::with_project(existing_project));
 
             // When I try to create that project again with the overwrite flag set
 
@@ -804,20 +809,14 @@ mod test {
         fn test_create_project_provider_failure() {
             // Given an error from the repo
 
-            let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_settings(MockProjectProviderSettings {
+            let project_service = test_service_with_project_provider(MockProjectProvider::with_settings(
+                MockProjectProviderSettings {
                     fail_calls: true,
                     ..Default::default()
-                }),
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+                }
+            ));
 
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
+            let project_settings = default_test_project_settings();
             
             // When I try to create a new project
 
@@ -831,9 +830,7 @@ mod test {
     }
     
     mod open_project {
-        use crate::data::domain::project::{ProjectType, ProjectVersion};
-        use crate::data::domain::version;
-        use crate::services::project_service::{ProjectService, ProjectServiceError};
+        use crate::services::project_service::ProjectServiceError;
         use super::*;
         
         /// Test opening a project
@@ -841,19 +838,9 @@ mod test {
         async fn test_open_project() {
             // Given a project that exists
 
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
-
+            let project_settings = default_test_project_settings();
             let existing_project = Project::new(project_settings.clone());
-
-            let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_project(existing_project),
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+            let project_service = test_service_with_project_provider(MockProjectProvider::with_project(existing_project));
             
             // When I open it
 
@@ -912,19 +899,9 @@ mod test {
         async fn test_open_project_already_open() {
             // Given a project which is already open
 
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
-
+            let project_settings = default_test_project_settings();
             let existing_project = Project::new(project_settings.clone());
-
-            let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_open_project(existing_project),
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+            let project_service = test_service_with_project_provider(MockProjectProvider::with_open_project(existing_project));
             
             // When I try to open it again
 
@@ -952,21 +929,15 @@ mod test {
         #[tokio::test]
         async fn test_open_project_provider_failure() {
             // Given an error from the repo
-
-            let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_settings(MockProjectProviderSettings {
+            
+            let project_service = test_service_with_project_provider(MockProjectProvider::with_settings(
+                MockProjectProviderSettings {
                     fail_calls: true,
                     ..Default::default()
-                }),
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+                }
+            ));
 
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
+            let project_settings = default_test_project_settings();
 
             // When I try to open a project
 
@@ -980,8 +951,6 @@ mod test {
     }
     
     mod close_project {
-        use crate::data::domain::project::{ProjectType, ProjectVersion};
-        use crate::data::domain::version;
         use crate::services::project_service::ProjectServiceError;
         use super::*;
         
@@ -990,19 +959,9 @@ mod test {
         fn test_close_project() {
             // Given an open project
 
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
-
+            let project_settings = default_test_project_settings();
             let existing_project = Project::new(project_settings.clone());
-
-            let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_open_project(existing_project.clone()),
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+            let project_service = test_service_with_project_provider(MockProjectProvider::with_open_project(existing_project.clone()));
             
             // When I close it
 
@@ -1025,19 +984,9 @@ mod test {
         fn test_close_project_unsaved_changes() {
             // Given a project with unsaved changes
 
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
-
+            let project_settings = default_test_project_settings();
             let mut existing_project = Project::with_unsaved_changes(project_settings.clone());
-
-            let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_open_project(existing_project.clone()),
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+            let project_service = test_service_with_project_provider(MockProjectProvider::with_open_project(existing_project.clone()));
             
             // When I try to close it
 
@@ -1054,19 +1003,9 @@ mod test {
         fn test_close_project_not_open() {
             // Given a project which is not open
 
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
-
+            let project_settings = default_test_project_settings();
             let existing_project = Project::new(project_settings.clone());
-
-            let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_project(existing_project.clone()),
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+            let project_service = test_service_with_project_provider(MockProjectProvider::with_project(existing_project.clone()));
             
             // When I try to close it
 
@@ -1111,16 +1050,10 @@ mod test {
 
         /// Test graceful error handling when the provider returns an error
         #[test]
-        fn test_create_project_provider_failure() {
+        fn test_close_project_provider_failure() {
             // Given an error from the repo
 
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
-
+            let project_settings = default_test_project_settings();
             let project = Project::new(project_settings.clone());
 
             let mut project_provider = MockProjectProvider::with_open_project(project.clone());
@@ -1128,11 +1061,8 @@ mod test {
                 fail_calls: true,
                 ..Default::default()
             };
-
-            let project_service = ProjectServiceBuilder::new(
-                project_provider,
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+            
+            let project_service = test_service_with_project_provider(project_provider);
 
             // When I try to close a project
 
@@ -1146,8 +1076,6 @@ mod test {
     }
     
     mod save_project {
-        use crate::data::domain::project::{ProjectType, ProjectVersion};
-        use crate::data::domain::version;
         use crate::services::project_service::{ProjectServiceError, SaveError};
         use super::*;
 
@@ -1156,20 +1084,10 @@ mod test {
         async fn test_save_project() {
             // Given a project with unsaved changes
 
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
-
+            let project_settings = default_test_project_settings();
             let project = Project::with_unsaved_changes(project_settings.clone());
             let project_id = project.get_id();
-
-            let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_open_project(project),
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+            let project_service = test_service_with_project_provider(MockProjectProvider::with_open_project(project));
             
             // When I save it
 
@@ -1197,20 +1115,10 @@ mod test {
         async fn test_save_project_no_changes() {
             // Given a project with no unsaved changes
 
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
-
+            let project_settings = default_test_project_settings();
             let project = Project::new(project_settings.clone());
             let project_id = project.get_id();
-
-            let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_open_project(project),
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+            let project_service = test_service_with_project_provider(MockProjectProvider::with_open_project(project));
             
             // When I try to save it
 
@@ -1243,13 +1151,7 @@ mod test {
         async fn test_save_project_provider_failure() {
             // Given an error from the repo
 
-            let project_settings = ProjectSettings {
-                name: "Test Project".to_string(),
-                path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
-            };
-
+            let project_settings = default_test_project_settings();
             let project = Project::with_unsaved_changes(project_settings.clone());
             let project_id = project.get_id();
 
@@ -1259,10 +1161,7 @@ mod test {
                 ..Default::default()
             };
 
-            let project_service = ProjectServiceBuilder::new(
-                project_provider,
-                MockZipProvider::new(),
-            ).with_adapter::<MockProjectAdapter>();
+            let project_service = test_service_with_project_provider(project_provider);
 
             // When I try to save a project
 
