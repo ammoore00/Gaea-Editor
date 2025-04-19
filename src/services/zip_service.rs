@@ -5,10 +5,9 @@ use serde::Serialize;
 use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 
 #[async_trait::async_trait]
-pub trait ZipProvider<T, Filesystem>
+pub trait ZipProvider<T>
 where
     T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>,
-    Filesystem: FilesystemProvider,
 {
     async fn extract(&self, path: &Path) -> Result<T>;
     async fn zip(&self, path: &Path, data: &T, overwrite_existing: bool) -> Result<()>;
@@ -30,7 +29,9 @@ where
     T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>,
     Filesystem: FilesystemProvider,
 {
-    _phantom: PhantomData<(T, Filesystem)>,
+    _phantom: PhantomData<(T)>,
+    
+    filesystem_provider: Filesystem,
 }
 
 impl<T> Default for ZipService<T>
@@ -40,12 +41,13 @@ where
     fn default() -> Self {
         Self {
             _phantom: PhantomData,
+            filesystem_provider: FilesystemService::new(),
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<T, Filesystem> ZipProvider<T, Filesystem> for ZipService<T, Filesystem>
+impl<T, Filesystem> ZipProvider<T> for ZipService<T, Filesystem>
 where
     T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>,
     Filesystem: FilesystemProvider,

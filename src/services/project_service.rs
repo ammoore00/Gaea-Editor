@@ -9,25 +9,22 @@ use crate::data::adapters::project::SerializedProjectOut;
 use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType};
 use crate::data::serialization::project::Project as SerializedProject;
 use crate::persistence::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
-use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 use crate::services::zip_service;
 use crate::services::zip_service::ZipService;
 
 pub struct ProjectServiceBuilder<'a,
     ProjectProvider: project_repo::ProjectProvider = ProjectRepository<'a>,
-    Filesystem: FilesystemProvider = FilesystemService,
-    ZipProvider: zip_service::ZipProvider<SerializedProject, Filesystem> = ZipService<SerializedProject>,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
 > {
-    _phantom: PhantomData<&'a (Filesystem)>,
+    _phantom: PhantomData<&'a ()>,
     project_provider: ProjectProvider,
     zip_provider: ZipProvider,
 }
 
-impl<'a, ProjectProvider, Filesystem, ZipProvider> ProjectServiceBuilder<'a, ProjectProvider, Filesystem, ZipProvider>
+impl<'a, ProjectProvider, ZipProvider> ProjectServiceBuilder<'a, ProjectProvider, ZipProvider>
 where
     ProjectProvider: project_repo::ProjectProvider,
-    Filesystem: FilesystemProvider,
-    ZipProvider: zip_service::ZipProvider<SerializedProject, Filesystem>,
+    ZipProvider: zip_service::ZipProvider<SerializedProject>,
 {
     pub fn new(
         project_provider: ProjectProvider,
@@ -40,7 +37,7 @@ where
         }
     }
 
-    pub fn build(self) -> ProjectService<'a, ProjectProvider, Filesystem, ZipProvider, project::ProjectAdapter> {
+    pub fn build(self) -> ProjectService<'a, ProjectProvider, ZipProvider, project::ProjectAdapter> {
         ProjectService {
             _phantom: PhantomData,
             project_provider: Arc::new(RwLock::new(self.project_provider)),
@@ -50,7 +47,7 @@ where
 
     pub fn with_adapter<Adp: Adapter<SerializedProjectOut, Project>>(
         self
-    ) -> ProjectService<'a, ProjectProvider, Filesystem, ZipProvider, Adp> {
+    ) -> ProjectService<'a, ProjectProvider, ZipProvider, Adp> {
         ProjectService {
             _phantom: PhantomData,
             project_provider: Arc::new(RwLock::new(self.project_provider)),
@@ -61,11 +58,10 @@ where
 
 pub struct ProjectService<'a,
     ProjectProvider: project_repo::ProjectProvider = ProjectRepository<'a>,
-    Filesystem: FilesystemProvider = FilesystemService,
-    ZipProvider: zip_service::ZipProvider<SerializedProject, Filesystem> = ZipService<SerializedProject, Filesystem>,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
     ProjectAdapter: Adapter<SerializedProjectOut, Project> = project::ProjectAdapter,
 > {
-    _phantom: PhantomData<&'a (Filesystem, ProjectAdapter)>,
+    _phantom: PhantomData<&'a (ProjectAdapter)>,
     project_provider: Arc<RwLock<ProjectProvider>>,
     zip_provider: ZipProvider,
 }
@@ -80,11 +76,10 @@ impl<'a> Default for ProjectService<'a> {
     }
 }
 
-impl<'a, ProjectProvider, Filesystem, ZipProvider, ProjectAdapter> ProjectService<'a, ProjectProvider, Filesystem, ZipProvider, ProjectAdapter>
+impl<'a, ProjectProvider, ZipProvider, ProjectAdapter> ProjectService<'a, ProjectProvider, ZipProvider, ProjectAdapter>
 where
     ProjectProvider: project_repo::ProjectProvider,
-    Filesystem: FilesystemProvider,
-    ZipProvider: zip_service::ZipProvider<SerializedProject, Filesystem>,
+    ZipProvider: zip_service::ZipProvider<SerializedProject>,
     ProjectAdapter: Adapter<SerializedProjectOut, Project>,
 {
     pub fn create_project(
@@ -152,7 +147,7 @@ where
                     async { self.zip_provider.extract(data_path.as_path()).await.map_err(ZipError::Zipping) },
                     async { self.zip_provider.extract(resource_path.as_path()).await.map_err(ZipError::Zipping) }
                 )?;
-
+                
                 SerializedProjectOut::Combined { data_project, resource_project }
             }
         };
@@ -175,7 +170,7 @@ where
             // TODO: Assumed to be infallible for now - add proper error handling in the future
             let project_provider = self.project_provider.read().unwrap();
             let project = project_provider.get_project(zip_data.project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
-
+            
             let project_settings = project.get_settings().clone();
             let serialized_project = ProjectAdapter::domain_to_serialized(&*project).unwrap();
 
@@ -188,13 +183,13 @@ where
                 SerializedProjectOut::Single(project),
             ) => {
                 let result = self.zip_provider.zip(path, project, overwrite_existing).await.map_err(ZipError::<ProjectAdapter>::Zipping);
-
+                
                 if let Err(_) = result {
                     self.zip_provider.cleanup_file(path).await.map_err(ZipError::Zipping)?;
                 }
-
+                
                 result?;
-
+                
                 Ok(())
             }
             (
@@ -205,7 +200,7 @@ where
                     async { self.zip_provider.zip(data_path, data_project, overwrite_existing).await.map_err(ZipError::<ProjectAdapter>::Zipping) },
                     async { self.zip_provider.zip(resource_path, resource_project, overwrite_existing).await.map_err(ZipError::<ProjectAdapter>::Zipping) }
                 );
-
+                
                 let (data_cleanup_result, resource_cleanup_result) = tokio::join!(
                     async {
                         if let Err(_) = data_result {
@@ -220,14 +215,14 @@ where
                         Ok::<(), ProjectServiceError<_>>(())
                     },
                 );
-
+                
                 // TODO: Improve error handling in the case of multiple errors occurring
                 data_result?;
                 resource_result?;
-
+                
                 data_cleanup_result?;
                 resource_cleanup_result?;
-
+                
                 Ok(())
             }
             _ => {
@@ -366,9 +361,7 @@ fn type_name_of<T>(_: &T) -> &'static str {
 
 #[cfg(test)]
 mod test {
-    use std::fs::File;
     use std::io;
-    use std::io::Error;
     use std::ops::{Deref, DerefMut};
     use std::path::{Path, PathBuf};
     use std::sync::RwLock;
@@ -378,7 +371,6 @@ mod test {
     use crate::data::serialization::project::Project as SerializedProject;
     use crate::persistence::repositories::project_repo;
     use crate::persistence::repositories::project_repo::{ProjectCloseError, ProjectCreationError, ProjectOpenError, ProjectProvider, ProjectRepoError};
-    use crate::services::filesystem_service::{FilesystemProvider, PathValidationStatus};
     use crate::services::project_service::{ProjectService, ProjectServiceBuilder, ProjectZipData};
     use crate::services::zip_service;
     use crate::services::zip_service::ZipProvider;
@@ -476,7 +468,7 @@ mod test {
             }
 
             let id = project.get_id();
-
+            
             let mut stored_project = self.project.write().unwrap();
             *stored_project = Some(project);
             Ok(id)
@@ -575,7 +567,7 @@ mod test {
     }
 
     #[async_trait::async_trait]
-    impl ZipProvider<SerializedProject, MockFilesystemProvider> for MockZipProvider {
+    impl ZipProvider<SerializedProject> for MockZipProvider {
         async fn extract(&self, path: &Path) -> zip_service::Result<SerializedProject> {
             todo!()
         }
@@ -583,7 +575,7 @@ mod test {
         async fn zip(&self, path: &Path, data: &SerializedProject, overwrite_existing: bool) -> zip_service::Result<()> {
             todo!()
         }
-
+        
         async fn cleanup_file(&self, path: &Path) -> zip_service::Result<()> {
             todo!()
         }
@@ -609,50 +601,7 @@ mod test {
         }
     }
 
-    struct MockFilesystemProvider;
-
-    impl MockFilesystemProvider {
-        fn new() -> Self {
-            Self {}
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl FilesystemProvider for MockFilesystemProvider {
-        async fn save_file(&self, file: File) {
-            todo!()
-        }
-
-        async fn load_file(&self, path: &Path) -> Result<File, Error> {
-            todo!()
-        }
-
-        async fn delete_file(&self, path: &Path) -> Result<(), Error> {
-            todo!()
-        }
-
-        async fn create_directory(&self, path: &Path) -> Result<(), Error> {
-            todo!()
-        }
-
-        async fn create_directory_recursive(&self, path: &Path) -> Result<(), Error> {
-            todo!()
-        }
-
-        async fn delete_directory(&self, path: &Path) -> Result<(), Error> {
-            todo!()
-        }
-
-        async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>, Error> {
-            todo!()
-        }
-
-        async fn validate_path(&self, path: &Path) -> PathValidationStatus {
-            todo!()
-        }
-    }
-
-    fn default_test_service<'a>() -> ProjectService<'a, MockProjectProvider<'a>, MockFilesystemProvider, MockZipProvider, MockProjectAdapter> {
+    fn default_test_service<'a>() -> ProjectService<'a, MockProjectProvider<'a>, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
             MockProjectProvider::default(),
             MockZipProvider::new(),
