@@ -1,6 +1,13 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+#[derive(Debug, Clone)]
 pub struct Project;
+
+impl Default for Project {
+    fn default() -> Self {
+        Self {}
+    }
+}
 
 impl Serialize for Project {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

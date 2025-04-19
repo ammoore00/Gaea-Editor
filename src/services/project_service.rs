@@ -147,7 +147,7 @@ where
                     async { self.zip_provider.extract(data_path.as_path()).await.map_err(ZipError::Zipping) },
                     async { self.zip_provider.extract(resource_path.as_path()).await.map_err(ZipError::Zipping) }
                 )?;
-                
+
                 SerializedProjectData::Combined { data_project, resource_project }
             }
         };
@@ -170,26 +170,27 @@ where
             // TODO: Assumed to be infallible for now - add proper error handling in the future
             let project_provider = self.project_provider.read().unwrap();
             let project = project_provider.get_project(zip_data.project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
-            
+
             let project_settings = project.get_settings().clone();
             let serialized_project = ProjectAdapter::domain_to_serialized(&*project).unwrap();
 
             (serialized_project, project_settings)
         };
 
+        // TODO: Look into verifying this at compile time somehow?
         match (&zip_data.path, &serialized_project) {
             (
                 ZipPath::Single(path),
                 SerializedProjectData::Single(project),
             ) => {
                 let result = self.zip_provider.zip(path, project, overwrite_existing).await.map_err(ZipError::<ProjectAdapter>::Zipping);
-                
+
                 if let Err(_) = result {
                     self.zip_provider.cleanup_file(path).await.map_err(ZipError::Zipping)?;
                 }
-                
+
                 result?;
-                
+
                 Ok(())
             }
             (
@@ -200,7 +201,7 @@ where
                     async { self.zip_provider.zip(data_path, data_project, overwrite_existing).await.map_err(ZipError::<ProjectAdapter>::Zipping) },
                     async { self.zip_provider.zip(resource_path, resource_project, overwrite_existing).await.map_err(ZipError::<ProjectAdapter>::Zipping) }
                 );
-                
+
                 let (data_cleanup_result, resource_cleanup_result) = tokio::join!(
                     async {
                         if let Err(_) = data_result {
@@ -215,14 +216,14 @@ where
                         Ok::<(), ProjectServiceError<_>>(())
                     },
                 );
-                
+
                 // TODO: Improve error handling in the case of multiple errors occurring
                 data_result?;
                 resource_result?;
-                
+
                 data_cleanup_result?;
                 resource_cleanup_result?;
-                
+
                 Ok(())
             }
             _ => {
@@ -365,6 +366,7 @@ mod test {
     use std::ops::{Deref, DerefMut};
     use std::path::{Path, PathBuf};
     use std::sync::RwLock;
+    use once_cell::sync::Lazy;
     use crate::data::adapters::Adapter;
     use crate::data::adapters::project::{ProjectConversionError, SerializedProjectData};
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
@@ -372,9 +374,8 @@ mod test {
     use crate::data::serialization::project::Project as SerializedProject;
     use crate::persistence::repositories::project_repo;
     use crate::persistence::repositories::project_repo::{ProjectCloseError, ProjectCreationError, ProjectOpenError, ProjectProvider, ProjectRepoError};
-    use crate::services::project_service::{ProjectService, ProjectServiceBuilder, ProjectZipData};
-    use crate::services::zip_service;
-    use crate::services::zip_service::ZipProvider;
+    use crate::services::project_service::{ProjectService, ProjectServiceBuilder};
+    use crate::services::zip_service::{self, ZipProvider};
 
     #[derive(Debug, Default)]
     struct ProjectProviderCallTracker {
@@ -469,7 +470,7 @@ mod test {
             }
 
             let id = project.get_id();
-            
+
             let mut stored_project = self.project.write().unwrap();
             *stored_project = Some(project);
             Ok(id)
@@ -559,34 +560,122 @@ mod test {
             "json"
         }
     }
+
+    #[derive(Debug, Default)]
+    struct ZipProviderCallTracker {
+        extract_calls: usize,
+        zip_calls: usize,
+        cleanup_calls: usize,
+    }
     
-    struct MockZipProvider;
+    #[derive(Debug, Default)]
+    struct MockZipProviderSettings {
+        fail_extract: bool,
+        fail_zip: bool,
+        fail_cleanup: bool,
+        project_already_exists: bool,
+    }
+    
+    #[derive(Debug, Default)]
+    struct MockZipProvider {
+        serialized_project: Option<SerializedProject>,
+        settings: RwLock<MockZipProviderSettings>,
+        call_tracker: RwLock<ZipProviderCallTracker>,
+    }
+
     impl MockZipProvider {
-        fn new() -> Self {
-            Self {}
+        fn with_project(serialized_project: SerializedProject) -> Self {
+            Self {
+                serialized_project: Some(serialized_project),
+                ..Self::default()
+            }
+        }
+        
+        fn settings(self, settings: MockZipProviderSettings) -> Self {
+            {
+                *self.settings.write().unwrap() = settings;
+            }
+            self
         }
     }
 
     #[async_trait::async_trait]
     impl ZipProvider<SerializedProject> for MockZipProvider {
         async fn extract(&self, path: &Path) -> zip_service::Result<SerializedProject> {
-            todo!()
+            self.call_tracker.write().unwrap().extract_calls += 1;
+            
+            if self.settings.read().unwrap().fail_extract {
+                return Err(zip_service::ZipError::IOError(io::Error::new(io::ErrorKind::Other, "Mock error!")))
+            }
+            
+            self.serialized_project.clone()
+                .ok_or(zip_service::ZipError::IOError(io::Error::new(io::ErrorKind::NotFound, "Project not found")))
+                .map_err(Into::into)
         }
 
         async fn zip(&self, path: &Path, data: &SerializedProject, overwrite_existing: bool) -> zip_service::Result<()> {
-            todo!()
+            self.call_tracker.write().unwrap().zip_calls += 1;
+
+            if self.settings.read().unwrap().fail_zip {
+                return Err(zip_service::ZipError::IOError(io::Error::new(io::ErrorKind::Other, "Mock error!")))
+            }
+            
+            if self.settings.read().unwrap().project_already_exists && !overwrite_existing {
+                return Err(zip_service::ZipError::IOError(io::Error::new(io::ErrorKind::AlreadyExists, "Project already exists")))
+            }
+            
+            Ok(())
+        }
+
+        async fn cleanup_file(&self, path: &Path) -> zip_service::Result<()> {
+            self.call_tracker.write().unwrap().cleanup_calls += 1;
+
+            if self.settings.read().unwrap().fail_cleanup {
+                return Err(zip_service::ZipError::IOError(io::Error::new(io::ErrorKind::Other, "Mock error!")))
+            }
+
+            Ok(())
+        }
+    }
+
+    static PROJECT_ADAPTER_CONFIG: Lazy<RwLock<ProjectAdapterConfig>> = Lazy::new(|| {
+        RwLock::new(ProjectAdapterConfig::default())
+    });
+
+    #[derive(Debug, Default)]
+    struct ProjectAdapterConfig {
+        serialized_project: Option<SerializedProject>,
+        project: Option<Project>,
+        fail_conversion: RwLock<bool>,
+    }
+    
+    impl ProjectAdapterConfig {
+        fn new(serialized_project: SerializedProject, project: Project) -> Self {
+            Self {
+                serialized_project: Some(serialized_project),
+                project: Some(project),
+                fail_conversion: RwLock::new(false),
+            }
         }
         
-        async fn cleanup_file(&self, path: &Path) -> zip_service::Result<()> {
-            todo!()
+        fn fail_conversion(self) -> Self {
+            {
+                *self.fail_conversion.write().unwrap() = true;
+            }
+            self
         }
     }
 
     #[derive(Debug)]
     struct MockProjectAdapter;
+    
     impl MockProjectAdapter {
-        fn new() -> Self {
-            Self {}
+        fn set_config(config: ProjectAdapterConfig) {
+            *PROJECT_ADAPTER_CONFIG.write().unwrap() = config;
+        }
+        
+        fn reset_config() {
+            *PROJECT_ADAPTER_CONFIG.write().unwrap() = ProjectAdapterConfig::default();
         }
     }
 
@@ -594,25 +683,42 @@ mod test {
         type ConversionError = ProjectConversionError;
 
         fn serialized_to_domain(serialized: &SerializedProjectData) -> Result<Project, Self::ConversionError> {
-            todo!()
+            let config = PROJECT_ADAPTER_CONFIG.read().unwrap();
+            
+            if *config.fail_conversion.read().unwrap() {
+                return Err(Self::ConversionError::InvalidProject)
+            }
+            
+            Ok(config.project.clone().unwrap())
         }
 
         fn domain_to_serialized(domain: &Project) -> Result<SerializedProjectData, Self::SerializedConversionError> {
-            todo!()
+            match domain.get_settings().project_type {
+                ProjectType::Combined => {
+                    let serialized_project = PROJECT_ADAPTER_CONFIG.read().unwrap().serialized_project.clone().unwrap();
+                    Ok(SerializedProjectData::Combined {
+                        data_project: serialized_project.clone(),
+                        resource_project: serialized_project,
+                    })
+                }
+                _ => {
+                    Ok(SerializedProjectData::Single(PROJECT_ADAPTER_CONFIG.read().unwrap().serialized_project.clone().unwrap()))
+                }
+            }
         }
     }
 
     fn default_test_service<'a>() -> ProjectService<'a, MockProjectProvider<'a>, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
             MockProjectProvider::default(),
-            MockZipProvider::new(),
+            MockZipProvider::default(),
         ).with_adapter()
     }
 
     fn test_service_with_project_provider<'a>(project_provider: MockProjectProvider<'a>) -> ProjectService<'a, MockProjectProvider<'a>, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
             project_provider,
-            MockZipProvider::new(),
+            MockZipProvider::default(),
         ).with_adapter()
     }
 
@@ -622,7 +728,7 @@ mod test {
             zip_provider,
         ).with_adapter()
     }
-    
+
     fn default_test_project_settings() -> ProjectSettings {
         ProjectSettings {
             name: "Test Project".to_string(),
@@ -929,7 +1035,7 @@ mod test {
         #[tokio::test]
         async fn test_open_project_provider_failure() {
             // Given an error from the repo
-            
+
             let project_service = test_service_with_project_provider(MockProjectProvider::with_settings(
                 MockProjectProviderSettings {
                     fail_calls: true,
@@ -1061,7 +1167,7 @@ mod test {
                 fail_calls: true,
                 ..Default::default()
             };
-            
+
             let project_service = test_service_with_project_provider(project_provider);
 
             // When I try to close a project
@@ -1175,143 +1281,421 @@ mod test {
     }
     
     mod import_zip {
+        use crate::services::project_service::{ProjectServiceError, ZipError, ZipPath};
         use super::*;
 
         /// Test importing a datapack from a zip as a new project
-        #[test]
-        fn test_import_datapack_from_zip() {
-            // Given a valid datapack zip
+        #[tokio::test]
+        async fn test_import_from_zip() {
+            // Given a valid zip
+
+            let serialized_project = SerializedProject::default();
+            let project = Project::new(default_test_project_settings());
+            
+            MockProjectAdapter::reset_config();
+            MockProjectAdapter::set_config(ProjectAdapterConfig {
+                serialized_project: Some(serialized_project.clone()),
+                project: Some(project),
+                fail_conversion: Default::default(),
+            });
+            
+            let path = ZipPath::Single("test/file/path.zip".into());
+            
+            let project_service = test_service_with_zip_provider(MockZipProvider::with_project(serialized_project));
             
             // When I import it
             
-            // It should return a new datapack project
+            let project_id = project_service.import_zip(path).await.unwrap();
+            
+            // It should return a new project
+            
+            assert_ne!(project_id, ProjectID::nil());
 
-            // TODO: Implement test
+            let project_provider = project_service.project_provider.read().unwrap();
+            
+            let imported_project = project_provider.get_project(project_id);
+            assert!(imported_project.is_some());
+            
+            let project_provider_call_tracker = project_provider.call_tracker.read().unwrap();
+            assert_eq!(project_provider_call_tracker.add_project_calls, 1);
+            
+            let zip_provider_call_tracker = project_service.zip_provider.call_tracker.read().unwrap();
+            assert_eq!(zip_provider_call_tracker.extract_calls, 1);
         }
+        
+        #[tokio::test]
+        async fn test_import_combined_project() {
+            // Given a valid zip pair
 
-        /// Test importing a resourcepack from a zip as a new project
-        #[test]
-        fn test_import_resourcepack_from_zip() {
-            // Given a valid resourcepack zip
+            let serialized_project = SerializedProject::default();
+            let project = Project::new(default_test_project_settings());
 
-            // When I import it
+            MockProjectAdapter::reset_config();
+            MockProjectAdapter::set_config(ProjectAdapterConfig {
+                serialized_project: Some(serialized_project.clone()),
+                project: Some(project),
+                fail_conversion: Default::default(),
+            });
 
-            // It should return a new resourcepack project
+            let path = ZipPath::Combined {
+                data_path: "test/file/path_data.zip".into(),
+                resource_path: "test/file/path_resource.zip".into(),
+            };
 
-            // TODO: Implement test
+            let project_service = test_service_with_zip_provider(MockZipProvider::with_project(serialized_project));
+
+            // When I import them
+
+            let project_id = project_service.import_zip(path).await.unwrap();
+
+            // It should return a new project
+
+            assert_ne!(project_id, ProjectID::nil());
+
+            let project_provider = project_service.project_provider.read().unwrap();
+
+            let imported_project = project_provider.get_project(project_id);
+            assert!(imported_project.is_some());
+
+            let project_provider_call_tracker = project_provider.call_tracker.read().unwrap();
+            assert_eq!(project_provider_call_tracker.add_project_calls, 1);
+
+            let zip_provider_call_tracker = project_service.zip_provider.call_tracker.read().unwrap();
+            assert_eq!(zip_provider_call_tracker.extract_calls, 2);
         }
 
         /// Test trying to import an invalid zip file
-        #[test]
-        fn test_import_from_zip_invalid_zip() {
-            // Given an invalid zip
+        #[tokio::test]
+        async fn test_import_provider_error() {
+            // Given an error from the zip provider
+
+            let serialized_project = SerializedProject::default();
+            let project = Project::new(default_test_project_settings());
+
+            MockProjectAdapter::reset_config();
+            MockProjectAdapter::set_config(ProjectAdapterConfig {
+                serialized_project: Some(serialized_project.clone()),
+                project: Some(project),
+                fail_conversion: Default::default(),
+            });
+
+            let path = ZipPath::Single("test/file/path.zip".into());
+
+            let zip_provider = MockZipProvider::with_project(serialized_project).settings(MockZipProviderSettings {
+                fail_extract: true,
+                ..MockZipProviderSettings::default()
+            });
+            let project_service = test_service_with_zip_provider(zip_provider);
             
             // When I try to import it
+
+            let result = project_service.import_zip(path).await;
             
             // It should return an appropriate error
 
-            // TODO: Implement test
-        }
-        
-        /// Test trying to import a non-zip file as a zip
-        #[test]
-        fn test_import_not_a_zip_file() {
-            // Given an invalid zip
-
-            // When I try to import it
-
-            // It should return an appropriate error
-
-            // TODO: Implement test
-        }
-        
-        /// Test graceful error handling when the filesystem returns an error
-        #[test]
-        fn test_import_filesystem_error() {
-            // Given an error from the filesystem
-
-            // When I try to import a zip file
-
-            // The error should be handled gracefully
-
-            // TODO: Implement test
-        }
-
-        /// Test graceful error handling when the provider returns an error
-        #[test]
-        fn test_import_provider_error() {
-            // Given an error from the project repo
-
-            // When I try to import a zip file
-
-            // The error should be handled gracefully
-
-            // TODO: Implement test
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::Zip(ZipError::Zipping(_)))));
         }
     }
     
     mod export_zip {
+        use crate::services::project_service::{ProjectServiceError, ProjectZipData, ZipError, ZipPath};
         use super::*;
 
         /// Test exporting a single-typed project to a zip
-        #[test]
-        fn test_export_to_zip() {
+        #[tokio::test]
+        async fn test_export_to_zip() {
             // Given a valid project
 
+            let serialized_project = SerializedProject::default();
+            let project = Project::new(default_test_project_settings());
+
+            MockProjectAdapter::reset_config();
+            MockProjectAdapter::set_config(ProjectAdapterConfig {
+                serialized_project: Some(serialized_project.clone()),
+                project: Some(project.clone()),
+                fail_conversion: Default::default(),
+            });
+
+            let path = ZipPath::Single("test/file/path.zip".into());
+
+            let project_service = ProjectServiceBuilder::new(
+                MockProjectProvider::with_project(project.clone()),
+                MockZipProvider::with_project(serialized_project),
+            ).with_adapter::<MockProjectAdapter>();
+            
+            let project_zip_data = ProjectZipData {
+                project_id: project.get_id(),
+                path,
+            };
+
             // When I export it
+            
+            let result = project_service.export_zip(project_zip_data, false).await;
 
-            // It should return a valid zip file
+            // It should export without error
 
-            // TODO: Implement test
+            assert!(result.is_ok());
+
+            let zip_provider_call_tracker = project_service.zip_provider.call_tracker.read().unwrap();
+            assert_eq!(zip_provider_call_tracker.zip_calls, 1);
         }
 
         /// Test exporting a project with resource and data components to multiple zip files
-        #[test]
-        fn test_export_combined_project() {
+        #[tokio::test]
+        async fn test_export_combined_project() {
             // Given a project with both resource and data components
+
+            let serialized_project = SerializedProject::default();
+            let project = Project::new(ProjectSettings {
+                name: "Test Project".to_string(),
+                path: Some("test/file/path".into()),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::Combined,
+            });
+
+            MockProjectAdapter::reset_config();
+            MockProjectAdapter::set_config(ProjectAdapterConfig {
+                serialized_project: Some(serialized_project.clone()),
+                project: Some(project.clone()),
+                fail_conversion: Default::default(),
+            });
+
+            let path = ZipPath::Combined {
+                data_path: "test/file/path_data.zip".into(),
+                resource_path: "test/file/path_resource.zip".into(),
+            };
+
+            let project_service = ProjectServiceBuilder::new(
+                MockProjectProvider::with_project(project.clone()),
+                MockZipProvider::with_project(serialized_project),
+            ).with_adapter::<MockProjectAdapter>();
+
+            let project_zip_data = ProjectZipData {
+                project_id: project.get_id(),
+                path,
+            };
 
             // When I export it
 
+            let result = project_service.export_zip(project_zip_data, false).await;
+
             // Both zips should be returned properly
 
-            // TODO: Implement test
+            assert!(result.is_ok());
+
+            let zip_provider_call_tracker = project_service.zip_provider.call_tracker.read().unwrap();
+            assert_eq!(zip_provider_call_tracker.zip_calls, 2);
         }
 
-        /// Test attempting to create a project while one already exists with the same name
-        #[test]
-        fn test_export_duplicate_zip() {
-            // Given a zip that already exists
+        /// Test exporting a project with mismatched combined variants (combined project and single path)
+        #[tokio::test]
+        async fn test_export_combined_project_single_path() {
+            // Given a project with combined type and a single path
 
-            // When I try to export that zip again
+            let serialized_project = SerializedProject::default();
+            let project = Project::new(ProjectSettings {
+                name: "Test Project".to_string(),
+                path: Some("test/file/path".into()),
+                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_type: ProjectType::Combined,
+            });
+
+            MockProjectAdapter::reset_config();
+            MockProjectAdapter::set_config(ProjectAdapterConfig {
+                serialized_project: Some(serialized_project.clone()),
+                project: Some(project.clone()),
+                fail_conversion: Default::default(),
+            });
+
+            let path = ZipPath::Single("test/file/path.zip".into());
+
+            let project_service = ProjectServiceBuilder::new(
+                MockProjectProvider::with_project(project.clone()),
+                MockZipProvider::with_project(serialized_project),
+            ).with_adapter::<MockProjectAdapter>();
+
+            let project_zip_data = ProjectZipData {
+                project_id: project.get_id(),
+                path,
+            };
+
+            // When I export it
+
+            let result = project_service.export_zip(project_zip_data, false).await;
+
+            // It should return an appropriate error
+            
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::Zip(ZipError::MismatchedPaths(_, _)))));
+        }
+
+        /// Test exporting a project with mismatched combined variants (single project and combined path)
+        #[tokio::test]
+        async fn test_export_single_project_combined_path() {
+            // Given a project with combined type and a single path
+
+            let serialized_project = SerializedProject::default();
+            let project = Project::new(default_test_project_settings());
+
+            MockProjectAdapter::reset_config();
+            MockProjectAdapter::set_config(ProjectAdapterConfig {
+                serialized_project: Some(serialized_project.clone()),
+                project: Some(project.clone()),
+                fail_conversion: Default::default(),
+            });
+
+            let path = ZipPath::Combined {
+                data_path: "test/file/path_data.zip".into(),
+                resource_path: "test/file/path_resource.zip".into(),
+            };
+
+            let project_service = ProjectServiceBuilder::new(
+                MockProjectProvider::with_project(project.clone()),
+                MockZipProvider::with_project(serialized_project),
+            ).with_adapter::<MockProjectAdapter>();
+
+            let project_zip_data = ProjectZipData {
+                project_id: project.get_id(),
+                path,
+            };
+
+            // When I export it
+
+            let result = project_service.export_zip(project_zip_data, false).await;
 
             // It should return an appropriate error
 
-            // TODO: Implement test
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::Zip(ZipError::MismatchedPaths(_, _)))));
+        }
+
+        /// Test attempting to create a project while one already exists with the same name
+        #[tokio::test]
+        async fn test_export_duplicate_zip() {
+            // Given a zip that already exists
+
+            let serialized_project = SerializedProject::default();
+            let project = Project::new(default_test_project_settings());
+
+            MockProjectAdapter::reset_config();
+            MockProjectAdapter::set_config(ProjectAdapterConfig {
+                serialized_project: Some(serialized_project.clone()),
+                project: Some(project.clone()),
+                fail_conversion: Default::default(),
+            });
+
+            let path = ZipPath::Single("test/file/path.zip".into());
+            
+            let zip_provider = MockZipProvider::with_project(serialized_project).settings(MockZipProviderSettings {
+                project_already_exists: true,
+                ..MockZipProviderSettings::default()
+            });
+
+            let project_service = ProjectServiceBuilder::new(
+                MockProjectProvider::with_project(project.clone()),
+                zip_provider,
+            ).with_adapter::<MockProjectAdapter>();
+
+            let project_zip_data = ProjectZipData {
+                project_id: project.get_id(),
+                path,
+            };
+
+            // When I try to export that zip again
+
+            let result = project_service.export_zip(project_zip_data, false).await;
+
+            // It should return an appropriate error
+
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::Zip(ZipError::Zipping(_)))));
         }
 
         /// Test creating a new project while one already exists with the same name
         /// but the overwrite flag is set
-        #[test]
-        fn test_overwrite_existing_zip() {
+        #[tokio::test]
+        async fn test_overwrite_existing_zip() {
             // Given a zip that already exists
+
+            let serialized_project = SerializedProject::default();
+            let project = Project::new(default_test_project_settings());
+
+            MockProjectAdapter::reset_config();
+            MockProjectAdapter::set_config(ProjectAdapterConfig {
+                serialized_project: Some(serialized_project.clone()),
+                project: Some(project.clone()),
+                fail_conversion: Default::default(),
+            });
+
+            let path = ZipPath::Single("test/file/path.zip".into());
+
+            let zip_provider = MockZipProvider::with_project(serialized_project).settings(MockZipProviderSettings {
+                project_already_exists: true,
+                ..MockZipProviderSettings::default()
+            });
+
+            let project_service = ProjectServiceBuilder::new(
+                MockProjectProvider::with_project(project.clone()),
+                zip_provider,
+            ).with_adapter::<MockProjectAdapter>();
+
+            let project_zip_data = ProjectZipData {
+                project_id: project.get_id(),
+                path,
+            };
 
             // When I try to overwrite that zip
 
+            let result = project_service.export_zip(project_zip_data, true).await;
+
             // It should create the new project
 
-            // TODO: Implement test
+            assert!(result.is_ok());
         }
 
-        /// Test graceful error handling when the filesystem returns an error
-        #[test]
-        fn test_export_filesystem_error() {
-            // Given an error from the filesystem
+        /// Test graceful error handling when the zip provider returns an error
+        #[tokio::test]
+        async fn test_export_error() {
+            // Given an error from the zip provider
+
+            let serialized_project = SerializedProject::default();
+            let project = Project::new(default_test_project_settings());
+
+            MockProjectAdapter::reset_config();
+            MockProjectAdapter::set_config(ProjectAdapterConfig {
+                serialized_project: Some(serialized_project.clone()),
+                project: Some(project.clone()),
+                fail_conversion: Default::default(),
+            });
+
+            let path = ZipPath::Single("test/file/path.zip".into());
+
+            let zip_provider = MockZipProvider::with_project(serialized_project).settings(MockZipProviderSettings {
+                fail_zip: true,
+                ..MockZipProviderSettings::default()
+            });
+
+            let project_service = ProjectServiceBuilder::new(
+                MockProjectProvider::with_project(project.clone()),
+                zip_provider,
+            ).with_adapter::<MockProjectAdapter>();
+
+            let project_zip_data = ProjectZipData {
+                project_id: project.get_id(),
+                path,
+            };
 
             // When I try to export a project
 
+            let result = project_service.export_zip(project_zip_data, false).await;
+
             // The error should be handled gracefully
 
-            // TODO: Implement test
+            assert!(result.is_err());
+            assert!(matches!(result, Err(ProjectServiceError::Zip(ZipError::Zipping(_)))));
         }
+        
+        // TODO: More in depth error handling testing on cleanup calls, etc
     }
 }
