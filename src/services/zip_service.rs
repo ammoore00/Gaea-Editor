@@ -2,11 +2,13 @@ use std::io;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use serde::Serialize;
+use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 
 #[async_trait::async_trait]
-pub trait ZipProvider<T>
+pub trait ZipProvider<T, Filesystem>
 where
-    T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>
+    T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>,
+    Filesystem: FilesystemProvider,
 {
     async fn extract(&self, path: &Path) -> Result<T>;
     async fn zip(&self, path: &Path, data: &T, overwrite_existing: bool) -> Result<()>;
@@ -23,11 +25,12 @@ pub enum ZipError {
     IOError(#[from] io::Error),
 }
 
-pub struct ZipService<T>
+pub struct ZipService<T, Filesystem = FilesystemService>
 where
-    T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>
+    T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>,
+    Filesystem: FilesystemProvider,
 {
-    _phantom: PhantomData<T>,
+    _phantom: PhantomData<(T, Filesystem)>,
 }
 
 impl<T> Default for ZipService<T>
@@ -42,9 +45,10 @@ where
 }
 
 #[async_trait::async_trait]
-impl<T> ZipProvider<T> for ZipService<T>
+impl<T, Filesystem> ZipProvider<T, Filesystem> for ZipService<T, Filesystem>
 where
-    T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>
+    T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>,
+    Filesystem: FilesystemProvider,
 {
     async fn extract(&self, path: &Path) -> Result<T> {
         todo!()
