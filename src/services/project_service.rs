@@ -5,22 +5,23 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::adapters::project;
-use crate::data::adapters::project::{ProjectConversionError, SerializedProjectOut};
+use crate::data::adapters::project::SerializedProjectOut;
 use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType};
 use crate::data::serialization::project::Project as SerializedProject;
 use crate::persistence::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
 use crate::services::zip_service;
 use crate::services::zip_service::ZipService;
 
-pub struct ProjectServiceBuilder<
-    ProjectProvider: project_repo::ProjectProvider = ProjectRepository,
+pub struct ProjectServiceBuilder<'a,
+    ProjectProvider: project_repo::ProjectProvider = ProjectRepository<'a>,
     ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
 > {
+    _phantom: PhantomData<&'a ()>,
     project_provider: ProjectProvider,
     zip_provider: ZipProvider,
 }
 
-impl<ProjectProvider, ZipProvider> ProjectServiceBuilder<ProjectProvider, ZipProvider>
+impl<'a, ProjectProvider, ZipProvider> ProjectServiceBuilder<'a, ProjectProvider, ZipProvider>
 where
     ProjectProvider: project_repo::ProjectProvider,
     ZipProvider: zip_service::ZipProvider<SerializedProject>,
@@ -30,12 +31,13 @@ where
         zip_provider: ZipProvider,
     ) -> Self {
         Self {
+            _phantom: PhantomData,
             project_provider,
             zip_provider,
         }
     }
 
-    pub fn build(self) -> ProjectService<ProjectProvider, ZipProvider, project::ProjectAdapter> {
+    pub fn build(self) -> ProjectService<'a, ProjectProvider, ZipProvider, project::ProjectAdapter> {
         ProjectService {
             _phantom: PhantomData,
             project_provider: Arc::new(RwLock::new(self.project_provider)),
@@ -45,7 +47,7 @@ where
 
     pub fn with_adapter<Adp: Adapter<SerializedProjectOut, Project>>(
         self
-    ) -> ProjectService<ProjectProvider, ZipProvider, Adp> {
+    ) -> ProjectService<'a, ProjectProvider, ZipProvider, Adp> {
         ProjectService {
             _phantom: PhantomData,
             project_provider: Arc::new(RwLock::new(self.project_provider)),
@@ -55,17 +57,17 @@ where
 }
 
 
-pub struct ProjectService<
-    ProjectProvider: project_repo::ProjectProvider = ProjectRepository,
+pub struct ProjectService<'a,
+    ProjectProvider: project_repo::ProjectProvider = ProjectRepository<'a>,
     ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
     ProjectAdapter: Adapter<SerializedProjectOut, Project> = project::ProjectAdapter,
 > {
-    _phantom: PhantomData<(ProjectAdapter)>,
+    _phantom: PhantomData<&'a (ProjectAdapter)>,
     project_provider: Arc<RwLock<ProjectProvider>>,
     zip_provider: ZipProvider,
 }
 
-impl Default for ProjectService {
+impl<'a> Default for ProjectService<'a> {
     fn default() -> Self {
         Self {
             _phantom: PhantomData,
@@ -75,7 +77,7 @@ impl Default for ProjectService {
     }
 }
 
-impl<ProjectProvider, ZipProvider, ProjectAdapter> ProjectService<ProjectProvider, ZipProvider, ProjectAdapter>
+impl<'a, ProjectProvider, ZipProvider, ProjectAdapter> ProjectService<'a, ProjectProvider, ZipProvider, ProjectAdapter>
 where
     ProjectProvider: project_repo::ProjectProvider,
     ZipProvider: zip_service::ZipProvider<SerializedProject>,
@@ -87,9 +89,9 @@ where
         overwrite_existing: bool,
     ) -> Result<ProjectID, ProjectAdapter> {
         let sanitized_settings = Self::sanitize_project_settings(settings)?;
-        
+
         let project = Project::new(sanitized_settings);
-        
+
         let project_id = self.project_provider.write().unwrap().add_project(project, overwrite_existing)?;
         Ok(project_id)
     }
@@ -120,14 +122,14 @@ where
         }
 
         let path = project.get_settings().path.clone();
-        
+
         if let Some(path) = path {
             // TODO: Make this thread safe
             project_provider.save_project(project_id).await?;
-            
-            let project = project_provider.get_project_mut(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
+
+            let mut project = project_provider.get_project_mut(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
             project.clear_unsaved_changes();
-            
+
             Ok(path)
         }
         else {
@@ -140,20 +142,20 @@ where
             // TODO: Make this thread safe
             ZipPath::Single(path) => {
                 let serialized_project = self.zip_provider.extract(path.as_path()).await.map_err(ZipError::Zipping)?;
-                
+
                 SerializedProjectOut::Single(serialized_project)
             }
             ZipPath::Combined { data_path, resource_path } => {
                 let data_project = self.zip_provider.extract(data_path.as_path()).await.map_err(ZipError::Zipping)?;
                 let resource_project = self.zip_provider.extract(data_path.as_path()).await.map_err(ZipError::Zipping)?;
-                
+
                 SerializedProjectOut::Combined { data_project, resource_project }
             }
         };
 
         let project = ProjectAdapter::serialized_to_domain(&serialized_project).map_err(|e| ZipError::Deserialization(e))?;
         let project_id = project.get_id();
-        
+
         self.project_provider.write().unwrap().add_project(project, false)?;
         Ok(project_id)
     }
@@ -166,7 +168,7 @@ where
         let project_provider = self.project_provider.read().unwrap();
         let project = project_provider.get_project(zip_data.project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
 
-        let serialized_project = ProjectAdapter::domain_to_serialized(project).unwrap();
+        let serialized_project = ProjectAdapter::domain_to_serialized(&*project).unwrap();
 
         // TODO: Make this thread safe
         match (&zip_data.path, &serialized_project) {
@@ -200,13 +202,13 @@ where
 
         Ok(settings)
     }
-    
+
     fn sanitize_path(path: &Path) -> Result<PathBuf, ProjectAdapter> {
         let options = sanitize_filename::Options {
             replacement: "_",
             ..sanitize_filename::Options::default()
         };
-        
+
         let sanitized_path = path.iter().map(|path_segment| sanitize_filename::sanitize_with_options(path_segment.to_string_lossy(), options.clone())).collect();
         Ok(sanitized_path)
     }
@@ -321,10 +323,10 @@ fn type_name_of<T>(_: &T) -> &'static str {
 
 #[cfg(test)]
 mod test {
-    use std::cell::RefCell;
     use std::io;
+    use std::ops::{Deref, DerefMut};
     use std::path::{Path, PathBuf};
-    use std::sync::Mutex;
+    use std::sync::RwLock;
     use crate::data::adapters::Adapter;
     use crate::data::adapters::project::{ProjectConversionError, SerializedProjectOut};
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
@@ -348,27 +350,55 @@ mod test {
         fail_calls: bool,
     }
 
-    #[derive(Default)]
-    struct MockProjectProvider {
-        project: Option<Project>,
-        is_project_open: bool,
+    struct MockProjectRef<'a>(&'a Project);
 
-        call_tracker: Mutex<RefCell<ProjectProviderCallTracker>>,
+    impl<'a> Deref for MockProjectRef<'a> {
+        type Target = Project;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    struct MockProjectRefMut<'a>(&'a mut Project);
+
+    impl<'a> Deref for MockProjectRefMut<'a> {
+        type Target = Project;
+
+        fn deref(&self) -> &Self::Target {
+            self.0
+        }
+    }
+
+    impl<'a> DerefMut for MockProjectRefMut<'a> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            self.0
+        }
+    }
+
+    #[derive(Default)]
+    struct MockProjectProvider<'a> {
+        _phantom: std::marker::PhantomData<&'a ()>,
+
+        project: RwLock<Option<Project>>,
+        is_project_open: RwLock<bool>,
+
+        call_tracker: RwLock<ProjectProviderCallTracker>,
         settings: MockProjectProviderSettings,
     }
 
-    impl MockProjectProvider {
+    impl<'a> MockProjectProvider<'a> {
         fn with_project(project: Project) -> Self {
             Self {
-                project: Some(project),
+                project: RwLock::new(Some(project)),
                 ..Self::default()
             }
         }
 
         fn with_open_project(project: Project) -> Self {
             Self {
-                project: Some(project),
-                is_project_open: true,
+                project: RwLock::new(Some(project)),
+                is_project_open: RwLock::new(true),
                 ..Self::default()
             }
         }
@@ -382,11 +412,14 @@ mod test {
     }
 
     #[async_trait::async_trait]
-    impl ProjectProvider for MockProjectProvider {
-        fn add_project(&mut self, project: Project, overwrite_existing: bool) -> project_repo::Result<ProjectID> {
-            self.call_tracker.lock().unwrap().borrow_mut().add_project_calls += 1;
+    impl<'a> ProjectProvider for MockProjectProvider<'a> {
+        type Ref = MockProjectRef<'a>;
+        type RefMut = MockProjectRefMut<'a>;
 
-            if let Some(existing_project) = &self.project {
+        fn add_project(&self, project: Project, overwrite_existing: bool) -> project_repo::Result<ProjectID> {
+            self.call_tracker.write().unwrap().add_project_calls += 1;
+
+            if let Some(existing_project) = self.project.read().unwrap().as_ref() {
                 if !overwrite_existing && existing_project.get_settings().path == project.get_settings().path {
                     return Err(ProjectRepoError::Create(ProjectCreationError::FileAlreadyExists))
                 }
@@ -395,67 +428,89 @@ mod test {
             if self.settings.fail_calls {
                 return Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::Other, "Mock error!")));
             }
+
+            let id = project.get_id();
             
-            self.project = Some(project);
-            let id = self.project.as_ref().unwrap().get_id();
+            let mut stored_project = self.project.write().unwrap();
+            *stored_project = Some(project);
             Ok(id)
         }
 
-        fn get_project(&self, id: ProjectID) -> Option<&Project> {
-            self.project.as_ref()
+        fn get_project(&self, _id: ProjectID) -> Option<Self::Ref> {
+            self.project.read().unwrap().as_ref().map(move |project| {
+                unsafe { std::mem::transmute(MockProjectRef(project)) }
+            })
         }
 
-        fn get_project_mut(&mut self, id: ProjectID) -> Option<&mut Project> {
-            self.project.as_mut()
+        fn get_project_mut(&self, id: ProjectID) -> Option<Self::RefMut> {
+            self.project.read().unwrap().as_ref().map(move |project| {
+                unsafe { std::mem::transmute(MockProjectRef(project)) }
+            })
         }
 
-        async fn open_project(&mut self, path: &Path) -> project_repo::Result<ProjectID> {
-            self.call_tracker.lock().unwrap().borrow_mut().open_project_calls += 1;
+        fn with_project<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+        where
+            F: FnOnce(&Project) -> R
+        {
+            todo!()
+        }
+
+        fn with_project_mut<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+        where
+            F: FnOnce(&mut Project) -> R
+        {
+            todo!()
+        }
+
+        async fn open_project(&self, path: &Path) -> project_repo::Result<ProjectID> {
+            self.call_tracker.write().unwrap().open_project_calls += 1;
 
             if self.settings.fail_calls {
                 return Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::Other, "Mock error!")));
             }
 
-            if self.is_project_open {
+            if *self.is_project_open.read().unwrap() {
                 return Err(ProjectRepoError::Open(ProjectOpenError::AlreadyOpen));
             }
 
-            match &self.project {
+            match self.project.read().unwrap().as_ref() {
                 Some(project) => {
-                    self.is_project_open = true;
+                    let mut is_project_open = self.is_project_open.write().unwrap();
+                    *is_project_open = true;
                     Ok(project.get_id())
                 },
                 None => Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::NotFound, "Project not found"))),
             }
         }
 
-        fn close_project(&mut self, id: ProjectID) -> project_repo::Result<()> {
-            self.call_tracker.lock().unwrap().borrow_mut().close_project_calls += 1;
+        fn close_project(&self, id: ProjectID) -> project_repo::Result<()> {
+            self.call_tracker.write().unwrap().close_project_calls += 1;
 
             if self.settings.fail_calls {
                 return Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::Other, "Mock error!")));
             }
-            
-            if !self.is_project_open {
+
+            if !*self.is_project_open.read().unwrap() {
                 return Err(ProjectRepoError::Close(ProjectCloseError::FileNotOpen));
             }
 
-            self.is_project_open = false;
+            let mut is_project_open = self.is_project_open.write().unwrap();
+            *is_project_open = false;
             Ok(())
         }
 
         async fn save_project(&self, id: ProjectID) -> project_repo::Result<PathBuf> {
-            self.call_tracker.lock().unwrap().borrow_mut().save_project_calls += 1;
+            self.call_tracker.write().unwrap().save_project_calls += 1;
 
             if self.settings.fail_calls {
                 return Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::Other, "Mock error!")));
             }
 
-            if !self.is_project_open {
+            if !*self.is_project_open.read().unwrap() {
                 return Err(ProjectRepoError::Close(ProjectCloseError::FileNotOpen));
             }
 
-            self.project.clone()
+            self.project.read().unwrap().clone()
                 .map(|project| project.get_settings().path.clone())
                 .flatten()
                 .ok_or(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::NotFound, "Project not found")))
@@ -504,7 +559,7 @@ mod test {
         }
     }
 
-    fn default_test_service() -> ProjectService<MockProjectProvider, MockZipProvider, MockProjectAdapter> {
+    fn default_test_service<'a>() -> ProjectService<'a, MockProjectProvider<'a>, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
             MockProjectProvider::default(),
             MockZipProvider::new(),
@@ -557,8 +612,7 @@ mod test {
             assert_ne!(project_id, ProjectID::nil());
 
             // Verify calls to the provider
-            let call_tracker = project_provider.call_tracker.lock().unwrap();
-            let call_tracker = call_tracker.borrow();
+            let call_tracker = project_provider.call_tracker.read().unwrap();
             assert_eq!(call_tracker.add_project_calls, 1);
         }
 
@@ -768,7 +822,7 @@ mod test {
             let project_provider = project_service.project_provider.read().unwrap();
             let opened_project = project_provider.get_project(project_id).unwrap();
 
-            assert!(project_provider.is_project_open);
+            assert!(*project_provider.is_project_open.read().unwrap());
 
             let mut comparison_project = Project::new(project_settings.clone());
             comparison_project.set_id(project_id);
@@ -776,8 +830,7 @@ mod test {
             assert_eq!(comparison_project, *opened_project);
 
             // Verify calls to the provider
-            let call_tracker = project_provider.call_tracker.lock().unwrap();
-            let call_tracker = call_tracker.borrow();
+            let call_tracker = project_provider.call_tracker.read().unwrap();
             assert_eq!(call_tracker.open_project_calls, 1);
         }
 
@@ -918,11 +971,10 @@ mod test {
             assert!(result.is_ok());
 
             let project_provider = project_service.project_provider.read().unwrap();
-            assert!(!project_provider.is_project_open);
+            assert!(!*project_provider.is_project_open.read().unwrap());
 
             // Verify calls to the provider
-            let call_tracker = project_provider.call_tracker.lock().unwrap();
-            let call_tracker = call_tracker.borrow();
+            let call_tracker = project_provider.call_tracker.read().unwrap();
             assert_eq!(call_tracker.close_project_calls, 1);
         }
 
@@ -1087,12 +1139,14 @@ mod test {
 
             assert_eq!(result.unwrap().as_path(), Path::new("test/file/path"));
 
-            assert!(!project_service.project_provider.read().unwrap().project.as_ref().unwrap().has_unsaved_changes());
+            assert!(!project_service.project_provider.read().unwrap()
+                .project.read().unwrap()
+                .as_ref().unwrap()
+                .has_unsaved_changes());
 
             // Verify calls to the provider
             let project_provider = project_service.project_provider.read().unwrap();
-            let call_tracker = project_provider.call_tracker.lock().unwrap();
-            let call_tracker = call_tracker.borrow();
+            let call_tracker = project_provider.call_tracker.read().unwrap();
             assert_eq!(call_tracker.save_project_calls, 1);
         }
 

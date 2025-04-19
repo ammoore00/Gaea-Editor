@@ -1,7 +1,7 @@
 use std::io;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use dashmap::DashMap;
-use uuid::Uuid;
 use crate::data::domain::project::{Project, ProjectID};
 use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 
@@ -9,34 +9,48 @@ static PROJECT_EXTENSION: &str = "json";
 
 #[async_trait::async_trait]
 pub trait ProjectProvider {
-    fn add_project(&mut self, project: Project, overwrite_existing: bool) -> Result<ProjectID>;
-    fn get_project(&self, id: ProjectID) -> Option<&Project>;
-    fn get_project_mut(&mut self, id: ProjectID) -> Option<&mut Project>;
+    type Ref: Deref<Target = Project>;
+    type RefMut: Deref<Target = Project> + DerefMut;
 
-    async fn open_project(&mut self, path: &Path) -> Result<ProjectID>;
-    fn close_project(&mut self, id: ProjectID) -> Result<()>;
+    fn add_project(&self, project: Project, overwrite_existing: bool) -> Result<ProjectID>;
+
+    fn get_project(&self, project_id: ProjectID) -> Option<Self::Ref>;
+
+    fn get_project_mut(&self, project_id: ProjectID) -> Option<Self::RefMut>;
+
+    fn with_project<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+    where F: FnOnce(&Project) -> R;
+
+    fn with_project_mut<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+    where F: FnOnce(&mut Project) -> R;
+
+    async fn open_project(&self, path: &Path) -> Result<ProjectID>;
+    fn close_project(&self, id: ProjectID) -> Result<()>;
     async fn save_project(&self, id: ProjectID) -> Result<PathBuf>;
 
     fn get_project_extension(&self) -> &'static str;
 }
 
-pub struct ProjectRepository<Filesystem: FilesystemProvider = FilesystemService> {
+pub struct ProjectRepository<'a, Filesystem: FilesystemProvider = FilesystemService> {
+    _phantom: std::marker::PhantomData<&'a ()>,
     filesystem_provider: Filesystem,
-    projects: DashMap<Uuid, Project>,
+    projects: DashMap<ProjectID, Project>,
 }
 
-impl Default for ProjectRepository<FilesystemService> {
+impl<'a> Default for ProjectRepository<'a, FilesystemService> {
     fn default() -> Self {
         Self {
+            _phantom: std::marker::PhantomData,
             filesystem_provider: FilesystemService::new(),
             projects: DashMap::new(),
         }
     }
 }
 
-impl<Filesystem: FilesystemProvider> ProjectRepository<Filesystem> {
+impl<'a, Filesystem: FilesystemProvider> ProjectRepository<'a, Filesystem> {
     pub fn new(filesystem_provider: Filesystem) -> Self {
         Self {
+            _phantom: std::marker::PhantomData,
             filesystem_provider: filesystem_provider,
             projects: DashMap::new(),
         }
@@ -44,24 +58,41 @@ impl<Filesystem: FilesystemProvider> ProjectRepository<Filesystem> {
 }
 
 #[async_trait::async_trait]
-impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Filesystem> {
-    fn add_project(&mut self, project: Project, overwrite_existing: bool) -> Result<ProjectID> {
+impl<'a, Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<'a, Filesystem> {
+    type Ref = dashmap::mapref::one::Ref<'a, ProjectID, Project>;
+    type RefMut = dashmap::mapref::one::RefMut<'a, ProjectID, Project>;
+    
+    fn add_project(&self, project: Project, overwrite_existing: bool) -> Result<ProjectID> {
         todo!()
     }
 
-    fn get_project(&self, id: ProjectID) -> Option<&Project> {
+    fn get_project(&self, id: ProjectID) -> Option<Self::Ref> {
         todo!()
     }
 
-    fn get_project_mut(&mut self, id: ProjectID) -> Option<&mut Project> {
+    fn get_project_mut(&self, id: ProjectID) -> Option<Self::RefMut> {
         todo!()
     }
 
-    async fn open_project(&mut self, path: &Path) -> Result<ProjectID> {
+    fn with_project<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+    where
+        F: FnOnce(&Project) -> R
+    {
         todo!()
     }
 
-    fn close_project(&mut self, id: ProjectID) -> Result<()> {
+    fn with_project_mut<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+    where
+        F: FnOnce(&mut Project) -> R
+    {
+        todo!()
+    }
+
+    async fn open_project(&self, path: &Path) -> Result<ProjectID> {
+        todo!()
+    }
+
+    fn close_project(&self, id: ProjectID) -> Result<()> {
         todo!()
     }
 
