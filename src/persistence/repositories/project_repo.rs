@@ -2,14 +2,14 @@ use std::io;
 use std::path::{Path, PathBuf};
 use dashmap::DashMap;
 use uuid::Uuid;
-use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
+use crate::data::domain::project::{Project, ProjectID};
 use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 
 static PROJECT_EXTENSION: &str = "json";
 
 #[async_trait::async_trait]
 pub trait ProjectProvider {
-    fn add_project(&mut self, project_settings: ProjectSettings, overwrite_existing: bool) -> Result<ProjectID>;
+    fn add_project(&mut self, project: Project, overwrite_existing: bool) -> Result<ProjectID>;
     fn get_project(&self, id: ProjectID) -> Option<&Project>;
     fn get_project_mut(&mut self, id: ProjectID) -> Option<&mut Project>;
 
@@ -45,7 +45,7 @@ impl<Filesystem: FilesystemProvider> ProjectRepository<Filesystem> {
 
 #[async_trait::async_trait]
 impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Filesystem> {
-    fn add_project(&mut self, project: ProjectSettings, overwrite_existing: bool) -> Result<ProjectID> {
+    fn add_project(&mut self, project: Project, overwrite_existing: bool) -> Result<ProjectID> {
         todo!()
     }
 

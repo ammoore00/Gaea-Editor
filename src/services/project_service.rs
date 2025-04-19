@@ -86,14 +86,17 @@ where
         settings: ProjectSettings,
         overwrite_existing: bool,
     ) -> Result<ProjectID, ProjectAdapter> {
-        let sanitized_settings = self.sanitize_project_settings(settings)?;
-        let id = self.project_provider.write().unwrap().add_project(sanitized_settings, overwrite_existing)?;
-        Ok(id)
+        let sanitized_settings = Self::sanitize_project_settings(settings)?;
+        
+        let project = Project::new(sanitized_settings);
+        
+        let project_id = self.project_provider.write().unwrap().add_project(project, overwrite_existing)?;
+        Ok(project_id)
     }
 
     pub async fn open_project(&self, path: &Path) -> Result<ProjectID, ProjectAdapter> {
-        let id = self.project_provider.write().unwrap().open_project(path).await?;
-        Ok(id)
+        let project_id = self.project_provider.write().unwrap().open_project(path).await?;
+        Ok(project_id)
     }
 
     pub fn close_project(&self, project_id: ProjectID) -> Result<(), ProjectAdapter> {
@@ -113,30 +116,46 @@ where
         let project = project_provider.get_project(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
 
         if !project.has_unsaved_changes() {
-            return Err(ProjectServiceError::NoChangesToSave);
+            return Err(ProjectServiceError::Save(SaveError::NoChangesToSave));
         }
 
         let path = project.get_settings().path.clone();
-        project_provider.save_project(project_id).await?;
-        // TODO: Make this thread safe
-        let project = project_provider.get_project_mut(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
-        project.clear_unsaved_changes();
-        Ok(path)
+        
+        if let Some(path) = path {
+            // TODO: Make this thread safe
+            project_provider.save_project(project_id).await?;
+            
+            let project = project_provider.get_project_mut(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
+            project.clear_unsaved_changes();
+            
+            Ok(path)
+        }
+        else {
+            Err(ProjectServiceError::Save(SaveError::NoPathSet))
+        }
     }
 
     pub async fn import_zip(&self, path: ZipPath) -> Result<ProjectID, ProjectAdapter> {
-        match path {
+        let serialized_project = match path {
+            // TODO: Make this thread safe
             ZipPath::Single(path) => {
                 let serialized_project = self.zip_provider.extract(path.as_path()).await.map_err(ZipError::Zipping)?;
-                let serialized_project = SerializedProjectOut::Single(serialized_project);
-                let project = ProjectAdapter::serialized_to_domain(&serialized_project).map_err(|e| ZipError::Deserialization(e))?;
+                
+                SerializedProjectOut::Single(serialized_project)
             }
-            ZipPath::Combined { data_path, resources_path } => {
-
+            ZipPath::Combined { data_path, resource_path } => {
+                let data_project = self.zip_provider.extract(data_path.as_path()).await.map_err(ZipError::Zipping)?;
+                let resource_project = self.zip_provider.extract(data_path.as_path()).await.map_err(ZipError::Zipping)?;
+                
+                SerializedProjectOut::Combined { data_project, resource_project }
             }
-        }
+        };
 
-        todo!()
+        let project = ProjectAdapter::serialized_to_domain(&serialized_project).map_err(|e| ZipError::Deserialization(e))?;
+        let project_id = project.get_id();
+        
+        self.project_provider.write().unwrap().add_project(project, false)?;
+        Ok(project_id)
     }
 
     pub async fn export_zip(
@@ -159,11 +178,11 @@ where
                 Ok(())
             }
             (
-                ZipPath::Combined { data_path, resources_path },
+                ZipPath::Combined { data_path, resource_path },
                 SerializedProjectOut::Combined { data_project, resource_project},
             ) => {
                 self.zip_provider.zip(data_path, data_project, overwrite_existing).await.map_err(ZipError::Zipping)?;
-                self.zip_provider.zip(resources_path, resource_project, overwrite_existing).await.map_err(ZipError::Zipping)?;
+                self.zip_provider.zip(resource_path, resource_project, overwrite_existing).await.map_err(ZipError::Zipping)?;
                 Ok(())
             }
             _ => {
@@ -174,16 +193,22 @@ where
 
     /// Consumes project settings, then returns a sanitized version of it,
     /// or an error if it is unrecoverable
-    fn sanitize_project_settings(&self, mut settings: ProjectSettings) -> Result<ProjectSettings, ProjectAdapter> {
+    fn sanitize_project_settings(mut settings: ProjectSettings) -> Result<ProjectSettings, ProjectAdapter> {
+        if let Some(path) = &settings.path {
+            settings.path = Some(Self::sanitize_path(path)?);
+        }
+
+        Ok(settings)
+    }
+    
+    fn sanitize_path(path: &Path) -> Result<PathBuf, ProjectAdapter> {
         let options = sanitize_filename::Options {
             replacement: "_",
             ..sanitize_filename::Options::default()
         };
-
-        let sanitized_path = settings.path.iter().map(|path_segment| sanitize_filename::sanitize_with_options(path_segment.to_string_lossy(), options.clone())).collect();
-
-        settings.path = sanitized_path;
-        Ok(settings)
+        
+        let sanitized_path = path.iter().map(|path_segment| sanitize_filename::sanitize_with_options(path_segment.to_string_lossy(), options.clone())).collect();
+        Ok(sanitized_path)
     }
 }
 
@@ -198,12 +223,20 @@ where
     RepoError(#[from] ProjectRepoError),
     #[error("Cannot close with unsaved changes!")]
     CannotCloseUnsavedChanges,
-    #[error("No changes to save!")]
-    NoChangesToSave,
     #[error("Project does not exist!")]
     ProjectDoesNotExist,
     #[error(transparent)]
+    Save(#[from] SaveError),
+    #[error(transparent)]
     Zip(#[from] ZipError<A>),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SaveError {
+    #[error("No changes to save!")]
+    NoChangesToSave,
+    #[error("No filepath set for project!")]
+    NoPathSet
 }
 
 pub enum ZipError<A>
@@ -271,7 +304,7 @@ pub enum ZipPath {
     Single(PathBuf),
     Combined{
         data_path: PathBuf,
-        resources_path: PathBuf
+        resource_path: PathBuf
     }
 }
 
@@ -350,11 +383,11 @@ mod test {
 
     #[async_trait::async_trait]
     impl ProjectProvider for MockProjectProvider {
-        fn add_project(&mut self, project_settings: ProjectSettings, overwrite_existing: bool) -> project_repo::Result<ProjectID> {
+        fn add_project(&mut self, project: Project, overwrite_existing: bool) -> project_repo::Result<ProjectID> {
             self.call_tracker.lock().unwrap().borrow_mut().add_project_calls += 1;
 
-            if let Some(project) = &self.project {
-                if !overwrite_existing && project.get_settings().path == project_settings.path {
+            if let Some(existing_project) = &self.project {
+                if !overwrite_existing && existing_project.get_settings().path == project.get_settings().path {
                     return Err(ProjectRepoError::Create(ProjectCreationError::FileAlreadyExists))
                 }
             }
@@ -363,7 +396,6 @@ mod test {
                 return Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::Other, "Mock error!")));
             }
             
-            let project = Project::new(project_settings);
             self.project = Some(project);
             let id = self.project.as_ref().unwrap().get_id();
             Ok(id)
@@ -425,6 +457,7 @@ mod test {
 
             self.project.clone()
                 .map(|project| project.get_settings().path.clone())
+                .flatten()
                 .ok_or(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::NotFound, "Project not found")))
         }
 
@@ -493,7 +526,7 @@ mod test {
             
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -539,7 +572,7 @@ mod test {
             let project_settings = ProjectSettings {
                 // 测试项目 means "Test Project" in simplified chinese
                 name: "测试项目".to_string(),
-                path: "test/file/测试项目".into(),
+                path: Some("test/file/测试项目".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -576,7 +609,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: Path::new("test?/invalid</path>").into(),
+                path: Some("test?/invalid</path>".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -592,7 +625,7 @@ mod test {
             // Verify individual settings
             let created_settings = created_project.get_settings();
             assert_eq!(created_settings.name, project_settings.name);
-            assert_eq!(created_settings.path.to_string_lossy(), "test_/invalid_/path_");
+            assert_eq!(created_settings.path.as_ref().unwrap().to_string_lossy(), "test_/invalid_/path_");
             assert_eq!(created_settings.project_version, project_settings.project_version);
             assert_eq!(created_settings.project_type, project_settings.project_type);
         }
@@ -604,7 +637,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -637,7 +670,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -685,7 +718,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -714,7 +747,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -728,7 +761,7 @@ mod test {
             
             // When I open it
 
-            let project_id = project_service.open_project(project_settings.path.as_path()).await.unwrap();
+            let project_id = project_service.open_project(project_settings.path.as_ref().unwrap().as_path()).await.unwrap();
             
             // It should be opened properly
 
@@ -786,7 +819,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -800,7 +833,7 @@ mod test {
             
             // When I try to open it again
 
-            let result = project_service.open_project(project_settings.path.as_path()).await;
+            let result = project_service.open_project(project_settings.path.as_ref().unwrap().as_path()).await;
 
             // It should return an appropriate error
 
@@ -835,14 +868,14 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
 
             // When I try to open a project
 
-            let result = project_service.open_project(project_settings.path.as_path()).await;
+            let result = project_service.open_project(project_settings.path.as_ref().unwrap().as_path()).await;
 
             // It should return an appropriate error
 
@@ -864,7 +897,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -900,7 +933,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -929,7 +962,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -989,7 +1022,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -1021,7 +1054,7 @@ mod test {
     mod save_project {
         use crate::data::domain::project::{ProjectType, ProjectVersion};
         use crate::data::domain::version;
-        use crate::services::project_service::ProjectServiceError;
+        use crate::services::project_service::{ProjectServiceError, SaveError};
         use super::*;
 
         /// Test saving a project
@@ -1031,7 +1064,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -1070,7 +1103,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
@@ -1094,7 +1127,7 @@ mod test {
             // to the user as appropriate
 
             assert!(result.is_err());
-            assert!(matches!(result, Err(ProjectServiceError::NoChangesToSave)));
+            assert!(matches!(result, Err(ProjectServiceError::Save(SaveError::NoChangesToSave))));
         }
 
         /// Test thread safety when multiple threads try to save the same project
@@ -1116,7 +1149,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                path: "test/file/path".into(),
+                path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };

@@ -69,7 +69,7 @@ impl Project {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ProjectSettings {
     pub name: String,
-    pub path: PathBuf,
+    pub path: Option<PathBuf>,
     pub project_version: ProjectVersion,
     pub project_type: ProjectType,
 }
