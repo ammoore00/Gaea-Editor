@@ -3,12 +3,15 @@ use std::error::Error;
 
 mod pack_info;
 mod resource_location;
-pub(crate) mod project;
+pub mod project;
 
 pub trait Adapter<Serialized, Domain> {
-    type ConversionError: Error;
-    type SerializedConversionError: Error = Infallible;
+    type ConversionError: AdapterError;
+    type SerializedConversionError: AdapterError = Infallible;
     
     fn serialized_to_domain(serialized: &Serialized) -> Result<Domain, Self::ConversionError>;
     fn domain_to_serialized(domain: &Domain) -> Result<Serialized, Self::SerializedConversionError>;
 }
+
+pub trait AdapterError: Error {}
+impl AdapterError for Infallible {}

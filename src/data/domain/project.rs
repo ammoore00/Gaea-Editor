@@ -88,7 +88,7 @@ pub struct ProjectVersion {
 
 pub type ProjectID = Uuid;
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ProjectType {
     DataPack,
     ResourcePack,

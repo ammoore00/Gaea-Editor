@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #![feature(associated_type_defaults)]
+#![feature(negative_impls)]
 
 use iced::Font;
 

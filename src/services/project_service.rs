@@ -1,30 +1,76 @@
-use std::cell::RefCell;
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
-use crate::data::adapters::Adapter;
+use std::sync::{Arc, RwLock};
+use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::adapters::project;
-use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
+use crate::data::adapters::project::{ProjectConversionError, SerializedProjectOut};
+use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType};
 use crate::data::serialization::project::Project as SerializedProject;
 use crate::persistence::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
 use crate::services::zip_service;
 use crate::services::zip_service::ZipService;
 
+pub struct ProjectServiceBuilder<
+    ProjectProvider: project_repo::ProjectProvider = ProjectRepository,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
+> {
+    project_provider: ProjectProvider,
+    zip_provider: ZipProvider,
+}
+
+impl<ProjectProvider, ZipProvider> ProjectServiceBuilder<ProjectProvider, ZipProvider>
+where
+    ProjectProvider: project_repo::ProjectProvider,
+    ZipProvider: zip_service::ZipProvider<SerializedProject>,
+{
+    pub fn new(
+        project_provider: ProjectProvider,
+        zip_provider: ZipProvider,
+    ) -> Self {
+        Self {
+            project_provider,
+            zip_provider,
+        }
+    }
+
+    pub fn build(self) -> ProjectService<ProjectProvider, ZipProvider, project::ProjectAdapter> {
+        ProjectService {
+            _phantom: PhantomData,
+            project_provider: Arc::new(RwLock::new(self.project_provider)),
+            zip_provider: self.zip_provider,
+        }
+    }
+
+    pub fn with_adapter<Adp: Adapter<SerializedProjectOut, Project>>(
+        self
+    ) -> ProjectService<ProjectProvider, ZipProvider, Adp> {
+        ProjectService {
+            _phantom: PhantomData,
+            project_provider: Arc::new(RwLock::new(self.project_provider)),
+            zip_provider: self.zip_provider,
+        }
+    }
+}
+
+
 pub struct ProjectService<
     ProjectProvider: project_repo::ProjectProvider = ProjectRepository,
     ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
-    ProjectAdapter: Adapter<SerializedProject, Project> = project::ProjectAdapter,
+    ProjectAdapter: Adapter<SerializedProjectOut, Project> = project::ProjectAdapter,
 > {
+    _phantom: PhantomData<(ProjectAdapter)>,
     project_provider: Arc<RwLock<ProjectProvider>>,
     zip_provider: ZipProvider,
-    project_adapter: ProjectAdapter,
 }
 
 impl Default for ProjectService {
     fn default() -> Self {
         Self {
+            _phantom: PhantomData,
             project_provider: Arc::new(RwLock::new(ProjectRepository::default())),
             zip_provider: ZipService::default(),
-            project_adapter: project::ProjectAdapter::default(),
         }
     }
 }
@@ -33,48 +79,36 @@ impl<ProjectProvider, ZipProvider, ProjectAdapter> ProjectService<ProjectProvide
 where
     ProjectProvider: project_repo::ProjectProvider,
     ZipProvider: zip_service::ZipProvider<SerializedProject>,
-    ProjectAdapter: Adapter<SerializedProject, Project>,
+    ProjectAdapter: Adapter<SerializedProjectOut, Project>,
 {
-    pub fn new(
-        project_provider: ProjectProvider,
-        zip_provider: ZipProvider,
-        project_adapter: ProjectAdapter,
-    ) -> Self {
-        ProjectService {
-            project_provider: Arc::new(RwLock::new(project_provider)),
-            zip_provider,
-            project_adapter,
-        }
-    }
-
     pub fn create_project(
         &self,
         settings: ProjectSettings,
         overwrite_existing: bool,
-    ) -> Result<ProjectID> {
+    ) -> Result<ProjectID, ProjectAdapter> {
         let sanitized_settings = self.sanitize_project_settings(settings)?;
         let id = self.project_provider.write().unwrap().add_project(sanitized_settings, overwrite_existing)?;
         Ok(id)
     }
 
-    pub async fn open_project(&self, path: &Path) -> Result<ProjectID> {
+    pub async fn open_project(&self, path: &Path) -> Result<ProjectID, ProjectAdapter> {
         let id = self.project_provider.write().unwrap().open_project(path).await?;
         Ok(id)
     }
 
-    pub fn close_project(&self, project_id: ProjectID) -> Result<()> {
+    pub fn close_project(&self, project_id: ProjectID) -> Result<(), ProjectAdapter> {
         let mut project_provider = self.project_provider.write().unwrap();
         let project = project_provider.get_project(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
 
         if project.has_unsaved_changes() {
             return Err(ProjectServiceError::CannotCloseUnsavedChanges);
         }
-        
+
         project_provider.close_project(project_id)?;
         Ok(())
     }
 
-    pub async fn save_project(&self, project_id: ProjectID) -> Result<PathBuf> {
+    pub async fn save_project(&self, project_id: ProjectID) -> Result<PathBuf, ProjectAdapter> {
         let mut project_provider = self.project_provider.write().unwrap();
         let project = project_provider.get_project(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
 
@@ -90,22 +124,57 @@ where
         Ok(path)
     }
 
-    pub async fn from_zip(&self, path: &Path) -> Result<ProjectID> {
+    pub async fn import_zip(&self, path: ZipPath) -> Result<ProjectID, ProjectAdapter> {
+        match path {
+            ZipPath::Single(path) => {
+                let serialized_project = self.zip_provider.extract(path.as_path()).await.map_err(ZipError::Zipping)?;
+                let serialized_project = SerializedProjectOut::Single(serialized_project);
+                let project = ProjectAdapter::serialized_to_domain(&serialized_project).map_err(|e| ZipError::Deserialization(e))?;
+            }
+            ZipPath::Combined { data_path, resources_path } => {
+
+            }
+        }
+
         todo!()
     }
 
-    pub async fn to_zip(
+    pub async fn export_zip(
         &self,
-        id: &ProjectID,
-        path: &Path,
-        overwrite_existing: bool
-    ) -> Result<Vec<&PathBuf>> {
-        todo!()
+        zip_data: ProjectZipData,
+        overwrite_existing: bool,
+    ) -> Result<(), ProjectAdapter> {
+        let project_provider = self.project_provider.read().unwrap();
+        let project = project_provider.get_project(zip_data.project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
+
+        let serialized_project = ProjectAdapter::domain_to_serialized(project).unwrap();
+
+        // TODO: Make this thread safe
+        match (&zip_data.path, &serialized_project) {
+            (
+                ZipPath::Single(path),
+                SerializedProjectOut::Single(project),
+            ) => {
+                self.zip_provider.zip(path, project, overwrite_existing).await.map_err(ZipError::Zipping)?;
+                Ok(())
+            }
+            (
+                ZipPath::Combined { data_path, resources_path },
+                SerializedProjectOut::Combined { data_project, resource_project},
+            ) => {
+                self.zip_provider.zip(data_path, data_project, overwrite_existing).await.map_err(ZipError::Zipping)?;
+                self.zip_provider.zip(resources_path, resource_project, overwrite_existing).await.map_err(ZipError::Zipping)?;
+                Ok(())
+            }
+            _ => {
+                Err(ZipError::MismatchedPaths(project.get_settings().project_type, zip_data.path))?
+            }
+        }
     }
 
     /// Consumes project settings, then returns a sanitized version of it,
     /// or an error if it is unrecoverable
-    fn sanitize_project_settings(&self, mut settings: ProjectSettings) -> Result<ProjectSettings> {
+    fn sanitize_project_settings(&self, mut settings: ProjectSettings) -> Result<ProjectSettings, ProjectAdapter> {
         let options = sanitize_filename::Options {
             replacement: "_",
             ..sanitize_filename::Options::default()
@@ -118,24 +187,101 @@ where
     }
 }
 
-type Result<T> = std::result::Result<T, ProjectServiceError>;
+type Result<T, A: Adapter<SerializedProjectOut, Project>> = std::result::Result<T, ProjectServiceError<A>>;
 
 #[derive(Debug, thiserror::Error)]
-pub enum ProjectServiceError {
+pub enum ProjectServiceError<A>
+where
+    A: Adapter<SerializedProjectOut, Project>,
+{
     #[error(transparent)]
     RepoError(#[from] ProjectRepoError),
-    #[error(transparent)]
-    ProjectSettingsError(#[from] ProjectSettingsError),
     #[error("Cannot close with unsaved changes!")]
     CannotCloseUnsavedChanges,
     #[error("No changes to save!")]
     NoChangesToSave,
     #[error("Project does not exist!")]
     ProjectDoesNotExist,
+    #[error(transparent)]
+    Zip(#[from] ZipError<A>),
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ProjectSettingsError {
+pub enum ZipError<A>
+where
+    A: Adapter<SerializedProjectOut, Project>,
+{
+    MismatchedPaths(ProjectType, ZipPath),
+    Zipping(zip_service::ZipError),
+    Deserialization(A::ConversionError)
+}
+
+impl<A: Adapter<SerializedProjectOut, Project>> Error for ZipError<A> {}
+
+impl<A> Debug for ZipError<A>
+where
+    A: Adapter<SerializedProjectOut, Project>,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ZipError::MismatchedPaths(project_type, zip_path) => {
+                write!(f, "Mismatched zip export data and project type! Project type was {:?}, zip export type was {:?}", project_type, type_name_of(zip_path))
+            }
+            ZipError::Zipping(zip_error) => {
+                write!(f, "{:?}", zip_error)
+            }
+            ZipError::Deserialization(conversion_error) => {
+                write!(f, "{:?}", conversion_error)
+            }
+        }
+    }
+}
+
+impl<A> Display for ZipError<A>
+where
+    A: Adapter<SerializedProjectOut, Project>,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ZipError::MismatchedPaths(project_type, zip_path) => {
+                write!(f, "Mismatched zip export data and project type! Project type was {:?}, zip export type was {}", project_type, type_name_of(zip_path))
+            }
+            ZipError::Zipping(zip_error) => {
+                write!(f, "{}", zip_error)
+            }
+            ZipError::Deserialization(conversion_error) => {
+                write!(f, "{}", conversion_error)
+            }
+        }
+    }
+}
+
+impl<A, E> From<E> for ZipError<A>
+where
+    A: Adapter<SerializedProjectOut, Project>,
+    E: AdapterError,
+    E: Into<A::ConversionError>,
+{
+    fn from(value: E) -> Self {
+        ZipError::Deserialization(value.into())
+    }
+}
+
+#[derive(Debug)]
+pub enum ZipPath {
+    Single(PathBuf),
+    Combined{
+        data_path: PathBuf,
+        resources_path: PathBuf
+    }
+}
+
+pub struct ProjectZipData {
+    pub project_id: ProjectID,
+    pub path: ZipPath,
+}
+
+fn type_name_of<T>(_: &T) -> &'static str {
+    std::any::type_name::<T>()
 }
 
 //------ Tests ------//
@@ -147,12 +293,12 @@ mod test {
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
     use crate::data::adapters::Adapter;
-    use crate::data::adapters::project::ProjectConversionError;
+    use crate::data::adapters::project::{ProjectConversionError, SerializedProjectOut};
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
     use crate::data::serialization::project::Project as SerializedProject;
     use crate::persistence::repositories::project_repo;
     use crate::persistence::repositories::project_repo::{ProjectCloseError, ProjectCreationError, ProjectOpenError, ProjectProvider, ProjectRepoError};
-    use crate::services::project_service::ProjectService;
+    use crate::services::project_service::{ProjectService, ProjectServiceBuilder};
     use crate::services::zip_service;
     use crate::services::zip_service::ZipProvider;
 
@@ -173,7 +319,7 @@ mod test {
     struct MockProjectProvider {
         project: Option<Project>,
         is_project_open: bool,
-        
+
         call_tracker: Mutex<RefCell<ProjectProviderCallTracker>>,
         settings: MockProjectProviderSettings,
     }
@@ -185,7 +331,7 @@ mod test {
                 ..Self::default()
             }
         }
-        
+
         fn with_open_project(project: Project) -> Self {
             Self {
                 project: Some(project),
@@ -237,7 +383,7 @@ mod test {
             if self.settings.fail_calls {
                 return Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::Other, "Mock error!")));
             }
-            
+
             if self.is_project_open {
                 return Err(ProjectRepoError::Open(ProjectOpenError::AlreadyOpen));
             }
@@ -261,7 +407,7 @@ mod test {
             if !self.is_project_open {
                 return Err(ProjectRepoError::Close(ProjectCloseError::FileNotOpen));
             }
-            
+
             self.is_project_open = false;
             Ok(())
         }
@@ -276,7 +422,7 @@ mod test {
             if !self.is_project_open {
                 return Err(ProjectRepoError::Close(ProjectCloseError::FileNotOpen));
             }
-            
+
             self.project.clone()
                 .map(|project| project.get_settings().path.clone())
                 .ok_or(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::NotFound, "Project not found")))
@@ -300,11 +446,12 @@ mod test {
             todo!()
         }
 
-        async fn zip(&self, path: &Path, data: &SerializedProject) -> zip_service::Result<()> {
+        async fn zip(&self, path: &Path, data: &SerializedProject, overwrite_existing: bool) -> zip_service::Result<()> {
             todo!()
         }
     }
 
+    #[derive(Debug)]
     struct MockProjectAdapter;
     impl MockProjectAdapter {
         fn new() -> Self {
@@ -312,31 +459,29 @@ mod test {
         }
     }
 
-    impl Adapter<SerializedProject, Project> for MockProjectAdapter {
+    impl Adapter<SerializedProjectOut, Project> for MockProjectAdapter {
         type ConversionError = ProjectConversionError;
 
-        fn serialized_to_domain(serialized: &SerializedProject) -> Result<Project, Self::ConversionError> {
+        fn serialized_to_domain(serialized: &SerializedProjectOut) -> Result<Project, Self::ConversionError> {
             todo!()
         }
 
-        fn domain_to_serialized(domain: &Project) -> Result<SerializedProject, Self::SerializedConversionError> {
+        fn domain_to_serialized(domain: &Project) -> Result<SerializedProjectOut, Self::SerializedConversionError> {
             todo!()
         }
     }
-    
+
     fn default_test_service() -> ProjectService<MockProjectProvider, MockZipProvider, MockProjectAdapter> {
-        ProjectService::new(
+        ProjectServiceBuilder::new(
             MockProjectProvider::default(),
             MockZipProvider::new(),
-            MockProjectAdapter::new(),
-        )
+        ).with_adapter()
     }
     
     mod create_project {
         use crate::data::domain::project::{ProjectType, ProjectVersion};
         use crate::data::domain::version;
-        use crate::persistence::repositories::project_repo::ProjectCreationError;
-        use crate::services::project_service::{ProjectService, ProjectServiceError};
+        use crate::services::project_service::ProjectServiceError;
         use super::*;
         
         /// Test creating a project
@@ -466,11 +611,10 @@ mod test {
 
             let existing_project = Project::new(project_settings.clone());
 
-            let project_service = ProjectService::new(
+            let project_service = ProjectServiceBuilder::new(
                 MockProjectProvider::with_project(existing_project),
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
             
             // When I try to create that project again
 
@@ -500,11 +644,10 @@ mod test {
 
             let existing_project = Project::new(project_settings.clone());
 
-            let project_service = ProjectService::new(
+            let project_service = ProjectServiceBuilder::new(
                 MockProjectProvider::with_project(existing_project),
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
 
             // When I try to create that project again with the overwrite flag set
 
@@ -532,14 +675,13 @@ mod test {
         fn test_create_project_provider_failure() {
             // Given an error from the repo
 
-            let project_service = ProjectService::new(
+            let project_service = ProjectServiceBuilder::new(
                 MockProjectProvider::with_settings(MockProjectProviderSettings {
                     fail_calls: true,
                     ..Default::default()
                 }),
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
@@ -579,26 +721,25 @@ mod test {
 
             let existing_project = Project::new(project_settings.clone());
 
-            let project_service = ProjectService::new(
+            let project_service = ProjectServiceBuilder::new(
                 MockProjectProvider::with_project(existing_project),
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
             
             // When I open it
-            
+
             let project_id = project_service.open_project(project_settings.path.as_path()).await.unwrap();
             
             // It should be opened properly
-            
+
             let project_provider = project_service.project_provider.read().unwrap();
             let opened_project = project_provider.get_project(project_id).unwrap();
-            
+
             assert!(project_provider.is_project_open);
 
             let mut comparison_project = Project::new(project_settings.clone());
             comparison_project.set_id(project_id);
-            
+
             assert_eq!(comparison_project, *opened_project);
 
             // Verify calls to the provider
@@ -623,13 +764,13 @@ mod test {
         #[tokio::test]
         async fn test_open_project_non_existent() {
             let project_service = default_test_service();
-            
+
             // Given a project that does not exist
-            
+
             let path = Path::new("nonexistent/path");
             
             // When I try to open it
-            
+
             let result = project_service.open_project(path).await;
             
             // It should return an appropriate error
@@ -651,12 +792,11 @@ mod test {
             };
 
             let existing_project = Project::new(project_settings.clone());
-            
-            let project_service = ProjectService::new(
+
+            let project_service = ProjectServiceBuilder::new(
                 MockProjectProvider::with_open_project(existing_project),
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
             
             // When I try to open it again
 
@@ -685,14 +825,13 @@ mod test {
         async fn test_open_project_provider_failure() {
             // Given an error from the repo
 
-            let project_service = ProjectService::new(
+            let project_service = ProjectServiceBuilder::new(
                 MockProjectProvider::with_settings(MockProjectProviderSettings {
                     fail_calls: true,
                     ..Default::default()
                 }),
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
@@ -732,20 +871,19 @@ mod test {
 
             let existing_project = Project::new(project_settings.clone());
 
-            let project_service = ProjectService::new(
+            let project_service = ProjectServiceBuilder::new(
                 MockProjectProvider::with_open_project(existing_project.clone()),
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
             
             // When I close it
-            
+
             let result = project_service.close_project(existing_project.get_id());
-                
+
             // It should be closed properly
-            
+
             assert!(result.is_ok());
-            
+
             let project_provider = project_service.project_provider.read().unwrap();
             assert!(!project_provider.is_project_open);
 
@@ -769,11 +907,10 @@ mod test {
 
             let mut existing_project = Project::with_unsaved_changes(project_settings.clone());
 
-            let project_service = ProjectService::new(
+            let project_service = ProjectServiceBuilder::new(
                 MockProjectProvider::with_open_project(existing_project.clone()),
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
             
             // When I try to close it
 
@@ -799,11 +936,10 @@ mod test {
 
             let existing_project = Project::new(project_settings.clone());
 
-            let project_service = ProjectService::new(
+            let project_service = ProjectServiceBuilder::new(
                 MockProjectProvider::with_project(existing_project.clone()),
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
             
             // When I try to close it
 
@@ -819,9 +955,9 @@ mod test {
         #[test]
         fn test_close_project_nonexistent() {
             let project_service = default_test_service();
-            
+
             // Given a project which does not exist
-            
+
             let project_id = Project::generate_test_id();
 
             // When I try to close it
@@ -857,20 +993,19 @@ mod test {
                 project_version: ProjectVersion { version: version::versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
-            
+
             let project = Project::new(project_settings.clone());
-            
+
             let mut project_provider = MockProjectProvider::with_open_project(project.clone());
             project_provider.settings = MockProjectProviderSettings {
                 fail_calls: true,
                 ..Default::default()
             };
 
-            let project_service = ProjectService::new(
+            let project_service = ProjectServiceBuilder::new(
                 project_provider,
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
 
             // When I try to close a project
 
@@ -904,22 +1039,21 @@ mod test {
             let project = Project::with_unsaved_changes(project_settings.clone());
             let project_id = project.get_id();
 
-            let project_service = ProjectService::new(
+            let project_service = ProjectServiceBuilder::new(
                 MockProjectProvider::with_open_project(project),
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
             
             // When I save it
-            
+
             let result = project_service.save_project(project_id).await;
             
             // It should be saved
 
             assert!(result.is_ok());
-            
+
             assert_eq!(result.unwrap().as_path(), Path::new("test/file/path"));
-            
+
             assert!(!project_service.project_provider.read().unwrap().project.as_ref().unwrap().has_unsaved_changes());
 
             // Verify calls to the provider
@@ -944,11 +1078,10 @@ mod test {
             let project = Project::new(project_settings.clone());
             let project_id = project.get_id();
 
-            let project_service = ProjectService::new(
+            let project_service = ProjectServiceBuilder::new(
                 MockProjectProvider::with_open_project(project),
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
             
             // When I try to save it
 
@@ -997,11 +1130,10 @@ mod test {
                 ..Default::default()
             };
 
-            let project_service = ProjectService::new(
+            let project_service = ProjectServiceBuilder::new(
                 project_provider,
                 MockZipProvider::new(),
-                MockProjectAdapter::new(),
-            );
+            ).with_adapter::<MockProjectAdapter>();
 
             // When I try to save a project
 

@@ -1,6 +1,6 @@
 use std::convert::Infallible;
 use std::str::FromStr;
-use crate::data::adapters::Adapter;
+use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::domain::resource::resource::{ResourceLocation as DomainResourceLocation, ResourceLocationError};
 use crate::data::serialization::ResourceLocation as SerializationResourceLocation;
 
@@ -16,6 +16,8 @@ impl Adapter<SerializationResourceLocation, DomainResourceLocation> for Resource
         Ok(SerializationResourceLocation::new(domain.to_string().as_str()))
     }
 }
+
+impl AdapterError for ResourceLocationError {}
 
 #[cfg(test)]
 mod tests {

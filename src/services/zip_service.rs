@@ -1,6 +1,6 @@
 use std::io;
 use std::marker::PhantomData;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 #[async_trait::async_trait]
@@ -9,7 +9,7 @@ where
     T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>
 {
     async fn extract(&self, path: &Path) -> Result<T>;
-    async fn zip(&self, path: &Path, data: &T) -> Result<()>;
+    async fn zip(&self, path: &Path, data: &T, overwrite_existing: bool) -> Result<()>;
 }
 
 pub(crate) type Result<T> = std::result::Result<T, ZipError>;
@@ -49,7 +49,7 @@ where
         todo!()
     }
 
-    async fn zip(&self, path: &Path, data: &T) -> Result<()> {
+    async fn zip(&self, path: &Path, data: &T, overwrite_existing: bool) -> Result<()> {
         todo!()
     }
 }
