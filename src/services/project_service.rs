@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::adapters::project;
-use crate::data::adapters::project::SerializedProjectOut;
+use crate::data::adapters::project::SerializedProjectData;
 use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType};
 use crate::data::serialization::project::Project as SerializedProject;
 use crate::persistence::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
@@ -45,7 +45,7 @@ where
         }
     }
 
-    pub fn with_adapter<Adp: Adapter<SerializedProjectOut, Project>>(
+    pub fn with_adapter<Adp: Adapter<SerializedProjectData, Project>>(
         self
     ) -> ProjectService<'a, ProjectProvider, ZipProvider, Adp> {
         ProjectService {
@@ -59,7 +59,7 @@ where
 pub struct ProjectService<'a,
     ProjectProvider: project_repo::ProjectProvider = ProjectRepository<'a>,
     ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
-    ProjectAdapter: Adapter<SerializedProjectOut, Project> = project::ProjectAdapter,
+    ProjectAdapter: Adapter<SerializedProjectData, Project> = project::ProjectAdapter,
 > {
     _phantom: PhantomData<&'a (ProjectAdapter)>,
     project_provider: Arc<RwLock<ProjectProvider>>,
@@ -80,7 +80,7 @@ impl<'a, ProjectProvider, ZipProvider, ProjectAdapter> ProjectService<'a, Projec
 where
     ProjectProvider: project_repo::ProjectProvider,
     ZipProvider: zip_service::ZipProvider<SerializedProject>,
-    ProjectAdapter: Adapter<SerializedProjectOut, Project>,
+    ProjectAdapter: Adapter<SerializedProjectData, Project>,
 {
     pub fn create_project(
         &self,
@@ -140,7 +140,7 @@ where
             ZipPath::Single(path) => {
                 let serialized_project = self.zip_provider.extract(path.as_path()).await.map_err(ZipError::Zipping)?;
 
-                SerializedProjectOut::Single(serialized_project)
+                SerializedProjectData::Single(serialized_project)
             }
             ZipPath::Combined { data_path, resource_path } => {
                 let (data_project, resource_project) = tokio::try_join!(
@@ -148,7 +148,7 @@ where
                     async { self.zip_provider.extract(resource_path.as_path()).await.map_err(ZipError::Zipping) }
                 )?;
                 
-                SerializedProjectOut::Combined { data_project, resource_project }
+                SerializedProjectData::Combined { data_project, resource_project }
             }
         };
 
@@ -180,7 +180,7 @@ where
         match (&zip_data.path, &serialized_project) {
             (
                 ZipPath::Single(path),
-                SerializedProjectOut::Single(project),
+                SerializedProjectData::Single(project),
             ) => {
                 let result = self.zip_provider.zip(path, project, overwrite_existing).await.map_err(ZipError::<ProjectAdapter>::Zipping);
                 
@@ -194,7 +194,7 @@ where
             }
             (
                 ZipPath::Combined { data_path, resource_path },
-                SerializedProjectOut::Combined { data_project, resource_project},
+                SerializedProjectData::Combined { data_project, resource_project},
             ) => {
                 let (data_result, resource_result) = tokio::join!(
                     async { self.zip_provider.zip(data_path, data_project, overwrite_existing).await.map_err(ZipError::<ProjectAdapter>::Zipping) },
@@ -252,12 +252,12 @@ where
     }
 }
 
-type Result<T, A: Adapter<SerializedProjectOut, Project>> = std::result::Result<T, ProjectServiceError<A>>;
+type Result<T, A: Adapter<SerializedProjectData, Project>> = std::result::Result<T, ProjectServiceError<A>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectServiceError<A>
 where
-    A: Adapter<SerializedProjectOut, Project>,
+    A: Adapter<SerializedProjectData, Project>,
 {
     #[error(transparent)]
     RepoError(#[from] ProjectRepoError),
@@ -281,18 +281,18 @@ pub enum SaveError {
 
 pub enum ZipError<A>
 where
-    A: Adapter<SerializedProjectOut, Project>,
+    A: Adapter<SerializedProjectData, Project>,
 {
     MismatchedPaths(ProjectType, ZipPath),
     Zipping(zip_service::ZipError),
     Deserialization(A::ConversionError)
 }
 
-impl<A: Adapter<SerializedProjectOut, Project>> Error for ZipError<A> {}
+impl<A: Adapter<SerializedProjectData, Project>> Error for ZipError<A> {}
 
 impl<A> Debug for ZipError<A>
 where
-    A: Adapter<SerializedProjectOut, Project>,
+    A: Adapter<SerializedProjectData, Project>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -311,7 +311,7 @@ where
 
 impl<A> Display for ZipError<A>
 where
-    A: Adapter<SerializedProjectOut, Project>,
+    A: Adapter<SerializedProjectData, Project>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -330,7 +330,7 @@ where
 
 impl<A, E> From<E> for ZipError<A>
 where
-    A: Adapter<SerializedProjectOut, Project>,
+    A: Adapter<SerializedProjectData, Project>,
     E: AdapterError,
     E: Into<A::ConversionError>,
 {
@@ -366,7 +366,7 @@ mod test {
     use std::path::{Path, PathBuf};
     use std::sync::RwLock;
     use crate::data::adapters::Adapter;
-    use crate::data::adapters::project::{ProjectConversionError, SerializedProjectOut};
+    use crate::data::adapters::project::{ProjectConversionError, SerializedProjectData};
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings};
     use crate::data::serialization::project::Project as SerializedProject;
     use crate::persistence::repositories::project_repo;
@@ -589,14 +589,14 @@ mod test {
         }
     }
 
-    impl Adapter<SerializedProjectOut, Project> for MockProjectAdapter {
+    impl Adapter<SerializedProjectData, Project> for MockProjectAdapter {
         type ConversionError = ProjectConversionError;
 
-        fn serialized_to_domain(serialized: &SerializedProjectOut) -> Result<Project, Self::ConversionError> {
+        fn serialized_to_domain(serialized: &SerializedProjectData) -> Result<Project, Self::ConversionError> {
             todo!()
         }
 
-        fn domain_to_serialized(domain: &Project) -> Result<SerializedProjectOut, Self::SerializedConversionError> {
+        fn domain_to_serialized(domain: &Project) -> Result<SerializedProjectData, Self::SerializedConversionError> {
             todo!()
         }
     }

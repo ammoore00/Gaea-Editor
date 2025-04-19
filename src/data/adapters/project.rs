@@ -12,14 +12,14 @@ impl Default for ProjectAdapter {
     }
 }
 
-impl Adapter<SerializedProjectOut, DomainProject> for ProjectAdapter {
+impl Adapter<SerializedProjectData, DomainProject> for ProjectAdapter {
     type ConversionError = ProjectConversionError;
 
-    fn serialized_to_domain(serialized: &SerializedProjectOut) -> Result<DomainProject, Self::ConversionError> {
+    fn serialized_to_domain(serialized: &SerializedProjectData) -> Result<DomainProject, Self::ConversionError> {
         todo!()
     }
 
-    fn domain_to_serialized(domain: &DomainProject) -> Result<SerializedProjectOut, Infallible> {
+    fn domain_to_serialized(domain: &DomainProject) -> Result<SerializedProjectData, Infallible> {
         todo!()
     }
 }
@@ -31,7 +31,7 @@ pub enum ProjectConversionError {
 }
 impl AdapterError for ProjectConversionError {}
 
-pub enum SerializedProjectOut {
+pub enum SerializedProjectData {
     Single(SerializedProject),
     Combined{
         data_project: SerializedProject,
@@ -39,7 +39,7 @@ pub enum SerializedProjectOut {
     },
 }
 
-impl Serialize for SerializedProjectOut {
+impl Serialize for SerializedProjectData {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer
@@ -48,7 +48,7 @@ impl Serialize for SerializedProjectOut {
     }
 }
 
-impl<'de> Deserialize<'de> for SerializedProjectOut {
+impl<'de> Deserialize<'de> for SerializedProjectData {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>

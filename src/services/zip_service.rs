@@ -30,7 +30,6 @@ where
     Filesystem: FilesystemProvider,
 {
     _phantom: PhantomData<(T)>,
-    
     filesystem_provider: Filesystem,
 }
 
