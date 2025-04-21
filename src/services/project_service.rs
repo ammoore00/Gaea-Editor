@@ -12,22 +12,21 @@ use crate::repositories::project_repo::{self, ProjectRepoError, ProjectRepositor
 use crate::services::zip_service;
 use crate::services::zip_service::ZipService;
 
-pub type DefaultProjectProvider<'a> = ProjectRepository<'a>;
+pub type DefaultProjectProvider = ProjectRepository;
 pub type DefaultZipService = ZipService<SerializedProject>;
 pub type DefaultProjectAdapter = project::ProjectAdapter;
 
-pub struct ProjectServiceBuilder<'a,
-    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static = DefaultProjectProvider<'a>,
+pub struct ProjectServiceBuilder<
+    ProjectProvider: project_repo::ProjectProvider + Send + Sync + 'static = DefaultProjectProvider,
     ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static = DefaultZipService,
 > {
-    _phantom: PhantomData<&'a ()>,
     project_provider: Arc<RwLock<ProjectProvider>>,
     zip_provider: Arc<RwLock<ZipProvider>>,
 }
 
-impl<'a, ProjectProvider, ZipProvider> ProjectServiceBuilder<'a, ProjectProvider, ZipProvider>
+impl<ProjectProvider, ZipProvider> ProjectServiceBuilder<ProjectProvider, ZipProvider>
 where
-    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static,
+    ProjectProvider: project_repo::ProjectProvider + Send + Sync + 'static,
     ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static,
 {
     pub fn new(
@@ -35,13 +34,12 @@ where
         zip_provider: Arc<RwLock<ZipProvider>>,
     ) -> Self {
         Self {
-            _phantom: PhantomData,
             project_provider,
             zip_provider,
         }
     }
 
-    pub fn build(self) -> ProjectService<'a, ProjectProvider, ZipProvider, project::ProjectAdapter> {
+    pub fn build(self) -> ProjectService<ProjectProvider, ZipProvider, project::ProjectAdapter> {
         ProjectService {
             _phantom: PhantomData,
             project_provider: self.project_provider,
@@ -51,7 +49,7 @@ where
 
     pub fn with_adapter<Adp: Adapter<SerializedProjectData, Project> + Send + Sync>(
         self
-    ) -> ProjectService<'a, ProjectProvider, ZipProvider, Adp> {
+    ) -> ProjectService<ProjectProvider, ZipProvider, Adp> {
         ProjectService {
             _phantom: PhantomData,
             project_provider: self.project_provider,
@@ -61,7 +59,7 @@ where
 }
 
 #[async_trait::async_trait]
-pub trait ProjectServiceProvider<'a> {
+pub trait ProjectServiceProvider {
     async fn create_project(
         &self,
         settings: ProjectSettings,
@@ -80,19 +78,19 @@ pub trait ProjectServiceProvider<'a> {
     ) -> Result<()>;
 }
 
-pub struct ProjectService<'a,
-    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static = DefaultProjectProvider<'a>,
+pub struct ProjectService<
+    ProjectProvider: project_repo::ProjectProvider + Send + Sync + 'static = DefaultProjectProvider,
     ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static = DefaultZipService,
     ProjectAdapter: Adapter<SerializedProjectData, Project> + Send + Sync + 'static = DefaultProjectAdapter,
 > {
-    _phantom: PhantomData<&'a ProjectAdapter>,
+    _phantom: PhantomData<ProjectAdapter>,
     project_provider: Arc<RwLock<ProjectProvider>>,
     zip_provider: Arc<RwLock<ZipProvider>>,
 }
 
-impl<'a, ProjectProvider, ZipProvider, ProjectAdapter> ProjectService<'a, ProjectProvider, ZipProvider, ProjectAdapter>
+impl<ProjectProvider, ZipProvider, ProjectAdapter> ProjectService<ProjectProvider, ZipProvider, ProjectAdapter>
 where
-    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static,
+    ProjectProvider: project_repo::ProjectProvider + Send + Sync + 'static,
     ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static,
     ProjectAdapter: Adapter<SerializedProjectData, Project> + Send + Sync + 'static,
 {
@@ -118,9 +116,9 @@ where
 }
 
 #[async_trait::async_trait]
-impl<'a, ProjectProvider, ZipProvider, ProjectAdapter> ProjectServiceProvider<'a> for ProjectService<'a, ProjectProvider, ZipProvider, ProjectAdapter>
+impl<ProjectProvider, ZipProvider, ProjectAdapter> ProjectServiceProvider for ProjectService<ProjectProvider, ZipProvider, ProjectAdapter>
 where
-    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static,
+    ProjectProvider: project_repo::ProjectProvider + Send + Sync + 'static,
     ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static,
     ProjectAdapter: Adapter<SerializedProjectData, Project> + Send + Sync + 'static,
 {
@@ -323,8 +321,9 @@ mod test {
     use std::ops::{Deref, DerefMut};
     use std::path::{Path, PathBuf};
     use std::pin::Pin;
-    use std::sync::{Arc, RwLock};
+    use std::sync::Arc;
     use once_cell::sync::Lazy;
+    use tokio::sync::RwLock;
     use crate::data::adapters::Adapter;
     use crate::data::adapters::project::{ProjectConversionError, SerializedProjectData};
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
@@ -375,28 +374,26 @@ mod test {
     }
 
     #[derive(Default)]
-    struct MockProjectProvider<'a> {
-        _phantom: std::marker::PhantomData<&'a ()>,
+    struct MockProjectProvider {
+        project: std::sync::RwLock<Option<Project>>,
+        is_project_open: std::sync::RwLock<bool>,
 
-        project: RwLock<Option<Project>>,
-        is_project_open: RwLock<bool>,
-
-        call_tracker: RwLock<ProjectProviderCallTracker>,
+        call_tracker: std::sync::RwLock<ProjectProviderCallTracker>,
         settings: MockProjectProviderSettings,
     }
 
-    impl<'a> MockProjectProvider<'a> {
+    impl MockProjectProvider {
         fn with_project(project: Project) -> Self {
             Self {
-                project: RwLock::new(Some(project)),
+                project: std::sync::RwLock::new(Some(project)),
                 ..Self::default()
             }
         }
 
         fn with_open_project(project: Project) -> Self {
             Self {
-                project: RwLock::new(Some(project)),
-                is_project_open: RwLock::new(true),
+                project: std::sync::RwLock::new(Some(project)),
+                is_project_open: std::sync::RwLock::new(true),
                 ..Self::default()
             }
         }
@@ -410,7 +407,7 @@ mod test {
     }
 
     #[async_trait::async_trait]
-    impl<'a> ProjectProvider<'a> for MockProjectProvider<'a> {
+    impl ProjectProvider for MockProjectProvider {
         fn add_project(&self, project: Project, overwrite_existing: bool) -> project_repo::Result<ProjectID> {
             self.call_tracker.write().unwrap().add_project_calls += 1;
 
@@ -459,9 +456,10 @@ mod test {
             }
         }
 
-        async fn with_project_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+        async fn with_project_async<'a, F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
         where
-            F: FnOnce(&Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync
+            F: FnOnce(&Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync,
+            R: Send + Sync,
         {
             let project = {
                 if let Some(project) = self.project.read().unwrap().as_ref() {
@@ -475,9 +473,10 @@ mod test {
             Some(callback(&project).await)
         }
 
-        async fn with_project_mut_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+        async fn with_project_mut_async<'a, F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
         where
-            F: FnOnce(&mut Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync
+            F: FnOnce(&mut Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync,
+            R: Send + Sync,
         {
             let mut project = {
                 if let Some(project) = self.project.read().unwrap().as_ref() {
@@ -567,8 +566,8 @@ mod test {
     #[derive(Debug, Default)]
     struct MockZipProvider {
         serialized_project: Option<SerializedProject>,
-        settings: RwLock<MockZipProviderSettings>,
-        call_tracker: RwLock<ZipProviderCallTracker>,
+        settings: std::sync::RwLock<MockZipProviderSettings>,
+        call_tracker: std::sync::RwLock<ZipProviderCallTracker>,
     }
 
     impl MockZipProvider {
@@ -626,15 +625,15 @@ mod test {
         }
     }
 
-    static PROJECT_ADAPTER_CONFIG: Lazy<RwLock<ProjectAdapterConfig>> = Lazy::new(|| {
-        RwLock::new(ProjectAdapterConfig::default())
+    static PROJECT_ADAPTER_CONFIG: Lazy<std::sync::RwLock<ProjectAdapterConfig>> = Lazy::new(|| {
+        std::sync::RwLock::new(ProjectAdapterConfig::default())
     });
 
     #[derive(Debug, Default)]
     struct ProjectAdapterConfig {
         serialized_project: Option<SerializedProject>,
         project: Option<Project>,
-        fail_conversion: RwLock<bool>,
+        fail_conversion: std::sync::RwLock<bool>,
     }
     
     impl ProjectAdapterConfig {
@@ -642,7 +641,7 @@ mod test {
             Self {
                 serialized_project: Some(serialized_project),
                 project: Some(project),
-                fail_conversion: RwLock::new(false),
+                fail_conversion: std::sync::RwLock::new(false),
             }
         }
         
@@ -697,7 +696,7 @@ mod test {
         }
     }
 
-    fn default_test_service<'a>() -> ProjectService<'a, MockProjectProvider<'a>, MockZipProvider, MockProjectAdapter> {
+    fn default_test_service() -> ProjectService<MockProjectProvider, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
             Arc::new(RwLock::new(MockProjectProvider::default())),
             Arc::new(RwLock::new(MockZipProvider::default())),
@@ -711,7 +710,7 @@ mod test {
         ).with_adapter()
     }
 
-    fn test_service_with_zip_provider<'a>(zip_provider: MockZipProvider) -> ProjectService<'a, MockProjectProvider<'a>, MockZipProvider, MockProjectAdapter> {
+    fn test_service_with_zip_provider(zip_provider: MockZipProvider) -> ProjectService<MockProjectProvider, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
             Arc::new(RwLock::new(MockProjectProvider::default())),
             Arc::new(RwLock::new(zip_provider)),
@@ -730,12 +729,12 @@ mod test {
     mod create_project {
         use crate::data::domain::project::{ProjectType, ProjectVersion};
         use crate::data::domain::version;
-        use crate::services::project_service::ProjectServiceError;
+        use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider};
         use super::*;
         
         /// Test creating a project
-        #[test]
-        fn test_create_project() {
+        #[tokio::test]
+        async fn test_create_project() {
             let project_service = default_test_service();
 
             // Given valid project settings
@@ -744,12 +743,12 @@ mod test {
             
             // When I create a project
             
-            let project_id = project_service.create_project(project_settings.clone(), false).unwrap();
+            let project_id = project_service.create_project(project_settings.clone(), false).await.unwrap();
             
             // It should create the new project
 
             // Verify that the project created by the service matches one manually created
-            let project_provider = project_service.project_provider.read().unwrap();
+            let project_provider = project_service.project_provider.read().await;
 
             let created_settings = project_provider.with_project(project_id, |project| {
                 let mut comparison_project = Project::new(project_settings.clone());
@@ -775,8 +774,8 @@ mod test {
         }
 
         /// Test creating a project
-        #[test]
-        fn test_create_project_special_characters() {
+        #[tokio::test]
+        async fn test_create_project_special_characters() {
             let project_service = default_test_service();
 
             // Given valid project settings
@@ -791,12 +790,12 @@ mod test {
 
             // When I create a project
 
-            let project_id = project_service.create_project(project_settings.clone(), false).unwrap();
+            let project_id = project_service.create_project(project_settings.clone(), false).await.unwrap();
 
             // It should create the new project
 
             // Verify that the project created by the service matches one manually created
-            let project_provider = project_service.project_provider.read().unwrap();
+            let project_provider = project_service.project_provider.read().await;
 
             let created_settings = project_provider.with_project(project_id, |project| {
                 let mut comparison_project = Project::new(project_settings.clone());
@@ -815,8 +814,8 @@ mod test {
         }
 
         /// Test attempting to create a project with an invalid path
-        #[test]
-        fn test_create_project_invalid_path() {
+        #[tokio::test]
+        async fn test_create_project_invalid_path() {
             let project_service = default_test_service();
 
             // Given valid project settings
@@ -830,10 +829,10 @@ mod test {
 
             // When I create a project
 
-            let project_id = project_service.create_project(project_settings.clone(), false).unwrap();
+            let project_id = project_service.create_project(project_settings.clone(), false).await.unwrap();
 
             // It should create the new project
-            let project_provider = project_service.project_provider.read().unwrap();
+            let project_provider = project_service.project_provider.read().await;
 
             #[cfg(target_os = "windows")]
             let expected_path = "test_\\invalid_\\path_";
@@ -845,8 +844,8 @@ mod test {
         }
         
         /// Test attempting to create a project while one already exists with the same name
-        #[test]
-        fn test_create_duplicate_project() {
+        #[tokio::test]
+        async fn test_create_duplicate_project() {
             // Given a project that already exists
 
             let project_settings = ProjectSettings {
@@ -861,21 +860,18 @@ mod test {
             
             // When I try to create that project again
 
-            let result = project_service.create_project(project_settings.clone(), false);
+            let result = project_service.create_project(project_settings.clone(), false).await;
             
             // It should return an appropriate error
 
             assert!(result.is_err());
-            assert!(matches!(
-                result,
-                Err(ProjectServiceError::RepoError(_))
-            ));
+            assert!(matches!(result, Err(ProjectServiceError::RepoError(_))));
         }
         
         /// Test creating a new project while one already exists with the same name
         /// but the overwrite flag is set
-        #[test]
-        fn test_overwrite_existing_project() {
+        #[tokio::test]
+        async fn test_overwrite_existing_project() {
             // Given a project that already exists
 
             let project_settings = default_test_project_settings();
@@ -884,7 +880,7 @@ mod test {
 
             // When I try to create that project again with the overwrite flag set
 
-            let result = project_service.create_project(project_settings.clone(), true);
+            let result = project_service.create_project(project_settings.clone(), true).await;
 
             // It should create the project
 
@@ -904,8 +900,8 @@ mod test {
         }
         
         /// Test graceful error handling when the project provider returns an error 
-        #[test]
-        fn test_create_project_provider_failure() {
+        #[tokio::test]
+        async fn test_create_project_provider_failure() {
             // Given an error from the repo
 
             let project_service = test_service_with_project_provider(MockProjectProvider::with_settings(
@@ -919,7 +915,7 @@ mod test {
             
             // When I try to create a new project
 
-            let result = project_service.create_project(project_settings.clone(), false);
+            let result = project_service.create_project(project_settings.clone(), false).await;
 
             // It should return an appropriate error
 
@@ -929,7 +925,7 @@ mod test {
     }
     
     mod open_project {
-        use crate::services::project_service::ProjectServiceError;
+        use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider};
         use super::*;
         
         /// Test opening a project
@@ -947,7 +943,7 @@ mod test {
             
             // It should be opened properly
 
-            let project_provider = project_service.project_provider.read().unwrap();
+            let project_provider = project_service.project_provider.read().await;
 
             let created_settings = project_provider.with_project(project_id, |project| {
                 let mut comparison_project = Project::new(project_settings.clone());
@@ -1053,12 +1049,12 @@ mod test {
     }
     
     mod close_project {
-        use crate::services::project_service::ProjectServiceError;
+        use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider};
         use super::*;
         
         /// Test closing a project
-        #[test]
-        fn test_close_project() {
+        #[tokio::test]
+        async fn test_close_project() {
             // Given an open project
 
             let project_settings = default_test_project_settings();
@@ -1067,13 +1063,13 @@ mod test {
             
             // When I close it
 
-            let result = project_service.close_project(existing_project.get_id());
+            let result = project_service.close_project(existing_project.get_id()).await;
 
             // It should be closed properly
 
             assert!(result.is_ok());
 
-            let project_provider = project_service.project_provider.read().unwrap();
+            let project_provider = project_service.project_provider.read().await;
             assert!(!*project_provider.is_project_open.read().unwrap());
 
             // Verify calls to the provider
@@ -1082,17 +1078,17 @@ mod test {
         }
 
         /// Test trying to close a project which has unsaved changes
-        #[test]
-        fn test_close_project_unsaved_changes() {
+        #[tokio::test]
+        async fn test_close_project_unsaved_changes() {
             // Given a project with unsaved changes
 
             let project_settings = default_test_project_settings();
-            let mut existing_project = Project::with_unsaved_changes(project_settings.clone());
+            let existing_project = Project::with_unsaved_changes(project_settings.clone());
             let project_service = test_service_with_project_provider(MockProjectProvider::with_open_project(existing_project.clone()));
             
             // When I try to close it
 
-            let result = project_service.close_project(existing_project.get_id());
+            let result = project_service.close_project(existing_project.get_id()).await;
             
             // It should return an appropriate error
 
@@ -1101,8 +1097,8 @@ mod test {
         }
 
         /// Test trying to close a project which is not open
-        #[test]
-        fn test_close_project_not_open() {
+        #[tokio::test]
+        async fn test_close_project_not_open() {
             // Given a project which is not open
 
             let project_settings = default_test_project_settings();
@@ -1111,7 +1107,7 @@ mod test {
             
             // When I try to close it
 
-            let result = project_service.close_project(existing_project.get_id());
+            let result = project_service.close_project(existing_project.get_id()).await;
 
             // It should return an appropriate error
 
@@ -1120,8 +1116,8 @@ mod test {
         }
 
         /// Test trying to close a project which does not exist
-        #[test]
-        fn test_close_project_nonexistent() {
+        #[tokio::test]
+        async fn test_close_project_nonexistent() {
             let project_service = default_test_service();
 
             // Given a project which does not exist
@@ -1130,7 +1126,7 @@ mod test {
 
             // When I try to close it
 
-            let result = project_service.close_project(project_id);
+            let result = project_service.close_project(project_id).await;
 
             // It should return an appropriate error
 
@@ -1151,8 +1147,8 @@ mod test {
         }
 
         /// Test graceful error handling when the provider returns an error
-        #[test]
-        fn test_close_project_provider_failure() {
+        #[tokio::test]
+        async fn test_close_project_provider_failure() {
             // Given an error from the repo
 
             let project_settings = default_test_project_settings();
@@ -1168,7 +1164,7 @@ mod test {
 
             // When I try to close a project
 
-            let result = project_service.close_project(project.get_id());
+            let result = project_service.close_project(project.get_id()).await;
 
             // It should return an appropriate error
 
@@ -1178,7 +1174,7 @@ mod test {
     }
     
     mod save_project {
-        use crate::services::project_service::ProjectServiceError;
+        use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider};
         use super::*;
 
         /// Test saving a project
@@ -1201,7 +1197,7 @@ mod test {
             assert_eq!(result.unwrap().as_path(), Path::new("test/file/path"));
 
             // Verify calls to the provider
-            let project_provider = project_service.project_provider.read().unwrap();
+            let project_provider = project_service.project_provider.read().await;
             let call_tracker = project_provider.call_tracker.read().unwrap();
             assert_eq!(call_tracker.save_project_calls, 1);
         }
@@ -1247,7 +1243,7 @@ mod test {
     }
     
     mod import_zip {
-        use crate::services::project_service::{ProjectServiceError, ZipError, ZipPath};
+        use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider, ZipError, ZipPath};
         use super::*;
 
         /// Test importing a datapack from a zip as a new project
@@ -1277,7 +1273,7 @@ mod test {
             
             assert_ne!(project_id, ProjectID::nil());
 
-            let project_provider = project_service.project_provider.read().unwrap();
+            let project_provider = project_service.project_provider.read().await;
             
             let imported_project = project_provider.with_project(project_id, |_| {});
             assert!(imported_project.is_some());
@@ -1285,7 +1281,7 @@ mod test {
             let project_provider_call_tracker = project_provider.call_tracker.read().unwrap();
             assert_eq!(project_provider_call_tracker.add_project_calls, 1);
 
-            let zip_provider = project_service.zip_provider.read().unwrap();
+            let zip_provider = project_service.zip_provider.read().await;
             let zip_provider_call_tracker = zip_provider.call_tracker.read().unwrap();
             assert_eq!(zip_provider_call_tracker.extract_calls, 1);
         }
@@ -1319,7 +1315,7 @@ mod test {
 
             assert_ne!(project_id, ProjectID::nil());
 
-            let project_provider = project_service.project_provider.read().unwrap();
+            let project_provider = project_service.project_provider.read().await;
 
             let imported_project = project_provider.with_project(project_id, |_| {});
             assert!(imported_project.is_some());
@@ -1327,7 +1323,7 @@ mod test {
             let project_provider_call_tracker = project_provider.call_tracker.read().unwrap();
             assert_eq!(project_provider_call_tracker.add_project_calls, 1);
 
-            let zip_provider = project_service.zip_provider.read().unwrap();
+            let zip_provider = project_service.zip_provider.read().await;
             let zip_provider_call_tracker = zip_provider.call_tracker.read().unwrap();
             assert_eq!(zip_provider_call_tracker.extract_calls, 2);
         }
@@ -1367,7 +1363,7 @@ mod test {
     }
     
     mod export_zip {
-        use crate::services::project_service::{ProjectServiceError, ProjectZipData, ZipError, ZipPath};
+        use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider, ProjectZipData, ZipError, ZipPath};
         use super::*;
 
         /// Test exporting a single-typed project to a zip
@@ -1405,7 +1401,7 @@ mod test {
 
             assert!(result.is_ok());
 
-            let zip_provider = project_service.zip_provider.read().unwrap();
+            let zip_provider = project_service.zip_provider.read().await;
             let zip_provider_call_tracker = zip_provider.call_tracker.read().unwrap();
             assert_eq!(zip_provider_call_tracker.zip_calls, 1);
         }
@@ -1453,7 +1449,7 @@ mod test {
 
             assert!(result.is_ok());
 
-            let zip_provider = project_service.zip_provider.read().unwrap();
+            let zip_provider = project_service.zip_provider.read().await;
             let zip_provider_call_tracker = zip_provider.call_tracker.read().unwrap();
             assert_eq!(zip_provider_call_tracker.zip_calls, 2);
         }

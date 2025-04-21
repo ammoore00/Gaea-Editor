@@ -10,7 +10,7 @@ use crate::services::filesystem_service::{FilesystemProvider, FilesystemService}
 static PROJECT_EXTENSION: &str = "json";
 
 #[async_trait::async_trait]
-pub trait ProjectProvider<'a> {
+pub trait ProjectProvider {
     fn add_project(&self, project: Project, overwrite_existing: bool) -> Result<ProjectID>;
 
     fn with_project<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
@@ -19,13 +19,15 @@ pub trait ProjectProvider<'a> {
     fn with_project_mut<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where F: FnOnce(&mut Project) -> R;
 
-    async fn with_project_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+    async fn with_project_async<'a, F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where
-        F: FnOnce(&Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync;
+        F: FnOnce(&Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync,
+        R: Send + Sync;
 
-    async fn with_project_mut_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+    async fn with_project_mut_async<'a, F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where
-        F: FnOnce(&mut Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync;
+        F: FnOnce(&mut Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync,
+        R: Send + Sync;
 
     async fn open_project(&self, path: &Path) -> Result<ProjectID>;
     fn close_project(&self, id: ProjectID) -> Result<()>;
@@ -38,30 +40,28 @@ pub trait ProjectProvider<'a> {
 
 pub type DefaultFilesystemProvider = FilesystemService;
 
-pub struct ProjectRepository<'a, Filesystem: FilesystemProvider = DefaultFilesystemProvider> {
-    _phantom: std::marker::PhantomData<&'a ()>,
+pub struct ProjectRepository<Filesystem: FilesystemProvider = DefaultFilesystemProvider> {
     filesystem_provider: Filesystem,
     projects: DashMap<ProjectID, Project>,
 }
 
-impl<'a, Filesystem: FilesystemProvider> ProjectRepository<'a, Filesystem> {
+impl<Filesystem: FilesystemProvider> ProjectRepository<Filesystem> {
     pub fn with_filesystem(filesystem_provider: Filesystem) -> Self {
         Self {
-            _phantom: std::marker::PhantomData,
             filesystem_provider: filesystem_provider,
             projects: DashMap::new(),
         }
     }
 }
 
-impl<'a> Default for ProjectRepository<'a> {
+impl Default for ProjectRepository {
     fn default() -> Self {
         Self::with_filesystem(DefaultFilesystemProvider::new())
     }
 }
 
 #[async_trait::async_trait]
-impl<'a, Filesystem: FilesystemProvider> ProjectProvider<'a> for ProjectRepository<'a, Filesystem> {
+impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Filesystem> {
     fn add_project(&self, project: Project, overwrite_existing: bool) -> Result<ProjectID> {
         let project_id = project.get_id();
         let path = project.get_settings().path.clone();
@@ -105,9 +105,10 @@ impl<'a, Filesystem: FilesystemProvider> ProjectProvider<'a> for ProjectReposito
         }
     }
 
-    async fn with_project_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+    async fn with_project_async<'a, F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where
-        F: FnOnce(&Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync
+        F: FnOnce(&Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync,
+        R: Send + Sync,
     {
         let project = self.projects.get(&project_id);
 
@@ -120,9 +121,10 @@ impl<'a, Filesystem: FilesystemProvider> ProjectProvider<'a> for ProjectReposito
         }
     }
 
-    async fn with_project_mut_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+    async fn with_project_mut_async<'a, F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where
-        F: FnOnce(&mut Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync
+        F: FnOnce(&mut Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync,
+        R: Send + Sync,
     {
 
         let project = self.projects.get_mut(&project_id);
