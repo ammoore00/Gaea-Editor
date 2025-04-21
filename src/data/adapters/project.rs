@@ -1,25 +1,43 @@
 use std::convert::Infallible;
+use std::sync::{Arc, RwLock};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::domain::project::Project as DomainProject;
 use crate::data::serialization::project::Project as SerializedProject;
+use crate::repositories::adapter_repo::{AdapterProvider, AdapterRepository};
 
-pub struct ProjectAdapter;
+pub struct ProjectAdapter<AdpProvider:AdapterProvider = AdapterRepository> {
+    adapter_provider: Arc<RwLock<AdpProvider>>,
+}
 
 impl Default for ProjectAdapter {
     fn default() -> Self {
-        Self {}
+        Self::new(AdapterRepository::default())
     }
 }
 
-impl Adapter<SerializedProjectData, DomainProject> for ProjectAdapter {
+impl<AdpProvider> ProjectAdapter<AdpProvider>
+where
+    AdpProvider: AdapterProvider
+{
+    pub fn new(adapter_provider: AdpProvider) -> Self {
+        Self {
+            adapter_provider: Arc::new(RwLock::new(adapter_provider))
+        }
+    }
+}
+
+impl<AdpProvider> Adapter<SerializedProjectData, DomainProject> for ProjectAdapter<AdpProvider>
+where
+    AdpProvider: AdapterProvider
+{
     type ConversionError = ProjectConversionError;
 
-    fn serialized_to_domain(serialized: &SerializedProjectData) -> Result<DomainProject, Self::ConversionError> {
+    fn deserialize(serialized: &SerializedProjectData) -> Result<DomainProject, Self::ConversionError> {
         todo!()
     }
 
-    fn domain_to_serialized(domain: &DomainProject) -> Result<SerializedProjectData, Infallible> {
+    fn serialize(domain: &DomainProject) -> Result<SerializedProjectData, Infallible> {
         todo!()
     }
 }

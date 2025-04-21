@@ -8,7 +8,7 @@ use crate::data::adapters::project;
 use crate::data::adapters::project::SerializedProjectData;
 use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType};
 use crate::data::serialization::project::Project as SerializedProject;
-use crate::persistence::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
+use crate::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
 use crate::services::zip_service;
 use crate::services::zip_service::ZipService;
 
@@ -134,7 +134,7 @@ where
             }
         };
 
-        let project = ProjectAdapter::serialized_to_domain(&serialized_project).map_err(|e| ZipError::Deserialization(e))?;
+        let project = ProjectAdapter::deserialize(&serialized_project).map_err(|e| ZipError::Deserialization(e))?;
         let project_id = project.get_id();
 
         // TODO: Maybe prevent accidental duplicate importing somehow?
@@ -154,7 +154,7 @@ where
             project_provider.with_project(zip_data.project_id, |project| {
                 let project_settings = project.get_settings().clone();
                 // TODO: Assumed to be infallible for now - add proper error handling in the future
-                let serialized_project = ProjectAdapter::domain_to_serialized(project).unwrap();
+                let serialized_project = ProjectAdapter::serialize(project).unwrap();
 
                 (serialized_project, project_settings)
             }).ok_or(ProjectServiceError::ProjectDoesNotExist)?
@@ -357,8 +357,8 @@ mod test {
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
     use crate::data::domain::version;
     use crate::data::serialization::project::Project as SerializedProject;
-    use crate::persistence::repositories::project_repo;
-    use crate::persistence::repositories::project_repo::{ProjectCloseError, ProjectCreationError, ProjectOpenError, ProjectProvider, ProjectRepoError};
+    use crate::repositories::project_repo;
+    use crate::repositories::project_repo::{ProjectCloseError, ProjectCreationError, ProjectOpenError, ProjectProvider, ProjectRepoError};
     use crate::services::project_service::{ProjectService, ProjectServiceBuilder};
     use crate::services::zip_service::{self, ZipProvider};
 
@@ -697,7 +697,7 @@ mod test {
     impl Adapter<SerializedProjectData, Project> for MockProjectAdapter {
         type ConversionError = ProjectConversionError;
 
-        fn serialized_to_domain(serialized: &SerializedProjectData) -> Result<Project, Self::ConversionError> {
+        fn deserialize(serialized: &SerializedProjectData) -> Result<Project, Self::ConversionError> {
             let config = PROJECT_ADAPTER_CONFIG.read().unwrap();
             
             if *config.fail_conversion.read().unwrap() {
@@ -707,7 +707,7 @@ mod test {
             Ok(config.project.clone().unwrap())
         }
 
-        fn domain_to_serialized(domain: &Project) -> Result<SerializedProjectData, Self::SerializedConversionError> {
+        fn serialize(domain: &Project) -> Result<SerializedProjectData, Self::SerializedConversionError> {
             match domain.get_settings().project_type {
                 ProjectType::Combined => {
                     let serialized_project = PROJECT_ADAPTER_CONFIG.read().unwrap().serialized_project.clone().unwrap();
