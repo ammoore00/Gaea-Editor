@@ -1248,6 +1248,7 @@ mod test {
 
         /// Test importing a datapack from a zip as a new project
         #[tokio::test]
+        #[serial_test::serial(project_service_zip)]
         async fn test_import_from_zip() {
             // Given a valid zip
 
@@ -1287,6 +1288,7 @@ mod test {
         }
         
         #[tokio::test]
+        #[serial_test::serial(project_service_zip)]
         async fn test_import_combined_project() {
             // Given a valid zip pair
 
@@ -1330,6 +1332,7 @@ mod test {
 
         /// Test trying to import an invalid zip file
         #[tokio::test]
+        #[serial_test::serial(project_service_zip)]
         async fn test_import_provider_error() {
             // Given an error from the zip provider
 
@@ -1368,6 +1371,7 @@ mod test {
 
         /// Test exporting a single-typed project to a zip
         #[tokio::test]
+        #[serial_test::serial(project_service_zip)]
         async fn test_export_to_zip() {
             // Given a valid project
 
@@ -1408,6 +1412,7 @@ mod test {
 
         /// Test exporting a project with resource and data components to multiple zip files
         #[tokio::test]
+        #[serial_test::serial(project_service_zip)]
         async fn test_export_combined_project() {
             // Given a project with both resource and data components
 
@@ -1456,6 +1461,7 @@ mod test {
 
         /// Test exporting a project with mismatched combined variants (combined project and single path)
         #[tokio::test]
+        #[serial_test::serial(project_service_zip)]
         async fn test_export_combined_project_single_path() {
             // Given a project with combined type and a single path
 
@@ -1498,6 +1504,7 @@ mod test {
 
         /// Test exporting a project with mismatched combined variants (single project and combined path)
         #[tokio::test]
+        #[serial_test::serial(project_service_zip)]
         async fn test_export_single_project_combined_path() {
             // Given a project with combined type and a single path
 
@@ -1538,6 +1545,7 @@ mod test {
 
         /// Test attempting to create a project while one already exists with the same name
         #[tokio::test]
+        #[serial_test::serial(project_service_zip)]
         async fn test_export_duplicate_zip() {
             // Given a zip that already exists
 
@@ -1581,6 +1589,7 @@ mod test {
         /// Test creating a new project while one already exists with the same name
         /// but the overwrite flag is set
         #[tokio::test]
+        #[serial_test::serial(project_service_zip)]
         async fn test_overwrite_existing_zip() {
             // Given a zip that already exists
 
@@ -1622,6 +1631,7 @@ mod test {
 
         /// Test graceful error handling when the zip provider returns an error
         #[tokio::test]
+        #[serial_test::serial(project_service_zip)]
         async fn test_export_error() {
             // Given an error from the zip provider
 

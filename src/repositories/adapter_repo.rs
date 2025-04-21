@@ -267,10 +267,12 @@ mod test {
     impl AdapterError for TestAdapterError {}
 
     #[test]
+    #[serial_test::serial(adapter_repo)]
     fn test_register_adapter() {
         // Given an adapter (TestAdapter)
         // When I register it
 
+        ADAPTER_CACHE.clear();
         AdapterRepository::register::<TestAdapter, Serialized, Domain>();
 
         // It should be added to the repository
@@ -282,19 +284,23 @@ mod test {
     }
     
     #[test]
+    #[serial_test::serial(adapter_repo)]
     fn test_register_adapter_multiple() {
         // TODO: Implement test
     }
 
     #[test]
+    #[serial_test::serial(adapter_repo)]
     fn test_register_adapter_already_registered() {
         // TODO: Implement test
     }
     
     #[test]
+    #[serial_test::serial(adapter_repo)]
     fn test_serialize() {
         // Given a repo with an adapter
-
+        
+        ADAPTER_CACHE.clear();
         AdapterRepository::register::<TestAdapter, Serialized, Domain>();
         
         // When I try to serialize with that adapter
@@ -308,9 +314,11 @@ mod test {
     }
     
     #[test]
+    #[serial_test::serial(adapter_repo)]
     fn test_serialize_error() {
         // Given an adapter which fails calls
 
+        ADAPTER_CACHE.clear();
         AdapterRepository::register::<TestFailAdapter, Serialized, Domain>();
 
         // When I try to serialize with that adapter
@@ -324,8 +332,12 @@ mod test {
     }
 
     #[test]
+    #[serial_test::serial(adapter_repo)]
     fn test_serialize_no_adapter_found() {
         // Given an adapter that does not exist
+        
+        ADAPTER_CACHE.clear();
+        
         // When I try to serialize with that adapter
 
         let result: Result<Serialized, _> = AdapterRepository::serialize(&Domain);
@@ -337,9 +349,11 @@ mod test {
     }
     
     #[test]
+    #[serial_test::serial(adapter_repo)]
     fn test_deserialize() {
         // Given a repo with an adapter
 
+        ADAPTER_CACHE.clear();
         AdapterRepository::register::<TestAdapter, Serialized, Domain>();
 
         // When I try to deserialize with that adapter
@@ -353,9 +367,11 @@ mod test {
     }
 
     #[test]
+    #[serial_test::serial(adapter_repo)]
     fn test_deserialize_error() {
         // Given an adapter which fails calls
 
+        ADAPTER_CACHE.clear();
         AdapterRepository::register::<TestFailAdapter, Serialized, Domain>();
 
         // When I try to deserialize with that adapter
@@ -369,8 +385,12 @@ mod test {
     }
     
     #[test]
+    #[serial_test::serial(adapter_repo)]
     fn test_deserialize_no_adapter_found() {
         // Given an adapter that does not exist
+
+        ADAPTER_CACHE.clear();
+        
         // When I try to deserialize with that adapter
 
         let result: Result<Domain, _> = AdapterRepository::deserialize(&Serialized);

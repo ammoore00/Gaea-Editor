@@ -45,3 +45,4 @@ sanitize-filename = "0.6"
 
 [dev-dependencies]
 tokio = { version = "1.44", features = ["macros", "test-util"] }
+serial_test = "3.2"
