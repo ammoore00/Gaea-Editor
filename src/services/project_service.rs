@@ -1,5 +1,4 @@
-use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -17,8 +16,8 @@ pub type DefaultZipService = ZipService<SerializedProject>;
 pub type DefaultProjectAdapter = project::ProjectAdapter;
 
 pub struct ProjectServiceBuilder<'a,
-    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a = DefaultProjectProvider<'a>,
-    ZipProvider: zip_service::ZipProvider<SerializedProject> = DefaultZipService,
+    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static = DefaultProjectProvider<'a>,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> + 'static = DefaultZipService,
 > {
     _phantom: PhantomData<&'a ()>,
     project_provider: Arc<RwLock<ProjectProvider>>,
@@ -27,8 +26,8 @@ pub struct ProjectServiceBuilder<'a,
 
 impl<'a, ProjectProvider, ZipProvider> ProjectServiceBuilder<'a, ProjectProvider, ZipProvider>
 where
-    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a,
-    ZipProvider: zip_service::ZipProvider<SerializedProject>,
+    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> + 'static,
 {
     pub fn new(
         project_provider: Arc<RwLock<ProjectProvider>>,
@@ -60,10 +59,30 @@ where
     }
 }
 
+#[async_trait::async_trait]
+pub trait ProjectServiceProvider<'a> {
+    fn create_project(
+        &self,
+        settings: ProjectSettings,
+        overwrite_existing: bool,
+    ) -> Result<ProjectID>;
+
+    async fn open_project(&self, path: &Path) -> Result<ProjectID>;
+    fn close_project(&self, project_id: ProjectID) -> Result<()>;
+    async fn save_project(&self, project_id: ProjectID) -> Result<PathBuf>;
+    async fn import_zip(&self, path: ZipPath) -> Result<ProjectID>;
+
+    async fn export_zip(
+        &self,
+        zip_data: ProjectZipData,
+        overwrite_existing: bool,
+    ) -> Result<()>;
+}
+
 pub struct ProjectService<'a,
-    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a = DefaultProjectProvider<'a>,
-    ZipProvider: zip_service::ZipProvider<SerializedProject> = DefaultZipService,
-    ProjectAdapter: Adapter<SerializedProjectData, Project> = DefaultProjectAdapter,
+    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static = DefaultProjectProvider<'a>,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> + 'static = DefaultZipService,
+    ProjectAdapter: Adapter<SerializedProjectData, Project> + 'static = DefaultProjectAdapter,
 > {
     _phantom: PhantomData<&'a ProjectAdapter>,
     project_provider: Arc<RwLock<ProjectProvider>>,
@@ -72,15 +91,43 @@ pub struct ProjectService<'a,
 
 impl<'a, ProjectProvider, ZipProvider, ProjectAdapter> ProjectService<'a, ProjectProvider, ZipProvider, ProjectAdapter>
 where
-    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a,
-    ZipProvider: zip_service::ZipProvider<SerializedProject>,
-    ProjectAdapter: Adapter<SerializedProjectData, Project>,
+    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> + 'static,
+    ProjectAdapter: Adapter<SerializedProjectData, Project> + 'static,
 {
-    pub fn create_project(
+    /// Consumes project settings, then returns a sanitized version of it,
+    /// or an error if it is unrecoverable
+    fn sanitize_project_settings(mut settings: ProjectSettings) -> Result<ProjectSettings> {
+        if let Some(path) = &settings.path {
+            settings.path = Some(Self::sanitize_path(path)?);
+        }
+
+        Ok(settings)
+    }
+
+    fn sanitize_path(path: &Path) -> Result<PathBuf> {
+        let options = sanitize_filename::Options {
+            replacement: "_",
+            ..sanitize_filename::Options::default()
+        };
+
+        let sanitized_path = path.iter().map(|path_segment| sanitize_filename::sanitize_with_options(path_segment.to_string_lossy(), options.clone())).collect();
+        Ok(sanitized_path)
+    }
+}
+
+#[async_trait::async_trait]
+impl<'a, ProjectProvider, ZipProvider, ProjectAdapter> ProjectServiceProvider<'a> for ProjectService<'a, ProjectProvider, ZipProvider, ProjectAdapter>
+where
+    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> + 'static,
+    ProjectAdapter: Adapter<SerializedProjectData, Project> + 'static,
+{
+    fn create_project(
         &self,
         settings: ProjectSettings,
         overwrite_existing: bool,
-    ) -> Result<ProjectID, ProjectAdapter> {
+    ) -> Result<ProjectID> {
         let sanitized_settings = Self::sanitize_project_settings(settings)?;
 
         let project = Project::new(sanitized_settings);
@@ -89,11 +136,11 @@ where
         Ok(project_id)
     }
 
-    pub async fn open_project(&self, path: &Path) -> Result<ProjectID, ProjectAdapter> {
+    async fn open_project(&self, path: &Path) -> Result<ProjectID> {
         self.project_provider.read().unwrap().open_project(path).await.map_err(Into::into)
     }
 
-    pub fn close_project(&self, project_id: ProjectID) -> Result<(), ProjectAdapter> {
+    fn close_project(&self, project_id: ProjectID) -> Result<()> {
         let project_provider = self.project_provider.read().unwrap();
         
         project_provider.with_project(project_id, |project| {
@@ -107,11 +154,11 @@ where
         Ok(())
     }
 
-    pub async fn save_project(&self, project_id: ProjectID) -> Result<PathBuf, ProjectAdapter> {
+    async fn save_project(&self, project_id: ProjectID) -> Result<PathBuf> {
         self.project_provider.read().unwrap().save_project(project_id).await.map_err(Into::into)
     }
 
-    pub async fn import_zip(&self, path: ZipPath) -> Result<ProjectID, ProjectAdapter> {
+    async fn import_zip(&self, path: ZipPath) -> Result<ProjectID> {
         let serialized_project = match path {
             ZipPath::Single(path) => {
                 let serialized_project = self.zip_provider.read().unwrap().extract(path.as_path()).await.map_err(ZipError::Zipping)?;
@@ -128,7 +175,7 @@ where
             }
         };
 
-        let project = ProjectAdapter::deserialize(&serialized_project).map_err(|e| ZipError::Deserialization(e))?;
+        let project = ProjectAdapter::deserialize(&serialized_project).map_err(|e| ZipError::Deserialization(Box::new(e)))?;
         let project_id = project.get_id();
 
         // TODO: Maybe prevent accidental duplicate importing somehow?
@@ -137,11 +184,11 @@ where
         Ok(project_id)
     }
 
-    pub async fn export_zip(
+    async fn export_zip(
         &self,
         zip_data: ProjectZipData,
         overwrite_existing: bool,
-    ) -> Result<(), ProjectAdapter> {
+    ) -> Result<()> {
         let (serialized_project, project_settings) = {
             let project_provider = self.project_provider.read().unwrap();
             
@@ -184,13 +231,13 @@ where
                         if let Err(_) = data_result {
                             self.zip_provider.read().unwrap().cleanup_file(data_path).await.map_err(ZipError::Zipping)?;
                         }
-                        Ok::<(), ProjectServiceError<_>>(())
+                        Ok::<(), ZipError>(())
                     },
                     async {
                         if let Err(_) = resource_result {
                             self.zip_provider.read().unwrap().cleanup_file(resource_path).await.map_err(ZipError::Zipping)?;
                         }
-                        Ok::<(), ProjectServiceError<_>>(())
+                        Ok::<(), ZipError>(())
                     },
                 );
 
@@ -208,35 +255,12 @@ where
             }
         }
     }
-
-    /// Consumes project settings, then returns a sanitized version of it,
-    /// or an error if it is unrecoverable
-    fn sanitize_project_settings(mut settings: ProjectSettings) -> Result<ProjectSettings, ProjectAdapter> {
-        if let Some(path) = &settings.path {
-            settings.path = Some(Self::sanitize_path(path)?);
-        }
-
-        Ok(settings)
-    }
-
-    fn sanitize_path(path: &Path) -> Result<PathBuf, ProjectAdapter> {
-        let options = sanitize_filename::Options {
-            replacement: "_",
-            ..sanitize_filename::Options::default()
-        };
-
-        let sanitized_path = path.iter().map(|path_segment| sanitize_filename::sanitize_with_options(path_segment.to_string_lossy(), options.clone())).collect();
-        Ok(sanitized_path)
-    }
 }
 
-type Result<T, A: Adapter<SerializedProjectData, Project>> = std::result::Result<T, ProjectServiceError<A>>;
+type Result<T> = std::result::Result<T, ProjectServiceError>;
 
 #[derive(Debug, thiserror::Error)]
-pub enum ProjectServiceError<A>
-where
-    A: Adapter<SerializedProjectData, Project>,
-{
+pub enum ProjectServiceError {
     #[error(transparent)]
     RepoError(#[from] ProjectRepoError),
     #[error("Cannot close with unsaved changes!")]
@@ -246,7 +270,7 @@ where
     #[error(transparent)]
     Save(#[from] SaveError),
     #[error(transparent)]
-    Zip(#[from] ZipError<A>),
+    Zip(#[from] ZipError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -257,64 +281,16 @@ pub enum SaveError {
     NoPathSet
 }
 
-pub enum ZipError<A>
-where
-    A: Adapter<SerializedProjectData, Project>,
-{
+#[derive(Debug, thiserror::Error)]
+pub enum ZipError {
+    #[error("Mismatched zip export data and project type! Project type was {1:?}, zip export type was {:?}", type_name_of(.1))]
     MismatchedPaths(ProjectType, ZipPath),
+    #[error(transparent)]
     Zipping(zip_service::ZipError),
-    Deserialization(A::ConversionError)
-}
-
-impl<A: Adapter<SerializedProjectData, Project>> Error for ZipError<A> {}
-
-impl<A> Debug for ZipError<A>
-where
-    A: Adapter<SerializedProjectData, Project>,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ZipError::MismatchedPaths(project_type, zip_path) => {
-                write!(f, "Mismatched zip export data and project type! Project type was {:?}, zip export type was {:?}", project_type, type_name_of(zip_path))
-            }
-            ZipError::Zipping(zip_error) => {
-                write!(f, "{:?}", zip_error)
-            }
-            ZipError::Deserialization(conversion_error) => {
-                write!(f, "{:?}", conversion_error)
-            }
-        }
-    }
-}
-
-impl<A> Display for ZipError<A>
-where
-    A: Adapter<SerializedProjectData, Project>,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ZipError::MismatchedPaths(project_type, zip_path) => {
-                write!(f, "Mismatched zip export data and project type! Project type was {:?}, zip export type was {}", project_type, type_name_of(zip_path))
-            }
-            ZipError::Zipping(zip_error) => {
-                write!(f, "{}", zip_error)
-            }
-            ZipError::Deserialization(conversion_error) => {
-                write!(f, "{}", conversion_error)
-            }
-        }
-    }
-}
-
-impl<A, E> From<E> for ZipError<A>
-where
-    A: Adapter<SerializedProjectData, Project>,
-    E: AdapterError,
-    E: Into<A::ConversionError>,
-{
-    fn from(value: E) -> Self {
-        ZipError::Deserialization(value.into())
-    }
+    #[error("Deserialization error: {0}")]
+    Deserialization(Box<dyn AdapterError>),
+    #[error("Serialization error: {0}")]
+    Serialization(Box<dyn AdapterError>),
 }
 
 #[derive(Debug)]

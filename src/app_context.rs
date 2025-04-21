@@ -4,31 +4,21 @@ use crate::data::adapters::project::SerializedProjectData;
 use crate::data::domain::project::Project;
 use crate::data::serialization::project::Project as SerializedProject;
 use crate::repositories::project_repo;
-use crate::services::project_service::{ProjectService, ProjectServiceBuilder};
+use crate::services::project_service::{ProjectService, ProjectServiceBuilder, ProjectServiceProvider};
 use crate::services::{project_service, zip_service};
 
-pub struct AppContextBuilder<'a,
-    // Project service types
-    PSProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a = project_service::DefaultProjectProvider<'a>,
-    PSZipProvider: zip_service::ZipProvider<crate::data::serialization::project::Project> = project_service::DefaultZipService,
-    PSProjectAdapter: Adapter<SerializedProjectData, Project> = project_service::DefaultProjectAdapter,
-> {
-    project_service: ProjectService<'a, PSProjectProvider, PSZipProvider, PSProjectAdapter>,
+pub struct AppContextBuilder<'a> {
+    project_service: Box<dyn ProjectServiceProvider<'a>>,
 }
 
-impl<'a,
-    PSProjectProvider, PSZipProvider, PSProjectAdapter
-> AppContextBuilder<'a,
-    PSProjectProvider, PSZipProvider, PSProjectAdapter
->
-where
-    // Project service types
-    PSProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a,
-    PSZipProvider: zip_service::ZipProvider<SerializedProject>,
-    PSProjectAdapter: Adapter<SerializedProjectData, Project>,
-{
-    pub fn with_project_service(mut self, project_service: ProjectService<'a, PSProjectProvider, PSZipProvider, PSProjectAdapter>) -> Self {
-        self.project_service = project_service;
+impl<'a> AppContextBuilder<'a> {
+    pub fn with_project_service<ProjectProvider, ZipProvider, ProjectAdapter>(mut self, project_service: ProjectService<'a, ProjectProvider, ZipProvider, ProjectAdapter>) -> Self
+    where
+        ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static,
+        ZipProvider: zip_service::ZipProvider<SerializedProject> + 'static,
+        ProjectAdapter: Adapter<SerializedProjectData, Project> + 'static,
+    {
+        self.project_service = Box::new(project_service);
         self
     }
 }
