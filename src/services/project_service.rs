@@ -1,7 +1,8 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::adapters::project;
 use crate::data::adapters::project::SerializedProjectData;
@@ -17,7 +18,7 @@ pub type DefaultProjectAdapter = project::ProjectAdapter;
 
 pub struct ProjectServiceBuilder<'a,
     ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static = DefaultProjectProvider<'a>,
-    ZipProvider: zip_service::ZipProvider<SerializedProject> + 'static = DefaultZipService,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static = DefaultZipService,
 > {
     _phantom: PhantomData<&'a ()>,
     project_provider: Arc<RwLock<ProjectProvider>>,
@@ -27,7 +28,7 @@ pub struct ProjectServiceBuilder<'a,
 impl<'a, ProjectProvider, ZipProvider> ProjectServiceBuilder<'a, ProjectProvider, ZipProvider>
 where
     ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static,
-    ZipProvider: zip_service::ZipProvider<SerializedProject> + 'static,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static,
 {
     pub fn new(
         project_provider: Arc<RwLock<ProjectProvider>>,
@@ -48,7 +49,7 @@ where
         }
     }
 
-    pub fn with_adapter<Adp: Adapter<SerializedProjectData, Project>>(
+    pub fn with_adapter<Adp: Adapter<SerializedProjectData, Project> + Send + Sync>(
         self
     ) -> ProjectService<'a, ProjectProvider, ZipProvider, Adp> {
         ProjectService {
@@ -61,14 +62,14 @@ where
 
 #[async_trait::async_trait]
 pub trait ProjectServiceProvider<'a> {
-    fn create_project(
+    async fn create_project(
         &self,
         settings: ProjectSettings,
         overwrite_existing: bool,
     ) -> Result<ProjectID>;
 
     async fn open_project(&self, path: &Path) -> Result<ProjectID>;
-    fn close_project(&self, project_id: ProjectID) -> Result<()>;
+    async fn close_project(&self, project_id: ProjectID) -> Result<()>;
     async fn save_project(&self, project_id: ProjectID) -> Result<PathBuf>;
     async fn import_zip(&self, path: ZipPath) -> Result<ProjectID>;
 
@@ -81,8 +82,8 @@ pub trait ProjectServiceProvider<'a> {
 
 pub struct ProjectService<'a,
     ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static = DefaultProjectProvider<'a>,
-    ZipProvider: zip_service::ZipProvider<SerializedProject> + 'static = DefaultZipService,
-    ProjectAdapter: Adapter<SerializedProjectData, Project> + 'static = DefaultProjectAdapter,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static = DefaultZipService,
+    ProjectAdapter: Adapter<SerializedProjectData, Project> + Send + Sync + 'static = DefaultProjectAdapter,
 > {
     _phantom: PhantomData<&'a ProjectAdapter>,
     project_provider: Arc<RwLock<ProjectProvider>>,
@@ -92,8 +93,8 @@ pub struct ProjectService<'a,
 impl<'a, ProjectProvider, ZipProvider, ProjectAdapter> ProjectService<'a, ProjectProvider, ZipProvider, ProjectAdapter>
 where
     ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static,
-    ZipProvider: zip_service::ZipProvider<SerializedProject> + 'static,
-    ProjectAdapter: Adapter<SerializedProjectData, Project> + 'static,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static,
+    ProjectAdapter: Adapter<SerializedProjectData, Project> + Send + Sync + 'static,
 {
     /// Consumes project settings, then returns a sanitized version of it,
     /// or an error if it is unrecoverable
@@ -120,10 +121,10 @@ where
 impl<'a, ProjectProvider, ZipProvider, ProjectAdapter> ProjectServiceProvider<'a> for ProjectService<'a, ProjectProvider, ZipProvider, ProjectAdapter>
 where
     ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'static,
-    ZipProvider: zip_service::ZipProvider<SerializedProject> + 'static,
-    ProjectAdapter: Adapter<SerializedProjectData, Project> + 'static,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static,
+    ProjectAdapter: Adapter<SerializedProjectData, Project> + Send + Sync + 'static,
 {
-    fn create_project(
+    async fn create_project(
         &self,
         settings: ProjectSettings,
         overwrite_existing: bool,
@@ -132,16 +133,17 @@ where
 
         let project = Project::new(sanitized_settings);
 
-        let project_id = self.project_provider.read().unwrap().add_project(project, overwrite_existing)?;
+        let project_id = self.project_provider.read().await.add_project(project, overwrite_existing)?;
         Ok(project_id)
     }
 
     async fn open_project(&self, path: &Path) -> Result<ProjectID> {
-        self.project_provider.read().unwrap().open_project(path).await.map_err(Into::into)
+        let provider = self.project_provider.read().await;
+        provider.open_project(path).await.map_err(Into::into)
     }
 
-    fn close_project(&self, project_id: ProjectID) -> Result<()> {
-        let project_provider = self.project_provider.read().unwrap();
+    async fn close_project(&self, project_id: ProjectID) -> Result<()> {
+        let project_provider = self.project_provider.read().await;
         
         project_provider.with_project(project_id, |project| {
             if project.has_unsaved_changes() {
@@ -155,20 +157,20 @@ where
     }
 
     async fn save_project(&self, project_id: ProjectID) -> Result<PathBuf> {
-        self.project_provider.read().unwrap().save_project(project_id).await.map_err(Into::into)
+        self.project_provider.read().await.save_project(project_id).await.map_err(Into::into)
     }
 
     async fn import_zip(&self, path: ZipPath) -> Result<ProjectID> {
         let serialized_project = match path {
             ZipPath::Single(path) => {
-                let serialized_project = self.zip_provider.read().unwrap().extract(path.as_path()).await.map_err(ZipError::Zipping)?;
+                let serialized_project = self.zip_provider.read().await.extract(path.as_path()).await.map_err(ZipError::Zipping)?;
 
                 SerializedProjectData::Single(serialized_project)
             }
             ZipPath::Combined { data_path, resource_path } => {
                 let (data_project, resource_project) = tokio::try_join!(
-                    async { self.zip_provider.read().unwrap().extract(data_path.as_path()).await.map_err(ZipError::Zipping) },
-                    async { self.zip_provider.read().unwrap().extract(resource_path.as_path()).await.map_err(ZipError::Zipping) }
+                    async { self.zip_provider.read().await.extract(data_path.as_path()).await.map_err(ZipError::Zipping) },
+                    async { self.zip_provider.read().await.extract(resource_path.as_path()).await.map_err(ZipError::Zipping) }
                 )?;
 
                 SerializedProjectData::Combined { data_project, resource_project }
@@ -179,7 +181,7 @@ where
         let project_id = project.get_id();
 
         // TODO: Maybe prevent accidental duplicate importing somehow?
-        let project_provider = self.project_provider.write().unwrap();
+        let project_provider = self.project_provider.write().await;
         project_provider.add_project(project, false)?;
         Ok(project_id)
     }
@@ -190,7 +192,7 @@ where
         overwrite_existing: bool,
     ) -> Result<()> {
         let (serialized_project, project_settings) = {
-            let project_provider = self.project_provider.read().unwrap();
+            let project_provider = self.project_provider.read().await;
             
             project_provider.with_project(zip_data.project_id, |project| {
                 let project_settings = project.get_settings().clone();
@@ -207,10 +209,10 @@ where
                 ZipPath::Single(path),
                 SerializedProjectData::Single(project),
             ) => {
-                let result = self.zip_provider.read().unwrap().zip(path, project, overwrite_existing).await.map_err(ZipError::Zipping);
+                let result = self.zip_provider.read().await.zip(path, project, overwrite_existing).await.map_err(ZipError::Zipping);
 
                 if let Err(_) = result {
-                    self.zip_provider.read().unwrap().cleanup_file(path).await.map_err(ZipError::Zipping)?;
+                    self.zip_provider.read().await.cleanup_file(path).await.map_err(ZipError::Zipping)?;
                 }
 
                 result?;
@@ -222,20 +224,20 @@ where
                 SerializedProjectData::Combined { data_project, resource_project},
             ) => {
                 let (data_result, resource_result) = tokio::join!(
-                    async { self.zip_provider.read().unwrap().zip(data_path, data_project, overwrite_existing).await.map_err(ZipError::Zipping) },
-                    async { self.zip_provider.read().unwrap().zip(resource_path, resource_project, overwrite_existing).await.map_err(ZipError::Zipping) }
+                    async { self.zip_provider.read().await.zip(data_path, data_project, overwrite_existing).await.map_err(ZipError::Zipping) },
+                    async { self.zip_provider.read().await.zip(resource_path, resource_project, overwrite_existing).await.map_err(ZipError::Zipping) }
                 );
 
                 let (data_cleanup_result, resource_cleanup_result) = tokio::join!(
                     async {
                         if let Err(_) = data_result {
-                            self.zip_provider.read().unwrap().cleanup_file(data_path).await.map_err(ZipError::Zipping)?;
+                            self.zip_provider.read().await.cleanup_file(data_path).await.map_err(ZipError::Zipping)?;
                         }
                         Ok::<(), ZipError>(())
                     },
                     async {
                         if let Err(_) = resource_result {
-                            self.zip_provider.read().unwrap().cleanup_file(resource_path).await.map_err(ZipError::Zipping)?;
+                            self.zip_provider.read().await.cleanup_file(resource_path).await.map_err(ZipError::Zipping)?;
                         }
                         Ok::<(), ZipError>(())
                     },
