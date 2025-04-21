@@ -7,6 +7,7 @@ use dashmap::DashMap;
 use crate::data::adapters::{Adapter, AdapterError};
 
 pub trait AdapterProvider {
+    // TODO: make this async aware
     fn serialize<Domain, Serialized>(&self, domain: &Domain) -> Result<Serialized, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
@@ -273,6 +274,17 @@ mod test {
         let adapter = repo.get_adapter::<Domain, Serialized>();
 
         assert!(adapter.is_some());
+        // TODO: Verify that the correct adapter was returned
+    }
+    
+    #[test]
+    fn test_register_adapter_multiple() {
+        // TODO: Implement test
+    }
+
+    #[test]
+    fn test_register_adapter_already_registered() {
+        // TODO: Implement test
     }
     
     #[test]
@@ -374,4 +386,6 @@ mod test {
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), AdapterRepoError::NoAdapterFound))
     }
+    
+    // TODO: concurrency tests
 }
