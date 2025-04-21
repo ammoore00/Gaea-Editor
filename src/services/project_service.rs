@@ -8,6 +8,7 @@ use crate::data::adapters::project;
 use crate::data::adapters::project::SerializedProjectData;
 use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType};
 use crate::data::serialization::project::Project as SerializedProject;
+use crate::repositories::adapter_repo::{AdapterProvider, AdapterRepository};
 use crate::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
 use crate::services::zip_service;
 use crate::services::zip_service::ZipService;

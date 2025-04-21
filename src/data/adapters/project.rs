@@ -1,5 +1,4 @@
 use std::convert::Infallible;
-use std::sync::{Arc, RwLock};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::domain::project::Project as DomainProject;
@@ -7,24 +6,7 @@ use crate::data::serialization::project::Project as SerializedProject;
 use crate::repositories::adapter_repo::{AdapterProvider, AdapterRepository};
 
 pub struct ProjectAdapter<AdpProvider:AdapterProvider = AdapterRepository> {
-    adapter_provider: Arc<RwLock<AdpProvider>>,
-}
-
-impl Default for ProjectAdapter {
-    fn default() -> Self {
-        Self::new(AdapterRepository::default())
-    }
-}
-
-impl<AdpProvider> ProjectAdapter<AdpProvider>
-where
-    AdpProvider: AdapterProvider
-{
-    pub fn new(adapter_provider: AdpProvider) -> Self {
-        Self {
-            adapter_provider: Arc::new(RwLock::new(adapter_provider))
-        }
-    }
+    _phantom: std::marker::PhantomData<AdpProvider>,
 }
 
 impl<AdpProvider> Adapter<SerializedProjectData, DomainProject> for ProjectAdapter<AdpProvider>
