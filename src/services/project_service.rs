@@ -737,7 +737,7 @@ mod test {
         ).with_adapter()
     }
 
-    fn test_service_with_project_provider<'a>(project_provider: MockProjectProvider<'a>) -> ProjectService<'a, MockProjectProvider<'a>, MockZipProvider, MockProjectAdapter> {
+    fn test_service_with_project_provider(project_provider: MockProjectProvider) -> ProjectService<MockProjectProvider, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
             Arc::new(RwLock::new(project_provider)),
             Arc::new(RwLock::new(MockZipProvider::default())),
