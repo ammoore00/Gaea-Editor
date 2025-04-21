@@ -438,9 +438,6 @@ mod test {
 
     #[async_trait::async_trait]
     impl<'a> ProjectProvider<'a> for MockProjectProvider<'a> {
-        type Ref = MockProjectRef<'a>;
-        type RefMut = MockProjectRefMut<'a>;
-
         fn add_project(&self, project: Project, overwrite_existing: bool) -> project_repo::Result<ProjectID> {
             self.call_tracker.write().unwrap().add_project_calls += 1;
 

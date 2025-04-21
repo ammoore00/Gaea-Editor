@@ -15,9 +15,6 @@ pub static PROJECT_REPO: Lazy<Arc<RwLock<ProjectRepository>>> = Lazy::new(|| Arc
 
 #[async_trait::async_trait]
 pub trait ProjectProvider<'a> {
-    type Ref: Deref<Target = Project>;
-    type RefMut: Deref<Target = Project> + DerefMut;
-
     fn add_project(&self, project: Project, overwrite_existing: bool) -> Result<ProjectID>;
 
     fn with_project<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
@@ -61,9 +58,6 @@ impl<'a, Filesystem: FilesystemProvider> ProjectRepository<'a, Filesystem> {
 
 #[async_trait::async_trait]
 impl<'a, Filesystem: FilesystemProvider> ProjectProvider<'a> for ProjectRepository<'a, Filesystem> {
-    type Ref = dashmap::mapref::one::Ref<'a, ProjectID, Project>;
-    type RefMut = dashmap::mapref::one::RefMut<'a, ProjectID, Project>;
-
     fn add_project(&self, project: Project, overwrite_existing: bool) -> Result<ProjectID> {
         let project_id = project.get_id();
         let path = project.get_settings().path.clone();
@@ -82,28 +76,59 @@ impl<'a, Filesystem: FilesystemProvider> ProjectProvider<'a> for ProjectReposito
     where
         F: FnOnce(&Project) -> R
     {
-        todo!()
+        let project = self.projects.get(&project_id);
+        
+        if let Some(project) = project {
+            let project = project.value();
+            Some(callback(project))
+        }
+        else {
+            None
+        }
     }
 
     fn with_project_mut<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where
         F: FnOnce(&mut Project) -> R
     {
-        todo!()
+        let project = self.projects.get_mut(&project_id);
+        
+        if let Some(mut project) = project {
+            Some(callback(project.value_mut()))
+        }
+        else {
+            None
+        }
     }
 
     async fn with_project_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where
         F: FnOnce(&Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync
     {
-        todo!()
+        let project = self.projects.get(&project_id);
+
+        if let Some(project) = project {
+            let project = project.value();
+            Some(callback(project).await)
+        }
+        else {
+            None
+        }
     }
 
     async fn with_project_mut_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where
         F: FnOnce(&mut Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync
     {
-        todo!()
+
+        let project = self.projects.get_mut(&project_id);
+
+        if let Some(mut project) = project {
+            Some(callback(project.value_mut()).await)
+        }
+        else {
+            None
+        }
     }
 
     async fn open_project(&self, path: &Path) -> Result<ProjectID> {
