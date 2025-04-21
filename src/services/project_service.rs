@@ -863,8 +863,13 @@ mod test {
             // It should create the new project
             let project_provider = project_service.project_provider.read().unwrap();
 
+            #[cfg(target_os = "windows")]
+            let expected_path = "test_\\invalid_\\path_";
+            #[cfg(not(target_os = "windows"))]
+            let expected_path = "test_/invalid_/path_";
+
             let created_settings = project_provider.with_project(project_id, |project| project.get_settings().clone()).unwrap();
-            assert_eq!(created_settings.path.as_ref().unwrap().to_string_lossy(), "test_/invalid_/path_");
+            assert_eq!(created_settings.path.as_ref().unwrap().to_string_lossy(), expected_path);
         }
         
         /// Test attempting to create a project while one already exists with the same name
