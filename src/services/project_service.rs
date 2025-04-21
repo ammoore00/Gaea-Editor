@@ -8,14 +8,17 @@ use crate::data::adapters::project;
 use crate::data::adapters::project::SerializedProjectData;
 use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType};
 use crate::data::serialization::project::Project as SerializedProject;
-use crate::repositories::adapter_repo::{AdapterProvider, AdapterRepository};
 use crate::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
 use crate::services::zip_service;
 use crate::services::zip_service::ZipService;
 
+pub type DefaultProjectProvider<'a> = ProjectRepository<'a>;
+pub type DefaultZipService = ZipService<SerializedProject>;
+pub type DefaultProjectAdapter = project::ProjectAdapter;
+
 pub struct ProjectServiceBuilder<'a,
-    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a = ProjectRepository<'a>,
-    ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
+    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a = DefaultProjectProvider<'a>,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> = DefaultZipService,
 > {
     _phantom: PhantomData<&'a ()>,
     project_provider: Arc<RwLock<ProjectProvider>>,
@@ -58,23 +61,13 @@ where
 }
 
 pub struct ProjectService<'a,
-    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a = ProjectRepository<'a>,
-    ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
-    ProjectAdapter: Adapter<SerializedProjectData, Project> = project::ProjectAdapter,
+    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a = DefaultProjectProvider<'a>,
+    ZipProvider: zip_service::ZipProvider<SerializedProject> = DefaultZipService,
+    ProjectAdapter: Adapter<SerializedProjectData, Project> = DefaultProjectAdapter,
 > {
     _phantom: PhantomData<&'a ProjectAdapter>,
     project_provider: Arc<RwLock<ProjectProvider>>,
     zip_provider: Arc<RwLock<ZipProvider>>,
-}
-
-impl Default for ProjectService<'static> {
-    fn default() -> Self {
-        Self {
-            _phantom: PhantomData,
-            project_provider: Arc::clone(&*project_repo::PROJECT_REPO),
-            zip_provider: Arc::new(RwLock::new(ZipService::default())),
-        }
-    }
 }
 
 impl<'a, ProjectProvider, ZipProvider, ProjectAdapter> ProjectService<'a, ProjectProvider, ZipProvider, ProjectAdapter>

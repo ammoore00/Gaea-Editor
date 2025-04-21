@@ -1,7 +1,7 @@
-mod project_service;
-pub(crate) mod filesystem_service;
-mod translation_service;
-mod resource;
-mod download_service;
-mod undo_service;
-mod zip_service;
+pub mod project_service;
+pub mod filesystem_service;
+pub mod translation_service;
+pub mod resource;
+pub mod download_service;
+pub mod undo_service;
+pub mod zip_service;

@@ -10,6 +10,7 @@ mod services;
 mod data;
 mod repositories;
 mod database;
+mod app_context;
 
 pub fn main() -> iced::Result {
     iced::application("Gaea - Minecraft Resource and Datapack Editor", ApplicationWindow::update, ApplicationWindow::view)

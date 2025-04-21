@@ -3,15 +3,11 @@ use std::io;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::{Arc, RwLock};
 use dashmap::DashMap;
-use once_cell::sync::Lazy;
 use crate::data::domain::project::{Project, ProjectID};
 use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 
 static PROJECT_EXTENSION: &str = "json";
-
-pub static PROJECT_REPO: Lazy<Arc<RwLock<ProjectRepository>>> = Lazy::new(|| Arc::new(RwLock::new(ProjectRepository::new(FilesystemService::new()))));
 
 #[async_trait::async_trait]
 pub trait ProjectProvider<'a> {
@@ -40,19 +36,27 @@ pub trait ProjectProvider<'a> {
     }
 }
 
-pub struct ProjectRepository<'a, Filesystem: FilesystemProvider = FilesystemService> {
+pub type DefaultFilesystemProvider = FilesystemService;
+
+pub struct ProjectRepository<'a, Filesystem: FilesystemProvider = DefaultFilesystemProvider> {
     _phantom: std::marker::PhantomData<&'a ()>,
     filesystem_provider: Filesystem,
     projects: DashMap<ProjectID, Project>,
 }
 
 impl<'a, Filesystem: FilesystemProvider> ProjectRepository<'a, Filesystem> {
-    pub fn new(filesystem_provider: Filesystem) -> Self {
+    pub fn with_filesystem(filesystem_provider: Filesystem) -> Self {
         Self {
             _phantom: std::marker::PhantomData,
             filesystem_provider: filesystem_provider,
             projects: DashMap::new(),
         }
+    }
+}
+
+impl<'a> Default for ProjectRepository<'a> {
+    fn default() -> Self {
+        Self::with_filesystem(DefaultFilesystemProvider::new())
     }
 }
 
