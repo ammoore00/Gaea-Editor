@@ -32,6 +32,7 @@ where
     AdpProvider: AdapterProvider
 {
     type ConversionError = ProjectConversionError;
+    type SerializedConversionError = Infallible;
 
     fn deserialize(serialized: &SerializedProjectData) -> Result<DomainProject, Self::ConversionError> {
         todo!()

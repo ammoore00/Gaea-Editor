@@ -345,6 +345,7 @@ fn type_name_of<T>(_: &T) -> &'static str {
 
 #[cfg(test)]
 mod test {
+    use std::convert::Infallible;
     use std::future::Future;
     use std::io;
     use std::ops::{Deref, DerefMut};
@@ -696,6 +697,7 @@ mod test {
 
     impl Adapter<SerializedProjectData, Project> for MockProjectAdapter {
         type ConversionError = ProjectConversionError;
+        type SerializedConversionError = Infallible;
 
         fn deserialize(serialized: &SerializedProjectData) -> Result<Project, Self::ConversionError> {
             let config = PROJECT_ADAPTER_CONFIG.read().unwrap();

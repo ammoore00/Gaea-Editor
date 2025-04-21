@@ -7,7 +7,7 @@ pub mod project;
 
 pub trait Adapter<Serialized, Domain> {
     type ConversionError: AdapterError;
-    type SerializedConversionError: AdapterError = Infallible;
+    type SerializedConversionError: AdapterError;
     
     fn deserialize(serialized: &Serialized) -> Result<Domain, Self::ConversionError>;
     fn serialize(domain: &Domain) -> Result<Serialized, Self::SerializedConversionError>;

@@ -29,7 +29,7 @@ pub struct AdapterRepository {
 }
 
 impl AdapterRepository {
-    pub fn register<Domain, Serialized, Adp>(&mut self)
+    pub fn register<Adp, Serialized, Domain>(&mut self)
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static,
@@ -218,15 +218,18 @@ impl AdapterRepoError {
 
 #[cfg(test)]
 mod test {
+    use std::convert::Infallible;
     use super::*;
 
+    #[derive(Debug, PartialEq, Eq)]
     struct Domain;
+    #[derive(Debug, PartialEq, Eq)]
     struct Serialized;
-
+    
     struct TestAdapter;
-
     impl Adapter<Serialized, Domain> for TestAdapter {
-        type ConversionError = TestAdapterError;
+        type ConversionError = Infallible;
+        type SerializedConversionError = Infallible;
 
         fn deserialize(serialized: &Serialized) -> Result<Domain, Self::ConversionError> {
             Ok(Domain)
@@ -234,6 +237,20 @@ mod test {
 
         fn serialize(domain: &Domain) -> Result<Serialized, Self::SerializedConversionError> {
             Ok(Serialized)
+        }
+    }
+
+    struct TestFailAdapter;
+    impl Adapter<Serialized, Domain> for TestFailAdapter {
+        type ConversionError = TestAdapterError;
+        type SerializedConversionError = TestAdapterError;
+
+        fn deserialize(serialized: &Serialized) -> Result<Domain, Self::ConversionError> {
+            Err(TestAdapterError)
+        }
+
+        fn serialize(domain: &Domain) -> Result<Serialized, Self::SerializedConversionError> {
+            Err(TestAdapterError)
         }
     }
 
@@ -249,12 +266,112 @@ mod test {
         // Given an adapter (TestAdapter)
         // When I register it
 
-        repo.register::<Domain, Serialized, TestAdapter>();
+        repo.register::<TestAdapter, Serialized, Domain>();
 
         // It should be added to the repository
 
         let adapter = repo.get_adapter::<Domain, Serialized>();
-        
+
         assert!(adapter.is_some());
+    }
+    
+    #[test]
+    fn test_serialize() {
+        // Given a repo with an adapter
+        
+        let mut repo = AdapterRepository::default();
+        repo.register::<TestAdapter, Serialized, Domain>();
+        
+        // When I try to serialize with that adapter
+        
+        let result: Result<Serialized, _> = repo.serialize(&Domain);
+        
+        // It should serialize correctly
+        
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Serialized)
+    }
+    
+    #[test]
+    fn test_serialize_error() {
+        // Given an adapter which fails calls
+
+        let mut repo = AdapterRepository::default();
+        repo.register::<TestFailAdapter, Serialized, Domain>();
+
+        // When I try to serialize with that adapter
+
+        let result: Result<Serialized, _> = repo.serialize(&Domain);
+
+        // It should return an appropriate error
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AdapterRepoError::SerializationError(_)))
+    }
+
+    #[test]
+    fn test_serialize_no_adapter_found() {
+        // Given an adapter that does not exist
+
+        let repo = AdapterRepository::default();
+
+        // When I try to serialize with that adapter
+
+        let result: Result<Serialized, _> = repo.serialize(&Domain);
+
+        // It should return an appropriate error
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AdapterRepoError::NoAdapterFound))
+    }
+    
+    #[test]
+    fn test_deserialize() {
+        // Given a repo with an adapter
+
+        let mut repo = AdapterRepository::default();
+        repo.register::<TestAdapter, Serialized, Domain>();
+
+        // When I try to deserialize with that adapter
+
+        let result: Result<Domain, _> = repo.deserialize(&Serialized);
+
+        // It should serialize correctly
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Domain)
+    }
+
+    #[test]
+    fn test_deserialize_error() {
+        // Given an adapter which fails calls
+
+        let mut repo = AdapterRepository::default();
+        repo.register::<TestFailAdapter, Serialized, Domain>();
+
+        // When I try to deserialize with that adapter
+
+        let result: Result<Domain, _> = repo.deserialize(&Serialized);
+
+        // It should return an appropriate error
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AdapterRepoError::DeserializationError(_)))
+    }
+    
+    #[test]
+    fn test_deserialize_no_adapter_found() {
+        // Given an adapter that does not exist
+        
+        let repo = AdapterRepository::default();
+
+        // When I try to deserialize with that adapter
+
+        let result: Result<Domain, _> = repo.deserialize(&Serialized);
+
+        // It should return an appropriate error
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AdapterRepoError::NoAdapterFound))
     }
 }
