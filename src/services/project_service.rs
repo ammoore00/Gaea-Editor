@@ -1,12 +1,8 @@
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
-use std::future::Future;
 use std::marker::PhantomData;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 use std::sync::{Arc, RwLock};
-use iced::futures::TryStreamExt;
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::adapters::project;
 use crate::data::adapters::project::SerializedProjectData;
@@ -1206,7 +1202,7 @@ mod test {
     }
     
     mod save_project {
-        use crate::services::project_service::{ProjectServiceError, SaveError};
+        use crate::services::project_service::ProjectServiceError;
         use super::*;
 
         /// Test saving a project
