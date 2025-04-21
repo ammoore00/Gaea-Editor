@@ -1,22 +1,24 @@
+use std::future::Future;
 use std::io;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::sync::{Arc, RwLock};
 use dashmap::DashMap;
+use once_cell::sync::Lazy;
 use crate::data::domain::project::{Project, ProjectID};
 use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 
 static PROJECT_EXTENSION: &str = "json";
 
+pub static PROJECT_REPO: Lazy<Arc<RwLock<ProjectRepository>>> = Lazy::new(|| Arc::new(RwLock::new(ProjectRepository::new(FilesystemService::new()))));
+
 #[async_trait::async_trait]
-pub trait ProjectProvider {
+pub trait ProjectProvider<'a> {
     type Ref: Deref<Target = Project>;
     type RefMut: Deref<Target = Project> + DerefMut;
 
     fn add_project(&self, project: Project, overwrite_existing: bool) -> Result<ProjectID>;
-
-    fn get_project(&self, project_id: ProjectID) -> Option<Self::Ref>;
-
-    fn get_project_mut(&self, project_id: ProjectID) -> Option<Self::RefMut>;
 
     fn with_project<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where F: FnOnce(&Project) -> R;
@@ -24,27 +26,27 @@ pub trait ProjectProvider {
     fn with_project_mut<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where F: FnOnce(&mut Project) -> R;
 
+    async fn with_project_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+    where
+        F: FnOnce(&Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync;
+
+    async fn with_project_mut_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+    where
+        F: FnOnce(&mut Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync;
+
     async fn open_project(&self, path: &Path) -> Result<ProjectID>;
     fn close_project(&self, id: ProjectID) -> Result<()>;
     async fn save_project(&self, id: ProjectID) -> Result<PathBuf>;
 
-    fn get_project_extension(&self) -> &'static str;
+    fn get_project_extension(&self) -> &'static str {
+        PROJECT_EXTENSION
+    }
 }
 
 pub struct ProjectRepository<'a, Filesystem: FilesystemProvider = FilesystemService> {
     _phantom: std::marker::PhantomData<&'a ()>,
     filesystem_provider: Filesystem,
     projects: DashMap<ProjectID, Project>,
-}
-
-impl<'a> Default for ProjectRepository<'a, FilesystemService> {
-    fn default() -> Self {
-        Self {
-            _phantom: std::marker::PhantomData,
-            filesystem_provider: FilesystemService::new(),
-            projects: DashMap::new(),
-        }
-    }
 }
 
 impl<'a, Filesystem: FilesystemProvider> ProjectRepository<'a, Filesystem> {
@@ -58,20 +60,22 @@ impl<'a, Filesystem: FilesystemProvider> ProjectRepository<'a, Filesystem> {
 }
 
 #[async_trait::async_trait]
-impl<'a, Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<'a, Filesystem> {
+impl<'a, Filesystem: FilesystemProvider> ProjectProvider<'a> for ProjectRepository<'a, Filesystem> {
     type Ref = dashmap::mapref::one::Ref<'a, ProjectID, Project>;
     type RefMut = dashmap::mapref::one::RefMut<'a, ProjectID, Project>;
-    
+
     fn add_project(&self, project: Project, overwrite_existing: bool) -> Result<ProjectID> {
-        todo!()
-    }
+        let project_id = project.get_id();
+        let path = project.get_settings().path.clone();
 
-    fn get_project(&self, id: ProjectID) -> Option<Self::Ref> {
-        todo!()
-    }
+        if let Some(path) = path {
+            if self.filesystem_provider.file_exists(path.as_path()) && !overwrite_existing {
+                return Err(ProjectCreationError::FileAlreadyExists.into());
+            }
+        }
 
-    fn get_project_mut(&self, id: ProjectID) -> Option<Self::RefMut> {
-        todo!()
+        self.projects.insert(project_id, project);
+        Ok(project_id)
     }
 
     fn with_project<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
@@ -88,6 +92,20 @@ impl<'a, Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<'
         todo!()
     }
 
+    async fn with_project_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+    where
+        F: FnOnce(&Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync
+    {
+        todo!()
+    }
+
+    async fn with_project_mut_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+    where
+        F: FnOnce(&mut Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync
+    {
+        todo!()
+    }
+
     async fn open_project(&self, path: &Path) -> Result<ProjectID> {
         todo!()
     }
@@ -98,10 +116,6 @@ impl<'a, Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<'
 
     async fn save_project(&self, id: ProjectID) -> Result<PathBuf> {
         todo!()
-    }
-
-    fn get_project_extension(&self) -> &'static str {
-        PROJECT_EXTENSION
     }
 }
 

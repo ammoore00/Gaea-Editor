@@ -1,8 +1,12 @@
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
+use std::future::Future;
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
+use iced::futures::TryStreamExt;
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::adapters::project;
 use crate::data::adapters::project::SerializedProjectData;
@@ -13,22 +17,22 @@ use crate::services::zip_service;
 use crate::services::zip_service::ZipService;
 
 pub struct ProjectServiceBuilder<'a,
-    ProjectProvider: project_repo::ProjectProvider = ProjectRepository<'a>,
+    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a = ProjectRepository<'a>,
     ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
 > {
     _phantom: PhantomData<&'a ()>,
-    project_provider: ProjectProvider,
-    zip_provider: ZipProvider,
+    project_provider: Arc<RwLock<ProjectProvider>>,
+    zip_provider: Arc<RwLock<ZipProvider>>,
 }
 
 impl<'a, ProjectProvider, ZipProvider> ProjectServiceBuilder<'a, ProjectProvider, ZipProvider>
 where
-    ProjectProvider: project_repo::ProjectProvider,
+    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a,
     ZipProvider: zip_service::ZipProvider<SerializedProject>,
 {
     pub fn new(
-        project_provider: ProjectProvider,
-        zip_provider: ZipProvider,
+        project_provider: Arc<RwLock<ProjectProvider>>,
+        zip_provider: Arc<RwLock<ZipProvider>>,
     ) -> Self {
         Self {
             _phantom: PhantomData,
@@ -40,7 +44,7 @@ where
     pub fn build(self) -> ProjectService<'a, ProjectProvider, ZipProvider, project::ProjectAdapter> {
         ProjectService {
             _phantom: PhantomData,
-            project_provider: Arc::new(RwLock::new(self.project_provider)),
+            project_provider: self.project_provider,
             zip_provider: self.zip_provider,
         }
     }
@@ -50,35 +54,35 @@ where
     ) -> ProjectService<'a, ProjectProvider, ZipProvider, Adp> {
         ProjectService {
             _phantom: PhantomData,
-            project_provider: Arc::new(RwLock::new(self.project_provider)),
+            project_provider: self.project_provider,
             zip_provider: self.zip_provider,
         }
     }
 }
 
 pub struct ProjectService<'a,
-    ProjectProvider: project_repo::ProjectProvider = ProjectRepository<'a>,
+    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a = ProjectRepository<'a>,
     ZipProvider: zip_service::ZipProvider<SerializedProject> = ZipService<SerializedProject>,
     ProjectAdapter: Adapter<SerializedProjectData, Project> = project::ProjectAdapter,
 > {
-    _phantom: PhantomData<&'a (ProjectAdapter)>,
+    _phantom: PhantomData<&'a ProjectAdapter>,
     project_provider: Arc<RwLock<ProjectProvider>>,
-    zip_provider: ZipProvider,
+    zip_provider: Arc<RwLock<ZipProvider>>,
 }
 
-impl<'a> Default for ProjectService<'a> {
+impl Default for ProjectService<'static> {
     fn default() -> Self {
         Self {
             _phantom: PhantomData,
-            project_provider: Arc::new(RwLock::new(ProjectRepository::default())),
-            zip_provider: ZipService::default(),
+            project_provider: Arc::clone(&*project_repo::PROJECT_REPO),
+            zip_provider: Arc::new(RwLock::new(ZipService::default())),
         }
     }
 }
 
 impl<'a, ProjectProvider, ZipProvider, ProjectAdapter> ProjectService<'a, ProjectProvider, ZipProvider, ProjectAdapter>
 where
-    ProjectProvider: project_repo::ProjectProvider,
+    ProjectProvider: project_repo::ProjectProvider<'a> + Send + Sync + 'a,
     ZipProvider: zip_service::ZipProvider<SerializedProject>,
     ProjectAdapter: Adapter<SerializedProjectData, Project>,
 {
@@ -91,61 +95,43 @@ where
 
         let project = Project::new(sanitized_settings);
 
-        let project_id = self.project_provider.write().unwrap().add_project(project, overwrite_existing)?;
+        let project_id = self.project_provider.read().unwrap().add_project(project, overwrite_existing)?;
         Ok(project_id)
     }
 
     pub async fn open_project(&self, path: &Path) -> Result<ProjectID, ProjectAdapter> {
-        let project_id = self.project_provider.write().unwrap().open_project(path).await?;
-        Ok(project_id)
+        self.project_provider.read().unwrap().open_project(path).await.map_err(Into::into)
     }
 
     pub fn close_project(&self, project_id: ProjectID) -> Result<(), ProjectAdapter> {
-        let project_provider = self.project_provider.write().unwrap();
-        let project = project_provider.get_project(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
-
-        if project.has_unsaved_changes() {
-            return Err(ProjectServiceError::CannotCloseUnsavedChanges);
-        }
+        let project_provider = self.project_provider.read().unwrap();
+        
+        project_provider.with_project(project_id, |project| {
+            if project.has_unsaved_changes() {
+                return Err(ProjectServiceError::CannotCloseUnsavedChanges);
+            }
+            Ok(())
+        }).ok_or(ProjectServiceError::ProjectDoesNotExist)??;
 
         project_provider.close_project(project_id)?;
         Ok(())
     }
 
     pub async fn save_project(&self, project_id: ProjectID) -> Result<PathBuf, ProjectAdapter> {
-        let project_provider = self.project_provider.write().unwrap();
-        let project = project_provider.get_project(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
-
-        if !project.has_unsaved_changes() {
-            return Err(ProjectServiceError::Save(SaveError::NoChangesToSave));
-        }
-
-        let path = project.get_settings().path.clone();
-
-        if let Some(path) = path {
-            project_provider.save_project(project_id).await?;
-
-            let mut project = project_provider.get_project_mut(project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
-            project.clear_unsaved_changes();
-
-            Ok(path)
-        }
-        else {
-            Err(ProjectServiceError::Save(SaveError::NoPathSet))
-        }
+        self.project_provider.read().unwrap().save_project(project_id).await.map_err(Into::into)
     }
 
     pub async fn import_zip(&self, path: ZipPath) -> Result<ProjectID, ProjectAdapter> {
         let serialized_project = match path {
             ZipPath::Single(path) => {
-                let serialized_project = self.zip_provider.extract(path.as_path()).await.map_err(ZipError::Zipping)?;
+                let serialized_project = self.zip_provider.read().unwrap().extract(path.as_path()).await.map_err(ZipError::Zipping)?;
 
                 SerializedProjectData::Single(serialized_project)
             }
             ZipPath::Combined { data_path, resource_path } => {
                 let (data_project, resource_project) = tokio::try_join!(
-                    async { self.zip_provider.extract(data_path.as_path()).await.map_err(ZipError::Zipping) },
-                    async { self.zip_provider.extract(resource_path.as_path()).await.map_err(ZipError::Zipping) }
+                    async { self.zip_provider.read().unwrap().extract(data_path.as_path()).await.map_err(ZipError::Zipping) },
+                    async { self.zip_provider.read().unwrap().extract(resource_path.as_path()).await.map_err(ZipError::Zipping) }
                 )?;
 
                 SerializedProjectData::Combined { data_project, resource_project }
@@ -167,14 +153,15 @@ where
         overwrite_existing: bool,
     ) -> Result<(), ProjectAdapter> {
         let (serialized_project, project_settings) = {
-            // TODO: Assumed to be infallible for now - add proper error handling in the future
             let project_provider = self.project_provider.read().unwrap();
-            let project = project_provider.get_project(zip_data.project_id).ok_or(ProjectServiceError::ProjectDoesNotExist)?;
+            
+            project_provider.with_project(zip_data.project_id, |project| {
+                let project_settings = project.get_settings().clone();
+                // TODO: Assumed to be infallible for now - add proper error handling in the future
+                let serialized_project = ProjectAdapter::domain_to_serialized(project).unwrap();
 
-            let project_settings = project.get_settings().clone();
-            let serialized_project = ProjectAdapter::domain_to_serialized(&*project).unwrap();
-
-            (serialized_project, project_settings)
+                (serialized_project, project_settings)
+            }).ok_or(ProjectServiceError::ProjectDoesNotExist)?
         };
 
         // TODO: Look into verifying this at compile time somehow?
@@ -183,10 +170,10 @@ where
                 ZipPath::Single(path),
                 SerializedProjectData::Single(project),
             ) => {
-                let result = self.zip_provider.zip(path, project, overwrite_existing).await.map_err(ZipError::<ProjectAdapter>::Zipping);
+                let result = self.zip_provider.read().unwrap().zip(path, project, overwrite_existing).await.map_err(ZipError::Zipping);
 
                 if let Err(_) = result {
-                    self.zip_provider.cleanup_file(path).await.map_err(ZipError::Zipping)?;
+                    self.zip_provider.read().unwrap().cleanup_file(path).await.map_err(ZipError::Zipping)?;
                 }
 
                 result?;
@@ -198,20 +185,20 @@ where
                 SerializedProjectData::Combined { data_project, resource_project},
             ) => {
                 let (data_result, resource_result) = tokio::join!(
-                    async { self.zip_provider.zip(data_path, data_project, overwrite_existing).await.map_err(ZipError::<ProjectAdapter>::Zipping) },
-                    async { self.zip_provider.zip(resource_path, resource_project, overwrite_existing).await.map_err(ZipError::<ProjectAdapter>::Zipping) }
+                    async { self.zip_provider.read().unwrap().zip(data_path, data_project, overwrite_existing).await.map_err(ZipError::Zipping) },
+                    async { self.zip_provider.read().unwrap().zip(resource_path, resource_project, overwrite_existing).await.map_err(ZipError::Zipping) }
                 );
 
                 let (data_cleanup_result, resource_cleanup_result) = tokio::join!(
                     async {
                         if let Err(_) = data_result {
-                            self.zip_provider.cleanup_file(data_path).await.map_err(ZipError::<ProjectAdapter>::Zipping)?;
+                            self.zip_provider.read().unwrap().cleanup_file(data_path).await.map_err(ZipError::Zipping)?;
                         }
                         Ok::<(), ProjectServiceError<_>>(())
                     },
                     async {
                         if let Err(_) = resource_result {
-                            self.zip_provider.cleanup_file(resource_path).await.map_err(ZipError::<ProjectAdapter>::Zipping)?;
+                            self.zip_provider.read().unwrap().cleanup_file(resource_path).await.map_err(ZipError::Zipping)?;
                         }
                         Ok::<(), ProjectServiceError<_>>(())
                     },
@@ -362,10 +349,12 @@ fn type_name_of<T>(_: &T) -> &'static str {
 
 #[cfg(test)]
 mod test {
+    use std::future::Future;
     use std::io;
     use std::ops::{Deref, DerefMut};
     use std::path::{Path, PathBuf};
-    use std::sync::RwLock;
+    use std::pin::Pin;
+    use std::sync::{Arc, RwLock};
     use once_cell::sync::Lazy;
     use crate::data::adapters::Adapter;
     use crate::data::adapters::project::{ProjectConversionError, SerializedProjectData};
@@ -452,7 +441,7 @@ mod test {
     }
 
     #[async_trait::async_trait]
-    impl<'a> ProjectProvider for MockProjectProvider<'a> {
+    impl<'a> ProjectProvider<'a> for MockProjectProvider<'a> {
         type Ref = MockProjectRef<'a>;
         type RefMut = MockProjectRefMut<'a>;
 
@@ -476,30 +465,67 @@ mod test {
             Ok(id)
         }
 
-        fn get_project(&self, _id: ProjectID) -> Option<Self::Ref> {
-            self.project.read().unwrap().as_ref().map(move |project| {
-                unsafe { std::mem::transmute(MockProjectRef(project)) }
-            })
-        }
-
-        fn get_project_mut(&self, id: ProjectID) -> Option<Self::RefMut> {
-            self.project.read().unwrap().as_ref().map(move |project| {
-                unsafe { std::mem::transmute(MockProjectRef(project)) }
-            })
-        }
-
         fn with_project<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
         where
             F: FnOnce(&Project) -> R
         {
-            panic!("Not implemented!");
+            if let Some(project) = self.project.read().unwrap().as_ref() {
+                Some(callback(project))
+            }
+            else {
+                None
+            }
         }
 
         fn with_project_mut<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
         where
             F: FnOnce(&mut Project) -> R
         {
-            panic!("Not implemented!");
+            if let Some(project) = self.project.read().unwrap().as_ref() {
+                let mut project = project.clone();
+                let ret = Some(callback(&mut project));
+                self.project.write().unwrap().replace(project);
+
+                ret
+            }
+            else {
+                None
+            }
+        }
+
+        async fn with_project_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+        where
+            F: FnOnce(&Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync
+        {
+            let project = {
+                if let Some(project) = self.project.read().unwrap().as_ref() {
+                    project.clone()
+                }
+                else {
+                    return None;
+                }
+            };
+
+            Some(callback(&project).await)
+        }
+
+        async fn with_project_mut_async<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
+        where
+            F: FnOnce(&mut Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync
+        {
+            let mut project = {
+                if let Some(project) = self.project.read().unwrap().as_ref() {
+                    project.clone()
+                }
+                else {
+                    return None;
+                }
+            };
+
+            let ret = Some(callback(&mut project).await);
+            self.project.write().unwrap().replace(project);
+
+            ret
         }
 
         async fn open_project(&self, path: &Path) -> project_repo::Result<ProjectID> {
@@ -554,10 +580,6 @@ mod test {
                 .map(|project| project.get_settings().path.clone())
                 .flatten()
                 .ok_or(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::NotFound, "Project not found")))
-        }
-
-        fn get_project_extension(&self) -> &'static str {
-            "json"
         }
     }
 
@@ -710,22 +732,22 @@ mod test {
 
     fn default_test_service<'a>() -> ProjectService<'a, MockProjectProvider<'a>, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
-            MockProjectProvider::default(),
-            MockZipProvider::default(),
+            Arc::new(RwLock::new(MockProjectProvider::default())),
+            Arc::new(RwLock::new(MockZipProvider::default())),
         ).with_adapter()
     }
 
     fn test_service_with_project_provider<'a>(project_provider: MockProjectProvider<'a>) -> ProjectService<'a, MockProjectProvider<'a>, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
-            project_provider,
-            MockZipProvider::default(),
+            Arc::new(RwLock::new(project_provider)),
+            Arc::new(RwLock::new(MockZipProvider::default())),
         ).with_adapter()
     }
 
     fn test_service_with_zip_provider<'a>(zip_provider: MockZipProvider) -> ProjectService<'a, MockProjectProvider<'a>, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
-            MockProjectProvider::default(),
-            zip_provider,
+            Arc::new(RwLock::new(MockProjectProvider::default())),
+            Arc::new(RwLock::new(zip_provider)),
         ).with_adapter()
     }
 
@@ -761,15 +783,17 @@ mod test {
 
             // Verify that the project created by the service matches one manually created
             let project_provider = project_service.project_provider.read().unwrap();
-            let created_project = project_provider.get_project(project_id).unwrap();
 
-            let mut comparison_project = Project::new(project_settings.clone());
-            comparison_project.set_id(project_id);
-            
-            assert_eq!(*created_project, comparison_project);
+            let created_settings = project_provider.with_project(project_id, |project| {
+                let mut comparison_project = Project::new(project_settings.clone());
+                comparison_project.set_id(project_id);
+
+                assert_eq!(*project, comparison_project);
+
+                project.get_settings().clone()
+            }).unwrap();
             
             // Verify individual settings
-            let created_settings = created_project.get_settings();
             assert_eq!(created_settings.name, project_settings.name);
             assert_eq!(created_settings.path, project_settings.path);
             assert_eq!(created_settings.project_version, project_settings.project_version);
@@ -806,15 +830,17 @@ mod test {
 
             // Verify that the project created by the service matches one manually created
             let project_provider = project_service.project_provider.read().unwrap();
-            let created_project = project_provider.get_project(project_id).unwrap();
 
-            let mut comparison_project = Project::new(project_settings.clone());
-            comparison_project.set_id(project_id);
+            let created_settings = project_provider.with_project(project_id, |project| {
+                let mut comparison_project = Project::new(project_settings.clone());
+                comparison_project.set_id(project_id);
 
-            assert_eq!(*created_project, comparison_project);
+                assert_eq!(*project, comparison_project);
+
+                project.get_settings().clone()
+            }).unwrap();
 
             // Verify individual settings
-            let created_settings = created_project.get_settings();
             assert_eq!(created_settings.name, project_settings.name);
             assert_eq!(created_settings.path, project_settings.path);
             assert_eq!(created_settings.project_version, project_settings.project_version);
@@ -841,14 +867,9 @@ mod test {
 
             // It should create the new project
             let project_provider = project_service.project_provider.read().unwrap();
-            let created_project = project_provider.get_project(project_id).unwrap();
 
-            // Verify individual settings
-            let created_settings = created_project.get_settings();
-            assert_eq!(created_settings.name, project_settings.name);
+            let created_settings = project_provider.with_project(project_id, |project| project.get_settings().clone()).unwrap();
             assert_eq!(created_settings.path.as_ref().unwrap().to_string_lossy(), "test_/invalid_/path_");
-            assert_eq!(created_settings.project_version, project_settings.project_version);
-            assert_eq!(created_settings.project_type, project_settings.project_type);
         }
         
         /// Test attempting to create a project while one already exists with the same name
@@ -955,14 +976,17 @@ mod test {
             // It should be opened properly
 
             let project_provider = project_service.project_provider.read().unwrap();
-            let opened_project = project_provider.get_project(project_id).unwrap();
+
+            let created_settings = project_provider.with_project(project_id, |project| {
+                let mut comparison_project = Project::new(project_settings.clone());
+                comparison_project.set_id(project_id);
+
+                assert_eq!(*project, comparison_project);
+
+                project.get_settings().clone()
+            });
 
             assert!(*project_provider.is_project_open.read().unwrap());
-
-            let mut comparison_project = Project::new(project_settings.clone());
-            comparison_project.set_id(project_id);
-
-            assert_eq!(comparison_project, *opened_project);
 
             // Verify calls to the provider
             let call_tracker = project_provider.call_tracker.read().unwrap();
@@ -1202,42 +1226,12 @@ mod test {
             // It should be saved
 
             assert!(result.is_ok());
-
             assert_eq!(result.unwrap().as_path(), Path::new("test/file/path"));
-
-            assert!(!project_service.project_provider.read().unwrap()
-                .project.read().unwrap()
-                .as_ref().unwrap()
-                .has_unsaved_changes());
 
             // Verify calls to the provider
             let project_provider = project_service.project_provider.read().unwrap();
             let call_tracker = project_provider.call_tracker.read().unwrap();
             assert_eq!(call_tracker.save_project_calls, 1);
-        }
-
-        /// Test trying to save a project with no changes to save
-        #[tokio::test]
-        async fn test_save_project_no_changes() {
-            // Given a project with no unsaved changes
-
-            let project_settings = default_test_project_settings();
-            let project = Project::new(project_settings.clone());
-            let project_id = project.get_id();
-            let project_service = test_service_with_project_provider(MockProjectProvider::with_open_project(project));
-            
-            // When I try to save it
-
-            let result = project_service.save_project(project_id).await;
-
-            // It should return an appropriate error
-            
-            // Note that this is not considered an error to the user, but we still want to return
-            // an error here so that code calling the service knows about it and can present it
-            // to the user as appropriate
-
-            assert!(result.is_err());
-            assert!(matches!(result, Err(ProjectServiceError::Save(SaveError::NoChangesToSave))));
         }
 
         /// Test thread safety when multiple threads try to save the same project
@@ -1313,13 +1307,14 @@ mod test {
 
             let project_provider = project_service.project_provider.read().unwrap();
             
-            let imported_project = project_provider.get_project(project_id);
+            let imported_project = project_provider.with_project(project_id, |_| {});
             assert!(imported_project.is_some());
             
             let project_provider_call_tracker = project_provider.call_tracker.read().unwrap();
             assert_eq!(project_provider_call_tracker.add_project_calls, 1);
-            
-            let zip_provider_call_tracker = project_service.zip_provider.call_tracker.read().unwrap();
+
+            let zip_provider = project_service.zip_provider.read().unwrap();
+            let zip_provider_call_tracker = zip_provider.call_tracker.read().unwrap();
             assert_eq!(zip_provider_call_tracker.extract_calls, 1);
         }
         
@@ -1354,13 +1349,14 @@ mod test {
 
             let project_provider = project_service.project_provider.read().unwrap();
 
-            let imported_project = project_provider.get_project(project_id);
+            let imported_project = project_provider.with_project(project_id, |_| {});
             assert!(imported_project.is_some());
 
             let project_provider_call_tracker = project_provider.call_tracker.read().unwrap();
             assert_eq!(project_provider_call_tracker.add_project_calls, 1);
 
-            let zip_provider_call_tracker = project_service.zip_provider.call_tracker.read().unwrap();
+            let zip_provider = project_service.zip_provider.read().unwrap();
+            let zip_provider_call_tracker = zip_provider.call_tracker.read().unwrap();
             assert_eq!(zip_provider_call_tracker.extract_calls, 2);
         }
 
@@ -1420,8 +1416,8 @@ mod test {
             let path = ZipPath::Single("test/file/path.zip".into());
 
             let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_project(project.clone()),
-                MockZipProvider::with_project(serialized_project),
+                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
+                Arc::new(RwLock::new(MockZipProvider::with_project(serialized_project))),
             ).with_adapter::<MockProjectAdapter>();
             
             let project_zip_data = ProjectZipData {
@@ -1437,7 +1433,8 @@ mod test {
 
             assert!(result.is_ok());
 
-            let zip_provider_call_tracker = project_service.zip_provider.call_tracker.read().unwrap();
+            let zip_provider = project_service.zip_provider.read().unwrap();
+            let zip_provider_call_tracker = zip_provider.call_tracker.read().unwrap();
             assert_eq!(zip_provider_call_tracker.zip_calls, 1);
         }
 
@@ -1467,8 +1464,8 @@ mod test {
             };
 
             let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_project(project.clone()),
-                MockZipProvider::with_project(serialized_project),
+                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
+                Arc::new(RwLock::new(MockZipProvider::with_project(serialized_project))),
             ).with_adapter::<MockProjectAdapter>();
 
             let project_zip_data = ProjectZipData {
@@ -1484,7 +1481,8 @@ mod test {
 
             assert!(result.is_ok());
 
-            let zip_provider_call_tracker = project_service.zip_provider.call_tracker.read().unwrap();
+            let zip_provider = project_service.zip_provider.read().unwrap();
+            let zip_provider_call_tracker = zip_provider.call_tracker.read().unwrap();
             assert_eq!(zip_provider_call_tracker.zip_calls, 2);
         }
 
@@ -1511,8 +1509,8 @@ mod test {
             let path = ZipPath::Single("test/file/path.zip".into());
 
             let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_project(project.clone()),
-                MockZipProvider::with_project(serialized_project),
+                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
+                Arc::new(RwLock::new(MockZipProvider::with_project(serialized_project))),
             ).with_adapter::<MockProjectAdapter>();
 
             let project_zip_data = ProjectZipData {
@@ -1551,8 +1549,8 @@ mod test {
             };
 
             let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_project(project.clone()),
-                MockZipProvider::with_project(serialized_project),
+                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
+                Arc::new(RwLock::new(MockZipProvider::with_project(serialized_project))),
             ).with_adapter::<MockProjectAdapter>();
 
             let project_zip_data = ProjectZipData {
@@ -1593,8 +1591,8 @@ mod test {
             });
 
             let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_project(project.clone()),
-                zip_provider,
+                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
+                Arc::new(RwLock::new(zip_provider)),
             ).with_adapter::<MockProjectAdapter>();
 
             let project_zip_data = ProjectZipData {
@@ -1636,8 +1634,8 @@ mod test {
             });
 
             let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_project(project.clone()),
-                zip_provider,
+                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
+                Arc::new(RwLock::new(zip_provider)),
             ).with_adapter::<MockProjectAdapter>();
 
             let project_zip_data = ProjectZipData {
@@ -1677,8 +1675,8 @@ mod test {
             });
 
             let project_service = ProjectServiceBuilder::new(
-                MockProjectProvider::with_project(project.clone()),
-                zip_provider,
+                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
+                Arc::new(RwLock::new(zip_provider)),
             ).with_adapter::<MockProjectAdapter>();
 
             let project_zip_data = ProjectZipData {

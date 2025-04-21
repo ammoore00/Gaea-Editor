@@ -12,6 +12,7 @@ pub trait FilesystemProvider: Send + Sync {
     async fn delete_directory(&self, path: &Path) -> Result<(), io::Error>;
     async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>, io::Error>;
     async fn validate_path(&self, path: &Path) -> PathValidationStatus;
+    fn file_exists(&self, path: &Path) -> bool;
 }
 
 pub struct FilesystemService;
@@ -53,6 +54,10 @@ impl FilesystemProvider for FilesystemService {
     }
 
     async fn validate_path(&self, path: &Path) -> PathValidationStatus {
+        todo!()
+    }
+
+    fn file_exists(&self, path: &Path) -> bool {
         todo!()
     }
 }
