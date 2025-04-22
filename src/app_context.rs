@@ -4,7 +4,7 @@ use crate::data::adapters::Adapter;
 use crate::data::adapters::project::SerializedProjectData;
 use crate::data::domain::project::Project;
 use crate::data::serialization::project::Project as SerializedProject;
-use crate::repositories::adapter_repo::{AdapterProvider, AdapterRepository};
+use crate::repositories::adapter_repo::{AdapterProvider, AdapterRepoError, AdapterRepository};
 use crate::repositories::project_repo;
 use crate::services::project_service::{ProjectService, ProjectServiceBuilder, ProjectServiceProvider};
 use crate::services::{project_service, zip_service};
@@ -77,13 +77,111 @@ impl ProjectServiceContext {
     }
 }
 
-pub struct AdapterRepoContext<AdapterRepo: AdapterProvider + Send + Sync + 'static = AdapterRepository> {
-    _phantom: std::marker::PhantomData<AdapterRepo>,
+pub struct AdapterRepoContext {
+    //adapter_repo: Arc<RwLock<dyn AdapterProviderWrapper>>,
 }
 
-impl<AdapterRepo> AdapterRepoContext<AdapterRepo>
-where
-    AdapterRepo: AdapterProvider + Send + Sync + 'static,
-{
+impl AdapterRepoContext {
+    pub fn new<AdpProvider: AdapterProvider + Send + Sync + 'static>() -> Self {
+        Self {
+            //adapter_repo: Arc::new(RwLock::new(AdapterProviderWrapperImpl::new()))
+        }
+    }
     
+    fn register<Adp, Serialized, Domain>(&self)
+    where
+        Domain: Send + Sync + 'static,
+        Serialized: Send + Sync + 'static,
+        Adp: Adapter<Serialized, Domain> + 'static + Send + Sync,
+    {
+        todo!()
+    }
+
+    fn serialize<Domain, Serialized>(
+        &self,
+        domain: &Domain
+    ) -> Result<Serialized, AdapterRepoError>
+    where
+        Domain: Send + Sync + 'static,
+        Serialized: Send + Sync + 'static
+    {
+        todo!()
+    }
+
+    fn deserialize<Serialized, Domain>(
+        &self,
+        serialized: &Serialized
+    ) -> Result<Domain, AdapterRepoError>
+    where
+        Domain: Send + Sync + 'static,
+        Serialized: Send + Sync + 'static
+    {
+        todo!()
+    }
+}
+
+trait AdapterProviderWrapper: Send + Sync {
+    fn register<Adp, Serialized, Domain>(&self)
+    where
+        Domain: Send + Sync + 'static,
+        Serialized: Send + Sync + 'static,
+        Adp: Adapter<Serialized, Domain> + 'static + Send + Sync;
+
+    fn serialize<Domain, Serialized>(
+        &self,
+        domain: &Domain
+    ) -> Result<Serialized, AdapterRepoError>
+    where
+        Domain: Send + Sync + 'static,
+        Serialized: Send + Sync + 'static;
+
+    fn deserialize<Serialized, Domain>(
+        &self,
+        serialized: &Serialized
+    ) -> Result<Domain, AdapterRepoError>
+    where
+        Domain: Send + Sync + 'static,
+        Serialized: Send + Sync + 'static;
+}
+
+struct AdapterProviderWrapperImpl<AdpProvider: AdapterProvider + Send + Sync>(std::marker::PhantomData<AdpProvider>);
+
+impl<AdpProvider: AdapterProvider + Send + Sync + 'static> AdapterProviderWrapperImpl<AdpProvider> {
+    fn new() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<AdpProvider: AdapterProvider + Send + Sync + 'static> AdapterProviderWrapper for AdapterProviderWrapperImpl<AdpProvider> {
+    fn register<Adp, Serialized, Domain>(&self)
+    where
+        Domain: Send + Sync + 'static,
+        Serialized: Send + Sync + 'static,
+        Adp: Adapter<Serialized, Domain> + 'static + Send + Sync,
+        Self: Sized
+    {
+        AdpProvider::register::<Adp, Serialized, Domain>();
+    }
+
+    fn serialize<Domain, Serialized>(
+        &self,
+        domain: &Domain
+    ) -> Result<Serialized, AdapterRepoError>
+    where
+        Domain: Send + Sync + 'static,
+        Serialized: Send + Sync + 'static,
+    {
+        AdpProvider::serialize(domain)
+    }
+
+    fn deserialize<Serialized, Domain>(
+        &self,
+        serialized: &Serialized
+    ) -> Result<Domain, AdapterRepoError>
+    where
+        Domain: Send + Sync + 'static,
+        Serialized: Send + Sync + 'static,
+    {
+        AdpProvider::deserialize(serialized)
+    }
 }
