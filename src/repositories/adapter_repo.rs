@@ -1,7 +1,6 @@
 use std::any::{Any, TypeId};
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
-use std::ops::Deref;
 use std::sync::Arc;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
@@ -19,6 +18,7 @@ pub trait AdapterProvider {
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static;
+    
     fn deserialize<Serialized, Domain>(serialized: &Serialized) -> Result<Domain, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,

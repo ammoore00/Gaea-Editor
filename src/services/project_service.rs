@@ -30,12 +30,12 @@ where
     ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static,
 {
     pub fn new(
-        project_provider: Arc<RwLock<ProjectProvider>>,
-        zip_provider: Arc<RwLock<ZipProvider>>,
+        project_provider: ProjectProvider,
+        zip_provider: ZipProvider,
     ) -> Self {
         Self {
-            project_provider,
-            zip_provider,
+            project_provider: Arc::new(RwLock::new(project_provider)),
+            zip_provider: Arc::new(RwLock::new(zip_provider)),
         }
     }
 
@@ -698,22 +698,22 @@ mod test {
 
     fn default_test_service() -> ProjectService<MockProjectProvider, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
-            Arc::new(RwLock::new(MockProjectProvider::default())),
-            Arc::new(RwLock::new(MockZipProvider::default())),
+            MockProjectProvider::default(),
+            MockZipProvider::default(),
         ).with_adapter()
     }
 
     fn test_service_with_project_provider(project_provider: MockProjectProvider) -> ProjectService<MockProjectProvider, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
-            Arc::new(RwLock::new(project_provider)),
-            Arc::new(RwLock::new(MockZipProvider::default())),
+            project_provider,
+            MockZipProvider::default(),
         ).with_adapter()
     }
 
     fn test_service_with_zip_provider(zip_provider: MockZipProvider) -> ProjectService<MockProjectProvider, MockZipProvider, MockProjectAdapter> {
         ProjectServiceBuilder::new(
-            Arc::new(RwLock::new(MockProjectProvider::default())),
-            Arc::new(RwLock::new(zip_provider)),
+            MockProjectProvider::default(),
+            zip_provider,
         ).with_adapter()
     }
 
@@ -1388,8 +1388,8 @@ mod test {
             let path = ZipPath::Single("test/file/path.zip".into());
 
             let project_service = ProjectServiceBuilder::new(
-                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
-                Arc::new(RwLock::new(MockZipProvider::with_project(serialized_project))),
+                MockProjectProvider::with_project(project.clone()),
+                MockZipProvider::with_project(serialized_project),
             ).with_adapter::<MockProjectAdapter>();
             
             let project_zip_data = ProjectZipData {
@@ -1437,8 +1437,8 @@ mod test {
             };
 
             let project_service = ProjectServiceBuilder::new(
-                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
-                Arc::new(RwLock::new(MockZipProvider::with_project(serialized_project))),
+                MockProjectProvider::with_project(project.clone()),
+                MockZipProvider::with_project(serialized_project),
             ).with_adapter::<MockProjectAdapter>();
 
             let project_zip_data = ProjectZipData {
@@ -1483,8 +1483,8 @@ mod test {
             let path = ZipPath::Single("test/file/path.zip".into());
 
             let project_service = ProjectServiceBuilder::new(
-                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
-                Arc::new(RwLock::new(MockZipProvider::with_project(serialized_project))),
+                MockProjectProvider::with_project(project.clone()),
+                MockZipProvider::with_project(serialized_project),
             ).with_adapter::<MockProjectAdapter>();
 
             let project_zip_data = ProjectZipData {
@@ -1524,8 +1524,8 @@ mod test {
             };
 
             let project_service = ProjectServiceBuilder::new(
-                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
-                Arc::new(RwLock::new(MockZipProvider::with_project(serialized_project))),
+                MockProjectProvider::with_project(project.clone()),
+                MockZipProvider::with_project(serialized_project),
             ).with_adapter::<MockProjectAdapter>();
 
             let project_zip_data = ProjectZipData {
@@ -1567,8 +1567,8 @@ mod test {
             });
 
             let project_service = ProjectServiceBuilder::new(
-                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
-                Arc::new(RwLock::new(zip_provider)),
+                MockProjectProvider::with_project(project.clone()),
+                zip_provider,
             ).with_adapter::<MockProjectAdapter>();
 
             let project_zip_data = ProjectZipData {
@@ -1611,8 +1611,8 @@ mod test {
             });
 
             let project_service = ProjectServiceBuilder::new(
-                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
-                Arc::new(RwLock::new(zip_provider)),
+                MockProjectProvider::with_project(project.clone()),
+                zip_provider,
             ).with_adapter::<MockProjectAdapter>();
 
             let project_zip_data = ProjectZipData {
@@ -1653,8 +1653,8 @@ mod test {
             });
 
             let project_service = ProjectServiceBuilder::new(
-                Arc::new(RwLock::new(MockProjectProvider::with_project(project.clone()))),
-                Arc::new(RwLock::new(zip_provider)),
+                MockProjectProvider::with_project(project.clone()),
+                zip_provider,
             ).with_adapter::<MockProjectAdapter>();
 
             let project_zip_data = ProjectZipData {
