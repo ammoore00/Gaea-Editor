@@ -5,7 +5,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use crate::data::adapters::{Adapter, AdapterError};
 
-pub trait AdapterProvider {
+pub trait AdapterProvider: Send + Sync + 'static {
     fn register<Adp, Serialized, Domain>(&self)
     where
         Domain: Send + Sync + 'static,

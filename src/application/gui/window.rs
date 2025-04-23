@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use iced::{Element, Length, Task, Theme};
-use iced::widget::{Column, Container, pane_grid, PaneGrid, Row};
+use iced::widget::{Column, Container, pane_grid, PaneGrid};
 use iced::widget::pane_grid::Axis;
+use crate::application::app_context::AppContext;
 use crate::application::gui::header::Header;
 use crate::application::gui::text_editor;
 use crate::application::gui::text_editor::{highlighter, TextEditor};
+use crate::repositories::adapter_repo::AdapterProvider;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -17,18 +19,20 @@ pub enum Message {
     TextEditorMessage(i32, text_editor::Message),
 }
 
-pub struct ApplicationWindow {
+pub struct ApplicationWindow<AdpProvider: AdapterProvider> {
     theme: highlighter::Theme,
     
     panes: pane_grid::State<PaneState>,
     focus: Option<pane_grid::Pane>,
     
     header: Header,
-    text_editors: Vec<TextEditor>
+    text_editors: Vec<TextEditor>,
+    
+    app_context: AppContext<AdpProvider>,
 }
 
-impl ApplicationWindow {
-    pub fn new() -> (Self, Task<Message>) {
+impl<AdpProvider: AdapterProvider> ApplicationWindow<AdpProvider> {
+    pub fn new(app_context: AppContext<AdpProvider>) -> (Self, Task<Message>) {
         let file_tree_pane = PaneState::new(PaneType::FileTree);
         let main_content_pane = PaneState::new(PaneType::MainContent);
         let preview_pane = PaneState::new(PaneType::Preview);
@@ -54,6 +58,8 @@ impl ApplicationWindow {
             
             header: Header::new().0,
             text_editors: Vec::new(),
+            
+            app_context,
         };
         
         let editor = TextEditor::new(window.theme.clone());
@@ -109,7 +115,7 @@ impl ApplicationWindow {
             .into()
     }
     
-    pub(crate) fn theme(&self) -> Theme {
+    pub fn theme(&self) -> Theme {
         if self.theme.is_dark() {
             Theme::Dark
         } else {

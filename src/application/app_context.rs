@@ -9,19 +9,20 @@ use crate::repositories::project_repo;
 use crate::services::project_service::{ProjectService, ProjectServiceBuilder, ProjectServiceProvider};
 use crate::services::{project_service, zip_service};
 
-struct Uninitialized;
-struct AdapterRepoStep;
-struct Finalized;
+pub struct Uninitialized;
+pub struct AdapterRepoStep;
+pub struct Finalized;
 
 pub struct AppContextBuilder<State,
-    AdpProvider: AdapterProvider + Send + Sync + 'static,
+    AdpProvider: AdapterProvider,
 > {
     _phantom: std::marker::PhantomData<State>,
-    project_service: Option<Box<dyn ProjectServiceProvider>>,
+    
+    project_service: Option<ProjectServiceContext>,
     adapter_repo_context: Option<AdapterRepoContext<AdpProvider>>,
 }
 
-impl Default for AppContextBuilder<Finalized, AdapterRepository> {
+impl Default for AppContextBuilder<Finalized, DefaultAdapterProvider> {
     fn default() -> Self {
         let project_service = ProjectServiceBuilder::new(
             project_service::DefaultProjectProvider::default(),
@@ -40,11 +41,12 @@ impl Default for AppContextBuilder<Finalized, AdapterRepository> {
 
 impl<AdpProvider> AppContextBuilder<Uninitialized, AdpProvider>
 where
-    AdpProvider: AdapterProvider + Send + Sync + 'static,
+    AdpProvider: AdapterProvider,
 {
     pub fn new() -> Self {
         Self {
             _phantom: std::marker::PhantomData,
+            
             project_service: None,
             adapter_repo_context: None,
         }
@@ -56,7 +58,7 @@ where
         ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static,
         ProjectAdapter: Adapter<SerializedProjectData, Project> + Send + Sync + 'static,
     {
-        let project_service: Option<Box<dyn ProjectServiceProvider>> = Some(Box::new(project_service));
+        let project_service = Some(ProjectServiceContext(Arc::new(RwLock::new(project_service))));
         AppContextBuilder::<AdapterRepoStep, AdpProvider> {
             project_service: project_service,
 
@@ -68,7 +70,7 @@ where
 
 impl<AdpProvider> AppContextBuilder<AdapterRepoStep, AdpProvider>
 where
-    AdpProvider: AdapterProvider + Send + Sync + 'static,
+    AdpProvider: AdapterProvider,
 {
     pub fn with_adapter_repo(self, adapter_repo: AdpProvider) -> AppContextBuilder<Finalized, AdpProvider> {
         let adapter_repo_context = Some(AdapterRepoContext::new(adapter_repo));
@@ -81,8 +83,23 @@ where
     }
 }
 
+impl<AdpProvider> AppContextBuilder<Finalized, AdpProvider>
+where
+    AdpProvider: AdapterProvider,
+{
+    pub fn build(self) -> AppContext<AdpProvider> {
+        let project_service_context = self.project_service.expect("Project service bypassed! Check type state pattern for errors");
+        let adapter_repo_context = self.adapter_repo_context.expect("Adapter repo bypassed! Check type state pattern for errors");
+
+        AppContext {
+            project_service_context,
+            adapter_repo_context,
+        }
+    }
+}
+
 pub struct AppContext<
-    AdpProvider: AdapterProvider + Send + Sync + 'static,
+    AdpProvider: AdapterProvider,
 > {
     project_service_context: ProjectServiceContext,
     adapter_repo_context: AdapterRepoContext<AdpProvider>,
@@ -102,11 +119,11 @@ impl ProjectServiceContext {
     }
 }
 
-type DefaultAdapterProvider = AdapterRepository;
+pub type DefaultAdapterProvider = AdapterRepository;
 
-pub struct AdapterRepoContext<AdpProvider: AdapterProvider + Send + Sync + 'static = DefaultAdapterProvider>(Arc<RwLock<AdpProvider>>);
+pub struct AdapterRepoContext<AdpProvider: AdapterProvider = DefaultAdapterProvider>(Arc<RwLock<AdpProvider>>);
 
-impl<AdpProvider: AdapterProvider + Send + Sync + 'static> AdapterRepoContext<AdpProvider> {
+impl<AdpProvider: AdapterProvider> AdapterRepoContext<AdpProvider> {
     pub fn new(adapter_provider: AdpProvider) -> Self {
         Self(Arc::new(RwLock::new(adapter_provider)))
     }
