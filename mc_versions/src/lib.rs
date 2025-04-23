@@ -1,9 +1,50 @@
-use proc_macro::TokenStream;
 use std::ops::{Add, AddAssign};
+use proc_macro2::TokenStream;
+use syn::{parse_macro_input, LitInt, Ident, ExprArray, Expr, Result as SynResult, Token};
+use syn::punctuated::Punctuated;
+use quote::quote;
 
+/// Generates pack formats for resourcepacks and datapacks
+/// with associated Minecraft versions, and creates entries for
+/// each Minecraft version 
+/// 
+/// Example usage:
+/// define_versions![
+///     data[
+///         (8, [1.18, 1.18.1]),
+///         (9, [1.18.2])
+///     ],
+///     resource[
+///         (8, [1.18..1.18.2])
+///     ],
+/// ];
 #[proc_macro]
-pub fn define_versions(input: TokenStream) -> TokenStream {
+pub fn define_versions(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let parsed_input = parse_input(input.into()).unwrap();
+    generate_output(parsed_input).into()
+}
+
+fn parse_input(input: TokenStream) -> Result<FormatSet, FormatSetParseError> {
     todo!()
+}
+
+#[derive(Debug, thiserror::Error)]
+enum FormatSetParseError {
+    #[error("Invalid format!")]
+    InvalidFormat,
+    #[error(transparent)]
+    VersionRangeError(#[from] VersionExpandError),
+}
+
+fn generate_output(input: FormatSet) -> TokenStream {
+    todo!()
+}
+
+#[derive(Debug, Clone)]
+struct FormatSet {
+    data_packs: Vec<PackFormatDefinition>,
+    resource_packs: Vec<PackFormatDefinition>,
+    versions: Vec<MinecraftVersionDefinition>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
