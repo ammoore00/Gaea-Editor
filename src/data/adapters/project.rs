@@ -1,5 +1,7 @@
 use std::convert::Infallible;
+use std::sync::Arc;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use tokio::sync::RwLock;
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::domain::project::Project as DomainProject;
 use crate::data::serialization::project::Project as SerializedProject;
@@ -18,11 +20,11 @@ where
     type ConversionError = ProjectConversionError;
     type SerializedConversionError = Infallible;
 
-    async fn deserialize(serialized: &SerializedProjectData, context: ReadOnlyAdapterProviderContext<'_>) -> Result<DomainProject, Self::ConversionError> {
+    async fn deserialize(serialized: Arc<RwLock<SerializedProjectData>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<DomainProject, Self::ConversionError> {
         todo!()
     }
 
-    async fn serialize(domain: &DomainProject, context: ReadOnlyAdapterProviderContext<'_>) -> Result<SerializedProjectData, Infallible> {
+    async fn serialize(domain: Arc<RwLock<DomainProject>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<SerializedProjectData, Infallible> {
         todo!()
     }
 }

@@ -1,4 +1,6 @@
 use std::convert::Infallible;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::serialization::pack_info::PackInfo;
 use crate::data::domain::version::MinecraftVersion;
@@ -11,11 +13,11 @@ impl Adapter<PackInfoDomainData, PackInfo> for PackInfoAdapter {
     type ConversionError = PackInfoConversionError;
     type SerializedConversionError = Infallible;
 
-    async fn deserialize(serialized: &PackInfoDomainData, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<PackInfo, Self::ConversionError> {
+    async fn deserialize(serialized: Arc<RwLock<PackInfoDomainData>>, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<PackInfo, Self::ConversionError> {
         todo!()
     }
 
-    async fn serialize(domain: &PackInfo, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<PackInfoDomainData, Self::SerializedConversionError> {
+    async fn serialize(domain: Arc<RwLock<PackInfo>>, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<PackInfoDomainData, Self::SerializedConversionError> {
         todo!()
     }
 }

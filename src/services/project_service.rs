@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use iced::futures::TryFutureExt;
@@ -65,7 +66,7 @@ where
             adapter_provider: Arc::new(RwLock::new(adapter_provider)),
         }
     }
-    
+
     /// Consumes project settings, then returns a sanitized version of it,
     /// or an error if it is unrecoverable
     fn sanitize_project_settings(mut settings: ProjectSettings) -> Result<ProjectSettings> {
@@ -82,7 +83,13 @@ where
             ..sanitize_filename::Options::default()
         };
 
-        let sanitized_path = path.iter().map(|path_segment| sanitize_filename::sanitize_with_options(path_segment.to_string_lossy(), options.clone())).collect();
+        let sanitized_path = path.iter().map(|path_segment| {
+            sanitize_filename::sanitize_with_options(
+                path_segment.to_string_lossy(),
+                options.clone()
+            )
+        }).collect();
+
         Ok(sanitized_path)
     }
 }
@@ -133,7 +140,9 @@ where
     async fn import_zip(&self, path: ZipPath) -> Result<ProjectID> {
         let serialized_project = match path {
             ZipPath::Single(path) => {
-                let serialized_project = self.zip_provider.read().await.extract(path.as_path()).await.map_err(ZipError::Zipping)?;
+                let zip_provider = self.zip_provider.read().await;
+                let result = zip_provider.extract(path.as_path()).await;
+                let serialized_project = result.map_err(ZipError::Zipping)?;
 
                 SerializedProjectData::Single(serialized_project)
             }
@@ -146,9 +155,9 @@ where
                 SerializedProjectData::Combined { data_project, resource_project }
             }
         };
-        
+
         let adapter_context = ReadOnlyAdapterProviderContext(self.adapter_provider.read().await);
-        let project: Project = self.adapter_provider.read().await.deserialize(&serialized_project, adapter_context).await.map_err(ZipError::Deserialization)?;
+        let project: Project = self.adapter_provider.read().await.deserialize(Arc::new(RwLock::new(serialized_project)), adapter_context).await.map_err(ZipError::Deserialization)?;
         let project_id = project.get_id();
 
         // TODO: Maybe prevent accidental duplicate importing somehow?
@@ -164,7 +173,7 @@ where
     ) -> Result<()> {
         let (serialized_project, project_settings) = {
             let project_provider = self.project_provider.read().await;
-            
+
             let adapter_provider = self.adapter_provider.read().await;
             let adapter_context = ReadOnlyAdapterProviderContext(self.adapter_provider.read().await);
             
@@ -173,7 +182,7 @@ where
                     let project_settings = project.read().await.get_settings().clone();
 
                     // TODO: Assumed to be infallible for now - add proper error handling in the future
-                    let serialized_project = adapter_provider.serialize(&project, adapter_context).await.unwrap();
+                    let serialized_project = adapter_provider.serialize(project, adapter_context).await.unwrap();
 
                     (serialized_project, project_settings)
                 })
@@ -325,32 +334,6 @@ mod test {
     #[derive(Debug, Default, Copy, Clone)]
     struct MockProjectProviderSettings {
         fail_calls: bool,
-    }
-
-    struct MockProjectRef<'a>(&'a Project);
-
-    impl<'a> Deref for MockProjectRef<'a> {
-        type Target = Project;
-
-        fn deref(&self) -> &Self::Target {
-            &self.0
-        }
-    }
-
-    struct MockProjectRefMut<'a>(&'a mut Project);
-
-    impl<'a> Deref for MockProjectRefMut<'a> {
-        type Target = Project;
-
-        fn deref(&self) -> &Self::Target {
-            self.0
-        }
-    }
-
-    impl<'a> DerefMut for MockProjectRefMut<'a> {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            self.0
-        }
     }
 
     #[derive(Default)]
@@ -632,7 +615,7 @@ mod test {
         type ConversionError = ProjectConversionError;
         type SerializedConversionError = Infallible;
 
-        async fn deserialize(_serialized: &SerializedProjectData, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Project, Self::ConversionError> {
+        async fn deserialize(_serialized: Arc<RwLock<SerializedProjectData>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Project, Self::ConversionError> {
             let config = PROJECT_ADAPTER_CONFIG.read().unwrap();
 
             if *config.fail_conversion.read().unwrap() {
@@ -642,8 +625,8 @@ mod test {
             Ok(config.project.clone().unwrap())
         }
 
-        async fn serialize(domain: &Project, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<SerializedProjectData, Self::SerializedConversionError> {
-            match domain.get_settings().project_type {
+        async fn serialize(domain: Arc<RwLock<Project>>, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<SerializedProjectData, Self::SerializedConversionError> {
+            match domain.read().await.get_settings().project_type {
                 ProjectType::Combined => {
                     let serialized_project = PROJECT_ADAPTER_CONFIG.read().unwrap().serialized_project.clone().unwrap();
                     Ok(SerializedProjectData::Combined {
@@ -657,12 +640,18 @@ mod test {
             }
         }
     }
+    
+    fn default_test_adapter_provider() -> DefaultAdapterProvider {
+        let provider = DefaultAdapterProvider::new();
+        provider.register::<MockProjectAdapter, SerializedProjectData, Project>();
+        provider
+    }
 
     fn default_test_service() -> ProjectService<MockProjectProvider, MockZipProvider, DefaultAdapterProvider> {
         ProjectService::new(
             MockProjectProvider::default(),
             MockZipProvider::default(),
-            DefaultAdapterProvider::new(),
+            default_test_adapter_provider(),
         )
     }
 
@@ -670,7 +659,7 @@ mod test {
         ProjectService::new(
             project_provider,
             MockZipProvider::default(),
-            DefaultAdapterProvider::new(),
+            default_test_adapter_provider(),
         )
     }
 
@@ -678,7 +667,7 @@ mod test {
         ProjectService::new(
             MockProjectProvider::default(),
             zip_provider,
-            DefaultAdapterProvider::new(),
+            default_test_adapter_provider(),
         )
     }
 
@@ -686,7 +675,7 @@ mod test {
         ProjectService::new(
             project_provider,
             zip_provider,
-            DefaultAdapterProvider::new(),
+            default_test_adapter_provider(),
         )
     }
 
