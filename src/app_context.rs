@@ -4,7 +4,7 @@ use crate::data::adapters::Adapter;
 use crate::data::adapters::project::SerializedProjectData;
 use crate::data::domain::project::Project;
 use crate::data::serialization::project::Project as SerializedProject;
-use crate::repositories::adapter_repo::{AdapterProvider, AdapterRepoError, AdapterRepository};
+use crate::repositories::adapter_repo::{AdapterProvider, AdapterRepository};
 use crate::repositories::project_repo;
 use crate::services::project_service::{ProjectService, ProjectServiceBuilder, ProjectServiceProvider};
 use crate::services::{project_service, zip_service};
@@ -13,54 +13,79 @@ struct Uninitialized;
 struct AdapterRepoStep;
 struct Finalized;
 
-pub struct AppContextBuilder<State> {
+pub struct AppContextBuilder<State,
+    AdpProvider: AdapterProvider + Send + Sync + 'static,
+> {
     _phantom: std::marker::PhantomData<State>,
     project_service: Option<Box<dyn ProjectServiceProvider>>,
+    adapter_repo_context: Option<AdapterRepoContext<AdpProvider>>,
 }
 
-impl Default for AppContextBuilder<Finalized> {
+impl Default for AppContextBuilder<Finalized, AdapterRepository> {
     fn default() -> Self {
         let project_service = ProjectServiceBuilder::new(
             project_service::DefaultProjectProvider::default(),
             project_service::DefaultZipService::default(),
         ).build();
         
-        let self_ = AppContextBuilder::new()
-            .with_project_service(project_service);
+        let adapter_repo = AdapterRepository::new();
         
-        todo!()
+        let self_ = AppContextBuilder::new()
+            .with_project_service(project_service)
+            .with_adapter_repo(adapter_repo);
+        
+        self_
     }
 }
 
-impl AppContextBuilder<Uninitialized> {
+impl<AdpProvider> AppContextBuilder<Uninitialized, AdpProvider>
+where
+    AdpProvider: AdapterProvider + Send + Sync + 'static,
+{
     pub fn new() -> Self {
         Self {
             _phantom: std::marker::PhantomData,
             project_service: None,
+            adapter_repo_context: None,
         }
     }
     
-    pub fn with_project_service<ProjectProvider, ZipProvider, ProjectAdapter>(mut self, project_service: ProjectService<ProjectProvider, ZipProvider, ProjectAdapter>) -> AppContextBuilder<AdapterRepoStep>
+    pub fn with_project_service<ProjectProvider, ZipProvider, ProjectAdapter>(mut self, project_service: ProjectService<ProjectProvider, ZipProvider, ProjectAdapter>) -> AppContextBuilder<AdapterRepoStep, AdpProvider>
     where
         ProjectProvider: project_repo::ProjectProvider + Send + Sync + 'static,
         ZipProvider: zip_service::ZipProvider<SerializedProject> + Send + Sync + 'static,
         ProjectAdapter: Adapter<SerializedProjectData, Project> + Send + Sync + 'static,
     {
-        self.project_service = Some(Box::new(project_service));
-        AppContextBuilder::<AdapterRepoStep> {
-            project_service: self.project_service,
+        let project_service: Option<Box<dyn ProjectServiceProvider>> = Some(Box::new(project_service));
+        AppContextBuilder::<AdapterRepoStep, AdpProvider> {
+            project_service: project_service,
 
             _phantom: std::marker::PhantomData,
+            adapter_repo_context: self.adapter_repo_context,
         }
     }
 }
 
-impl AppContextBuilder<AdapterRepoStep> {
-    
+impl<AdpProvider> AppContextBuilder<AdapterRepoStep, AdpProvider>
+where
+    AdpProvider: AdapterProvider + Send + Sync + 'static,
+{
+    pub fn with_adapter_repo(self, adapter_repo: AdpProvider) -> AppContextBuilder<Finalized, AdpProvider> {
+        let adapter_repo_context = Some(AdapterRepoContext::new(adapter_repo));
+        AppContextBuilder::<Finalized, AdpProvider> {
+            adapter_repo_context: adapter_repo_context,
+            
+            _phantom: std::marker::PhantomData,
+            project_service: self.project_service,
+        }
+    }
 }
 
-pub struct AppContext {
+pub struct AppContext<
+    AdpProvider: AdapterProvider + Send + Sync + 'static,
+> {
     project_service_context: ProjectServiceContext,
+    adapter_repo_context: AdapterRepoContext<AdpProvider>,
 }
 
 pub struct ProjectServiceContext(Arc<RwLock<dyn ProjectServiceProvider>>);
@@ -77,111 +102,12 @@ impl ProjectServiceContext {
     }
 }
 
-pub struct AdapterRepoContext {
-    //adapter_repo: Arc<RwLock<dyn AdapterProviderWrapper>>,
-}
+type DefaultAdapterProvider = AdapterRepository;
 
-impl AdapterRepoContext {
-    pub fn new<AdpProvider: AdapterProvider + Send + Sync + 'static>() -> Self {
-        Self {
-            //adapter_repo: Arc::new(RwLock::new(AdapterProviderWrapperImpl::new()))
-        }
-    }
-    
-    fn register<Adp, Serialized, Domain>(&self)
-    where
-        Domain: Send + Sync + 'static,
-        Serialized: Send + Sync + 'static,
-        Adp: Adapter<Serialized, Domain> + 'static + Send + Sync,
-    {
-        todo!()
-    }
+pub struct AdapterRepoContext<AdpProvider: AdapterProvider + Send + Sync + 'static = DefaultAdapterProvider>(Arc<RwLock<AdpProvider>>);
 
-    fn serialize<Domain, Serialized>(
-        &self,
-        domain: &Domain
-    ) -> Result<Serialized, AdapterRepoError>
-    where
-        Domain: Send + Sync + 'static,
-        Serialized: Send + Sync + 'static
-    {
-        todo!()
-    }
-
-    fn deserialize<Serialized, Domain>(
-        &self,
-        serialized: &Serialized
-    ) -> Result<Domain, AdapterRepoError>
-    where
-        Domain: Send + Sync + 'static,
-        Serialized: Send + Sync + 'static
-    {
-        todo!()
-    }
-}
-
-trait AdapterProviderWrapper: Send + Sync {
-    fn register<Adp, Serialized, Domain>(&self)
-    where
-        Domain: Send + Sync + 'static,
-        Serialized: Send + Sync + 'static,
-        Adp: Adapter<Serialized, Domain> + 'static + Send + Sync;
-
-    fn serialize<Domain, Serialized>(
-        &self,
-        domain: &Domain
-    ) -> Result<Serialized, AdapterRepoError>
-    where
-        Domain: Send + Sync + 'static,
-        Serialized: Send + Sync + 'static;
-
-    fn deserialize<Serialized, Domain>(
-        &self,
-        serialized: &Serialized
-    ) -> Result<Domain, AdapterRepoError>
-    where
-        Domain: Send + Sync + 'static,
-        Serialized: Send + Sync + 'static;
-}
-
-struct AdapterProviderWrapperImpl<AdpProvider: AdapterProvider + Send + Sync>(std::marker::PhantomData<AdpProvider>);
-
-impl<AdpProvider: AdapterProvider + Send + Sync + 'static> AdapterProviderWrapperImpl<AdpProvider> {
-    fn new() -> Self {
-        Self(std::marker::PhantomData)
-    }
-}
-
-impl<AdpProvider: AdapterProvider + Send + Sync + 'static> AdapterProviderWrapper for AdapterProviderWrapperImpl<AdpProvider> {
-    fn register<Adp, Serialized, Domain>(&self)
-    where
-        Domain: Send + Sync + 'static,
-        Serialized: Send + Sync + 'static,
-        Adp: Adapter<Serialized, Domain> + 'static + Send + Sync,
-        Self: Sized
-    {
-        AdpProvider::register::<Adp, Serialized, Domain>();
-    }
-
-    fn serialize<Domain, Serialized>(
-        &self,
-        domain: &Domain
-    ) -> Result<Serialized, AdapterRepoError>
-    where
-        Domain: Send + Sync + 'static,
-        Serialized: Send + Sync + 'static,
-    {
-        AdpProvider::serialize(domain)
-    }
-
-    fn deserialize<Serialized, Domain>(
-        &self,
-        serialized: &Serialized
-    ) -> Result<Domain, AdapterRepoError>
-    where
-        Domain: Send + Sync + 'static,
-        Serialized: Send + Sync + 'static,
-    {
-        AdpProvider::deserialize(serialized)
+impl<AdpProvider: AdapterProvider + Send + Sync + 'static> AdapterRepoContext<AdpProvider> {
+    pub fn new(adapter_provider: AdpProvider) -> Self {
+        Self(Arc::new(RwLock::new(adapter_provider)))
     }
 }
