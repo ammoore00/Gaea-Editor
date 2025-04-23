@@ -10,7 +10,7 @@ use crate::data::adapters::project::SerializedProjectData;
 use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType};
 use crate::data::serialization::project::Project as SerializedProject;
 use crate::repositories::adapter_repo;
-use crate::repositories::adapter_repo::{AdapterRepoError, AdapterRepository, ReadOnlyAdapterProviderContext};
+use crate::repositories::adapter_repo::{AdapterRepoError, AdapterRepository, AdapterProviderContext};
 use crate::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
 use crate::services::zip_service;
 use crate::services::zip_service::ZipService;
@@ -156,7 +156,7 @@ where
             }
         };
 
-        let adapter_context = ReadOnlyAdapterProviderContext(self.adapter_provider.read().await);
+        let adapter_context = AdapterProviderContext(self.adapter_provider.read().await);
         let project: Project = self.adapter_provider.read().await.deserialize(Arc::new(RwLock::new(serialized_project)), adapter_context).await.map_err(ZipError::Deserialization)?;
         let project_id = project.get_id();
 
@@ -175,7 +175,7 @@ where
             let project_provider = self.project_provider.read().await;
 
             let adapter_provider = self.adapter_provider.read().await;
-            let adapter_context = ReadOnlyAdapterProviderContext(self.adapter_provider.read().await);
+            let adapter_context = AdapterProviderContext(self.adapter_provider.read().await);
             
             project_provider.with_project_async(zip_data.project_id, |project: Arc<RwLock<Project>>| {
                 Box::pin(async move {
@@ -317,7 +317,7 @@ mod test {
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
     use crate::data::domain::version;
     use crate::data::serialization::project::Project as SerializedProject;
-    use crate::repositories::adapter_repo::{AdapterProvider, ReadOnlyAdapterProviderContext};
+    use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
     use crate::repositories::project_repo;
     use crate::repositories::project_repo::{ProjectCloseError, ProjectCreationError, ProjectOpenError, ProjectProvider, ProjectRepoError};
     use crate::services::project_service::{DefaultAdapterProvider, ProjectService};
@@ -615,7 +615,7 @@ mod test {
         type ConversionError = ProjectConversionError;
         type SerializedConversionError = Infallible;
 
-        async fn deserialize(_serialized: Arc<RwLock<SerializedProjectData>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Project, Self::ConversionError> {
+        async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(_serialized: Arc<RwLock<SerializedProjectData>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Project, Self::ConversionError> {
             let config = PROJECT_ADAPTER_CONFIG.read().unwrap();
 
             if *config.fail_conversion.read().unwrap() {
@@ -625,7 +625,7 @@ mod test {
             Ok(config.project.clone().unwrap())
         }
 
-        async fn serialize(domain: Arc<RwLock<Project>>, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<SerializedProjectData, Self::SerializedConversionError> {
+        async fn serialize<AdpProvider: AdapterProvider + ?Sized>(domain: Arc<RwLock<Project>>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<SerializedProjectData, Self::SerializedConversionError> {
             match domain.read().await.get_settings().project_type {
                 ProjectType::Combined => {
                     let serialized_project = PROJECT_ADAPTER_CONFIG.read().unwrap().serialized_project.clone().unwrap();

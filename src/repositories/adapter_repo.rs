@@ -5,12 +5,11 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::sync::{RwLock, RwLockReadGuard};
 use crate::data::adapters::{Adapter, AdapterError};
-use crate::services::project_service;
 
 // TODO: Remove this default type and fix errors
-pub struct ReadOnlyAdapterProviderContext<'a, AdpProvider: AdapterProvider + ?Sized = project_service::DefaultAdapterProvider>(pub RwLockReadGuard<'a, AdpProvider>);
+pub struct AdapterProviderContext<'a, AdpProvider: AdapterProvider + ?Sized>(pub RwLockReadGuard<'a, AdpProvider>);
 
-impl<'a, AdpProvider: AdapterProvider> std::ops::Deref for ReadOnlyAdapterProviderContext<'a, AdpProvider> {
+impl<'a, AdpProvider: AdapterProvider> std::ops::Deref for AdapterProviderContext<'a, AdpProvider> {
     type Target = AdpProvider;
 
     fn deref(&self) -> &Self::Target {
@@ -26,12 +25,12 @@ pub trait AdapterProvider: Send + Sync + 'static {
         Serialized: Send + Sync + 'static,
         Adp: Adapter<Serialized, Domain> + 'static + Send + Sync;
     
-    async fn serialize<Domain, Serialized>(&self, domain: Arc<RwLock<Domain>>, context: ReadOnlyAdapterProviderContext<'_, Self>) -> Result<Serialized, AdapterRepoError>
+    async fn serialize<Domain, Serialized>(&self, domain: Arc<RwLock<Domain>>, context: AdapterProviderContext<'_, Self>) -> Result<Serialized, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static;
     
-    async fn deserialize<Serialized, Domain>(&self, serialized: Arc<RwLock<Serialized>>, context: ReadOnlyAdapterProviderContext<'_, Self>) -> Result<Domain, AdapterRepoError>
+    async fn deserialize<Serialized, Domain>(&self, serialized: Arc<RwLock<Serialized>>, context: AdapterProviderContext<'_, Self>) -> Result<Domain, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static;
@@ -55,7 +54,7 @@ impl AdapterRepository {
     }
     
     #[cfg(test)]
-    fn get_adapter<Domain, Serialized>(&self) -> Option<AdapterWrapper<Domain, Serialized>>
+    fn get_adapter<Domain, Serialized>(&self) -> Option<AdapterWrapper<Domain, Serialized, Self>>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static,
@@ -68,7 +67,7 @@ impl AdapterRepository {
         self.adapters.get(&adapter_type)
             .as_deref()
             .map(|a| {
-                a.downcast_ref::<AdapterWrapper<Domain, Serialized>>().unwrap()
+                a.downcast_ref::<AdapterWrapper<Domain, Serialized, Self>>().unwrap()
             }).cloned()
     }
 }
@@ -86,12 +85,12 @@ impl AdapterProvider for AdapterRepository {
             serialized: TypeId::of::<Serialized>(),
         };
 
-        let adapter = AdapterWrapper::<Domain, Serialized>::new::<Adp>();
+        let adapter = AdapterWrapper::<Domain, Serialized, Self>::new::<Adp>();
 
         self.adapters.insert(adapter_type, Box::new(adapter));
     }
     
-    async fn serialize<Domain, Serialized>(&self, domain: Arc<RwLock<Domain>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Serialized, AdapterRepoError>
+    async fn serialize<Domain, Serialized>(&self, domain: Arc<RwLock<Domain>>, context: AdapterProviderContext<'_, Self>) -> Result<Serialized, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static,
@@ -102,12 +101,12 @@ impl AdapterProvider for AdapterRepository {
         };
 
         let adapter = self.adapters.get(&adapter_type).ok_or_else(|| AdapterRepoError::NoAdapterFound)?;
-        let adapter = adapter.downcast_ref::<AdapterWrapper<Domain, Serialized>>().unwrap();
+        let adapter = adapter.downcast_ref::<AdapterWrapper<Domain, Serialized, Self>>().unwrap();
 
         adapter.serialize(domain, context).await
     }
 
-    async fn deserialize<Serialized, Domain>(&self, serialized: Arc<RwLock<Serialized>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Domain, AdapterRepoError>
+    async fn deserialize<Serialized, Domain>(&self, serialized: Arc<RwLock<Serialized>>, context: AdapterProviderContext<'_, Self>) -> Result<Domain, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static,
@@ -118,19 +117,24 @@ impl AdapterProvider for AdapterRepository {
         };
 
         let adapter = self.adapters.get(&adapter_type).ok_or_else(|| AdapterRepoError::NoAdapterFound)?;
-        let adapter = adapter.downcast_ref::<AdapterWrapper<Domain, Serialized>>().unwrap();
+        let adapter = adapter.downcast_ref::<AdapterWrapper<Domain, Serialized, Self>>().unwrap();
 
         adapter.deserialize(serialized, context).await
     }
 }
 
 #[derive(Debug)]
-struct AdapterWrapper<Domain, Serialized> {
-    adapter: Arc<dyn AdapterObject<Domain, Serialized>>,
-    _phantom: PhantomData<(Domain, Serialized)>,
+struct AdapterWrapper<Domain, Serialized, AdpProvider: AdapterProvider + ?Sized> {
+    adapter: Arc<dyn AdapterObject<Domain, Serialized, AdpProvider>>,
+    _phantom: PhantomData<(Domain, Serialized, AdpProvider)>,
 }
 
-impl<Domain, Serialized> Clone for AdapterWrapper<Domain, Serialized> {
+impl<Domain, Serialized, AdpProvider> Clone for AdapterWrapper<Domain, Serialized, AdpProvider>
+where
+    Domain: Send + Sync + 'static,
+    Serialized: Send + Sync + 'static,
+    AdpProvider: AdapterProvider + ?Sized,
+{
     fn clone(&self) -> Self {
         Self {
             adapter: self.adapter.clone(),
@@ -139,66 +143,71 @@ impl<Domain, Serialized> Clone for AdapterWrapper<Domain, Serialized> {
     }
 }
 
-impl<Domain, Serialized> AdapterWrapper<Domain, Serialized>
+impl<Domain, Serialized, AdpProvider> AdapterWrapper<Domain, Serialized, AdpProvider>
 where
     Domain: Send + Sync + 'static,
     Serialized: Send + Sync + 'static,
+    AdpProvider: AdapterProvider + ?Sized,
 {
     fn new<Adp>() -> Self
     where
         Adp: Adapter<Serialized, Domain> + 'static + Send + Sync,
     {
         Self {
-            adapter: Arc::new(AdapterObjectImpl::<Domain, Serialized, Adp>::new()),
+            adapter: Arc::new(AdapterObjectImpl::<Domain, Serialized, Adp, AdpProvider>::new()),
             _phantom: PhantomData,
         }
     }
 
-    async fn serialize(&self, domain: Arc<RwLock<Domain>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Serialized, AdapterRepoError> {
+    async fn serialize(&self, domain: Arc<RwLock<Domain>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, AdapterRepoError> {
         self.adapter.serialize(domain, context).await
     }
 
-    async fn deserialize(&self, serialized: Arc<RwLock<Serialized>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Domain, AdapterRepoError> {
+    async fn deserialize(&self, serialized: Arc<RwLock<Serialized>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Domain, AdapterRepoError> {
         self.adapter.deserialize(serialized, context).await
     }
 }
 
 #[async_trait::async_trait]
-trait AdapterObject<Domain, Serialized>: Send + Sync + Debug
+trait AdapterObject<Domain, Serialized, AdpProvider>: Send + Sync + Debug
 where
     Domain: Send + Sync + 'static,
     Serialized: Send + Sync + 'static,
+    AdpProvider: AdapterProvider + ?Sized,
 {
-    async fn serialize(&self, domain: Arc<RwLock<Domain>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Serialized, AdapterRepoError>;
-    async fn deserialize(&self, serialized: Arc<RwLock<Serialized>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Domain, AdapterRepoError>;
+    async fn serialize(&self, domain: Arc<RwLock<Domain>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, AdapterRepoError>;
+    async fn deserialize(&self, serialized: Arc<RwLock<Serialized>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Domain, AdapterRepoError>;
 }
 
-struct AdapterObjectImpl<Domain, Serialized, Adp>
+struct AdapterObjectImpl<Domain, Serialized, Adp, AdpProvider>
 where
     Domain: Send + Sync + 'static,
     Serialized: Send + Sync + 'static,
     Adp: Adapter<Serialized, Domain> + 'static + Send + Sync,
+    AdpProvider: AdapterProvider + ?Sized,
 {
-    _phantom: PhantomData<(Domain, Serialized, Adp)>,
+    _phantom: PhantomData<(Domain, Serialized, Adp, AdpProvider)>,
 }
 
-impl<Domain, Serialized, Adp> AdapterObjectImpl<Domain, Serialized, Adp>
+impl<Domain, Serialized, Adp, AdpProvider> AdapterObjectImpl<Domain, Serialized, Adp, AdpProvider>
 where
     Domain: Send + Sync + 'static,
     Serialized: Send + Sync + 'static,
     Adp: Adapter<Serialized, Domain> + 'static + Send + Sync,
+    AdpProvider: AdapterProvider + ?Sized,
 {
     fn new() -> Self {
         Self { _phantom: PhantomData, }
     }
 }
 
-impl<Domain, Serialized, Adp> Debug for AdapterObjectImpl<Domain, Serialized, Adp>
+impl<Domain, Serialized, Adp, AdpProvider> Debug for AdapterObjectImpl<Domain, Serialized, Adp, AdpProvider>
 where
     Adp: 'static + Adapter<Serialized, Domain> + Send + Sync,
     Adp::ConversionError: 'static + Send + Sync,
     Domain: 'static + Send + Sync,
     Serialized: 'static + Send + Sync,
+    AdpProvider: AdapterProvider + ?Sized,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", TypeId::of::<Adp>())
@@ -206,19 +215,20 @@ where
 }
 
 #[async_trait::async_trait]
-impl<Domain, Serialized, Adp> AdapterObject<Domain, Serialized> for AdapterObjectImpl<Domain, Serialized, Adp>
+impl<Domain, Serialized, Adp, AdpProvider> AdapterObject<Domain, Serialized, AdpProvider> for AdapterObjectImpl<Domain, Serialized, Adp, AdpProvider>
 where
     Domain: Send + Sync + 'static,
     Serialized: Send + Sync + 'static,
     Adp: Adapter<Serialized, Domain> + 'static + Send + Sync,
     Adp::ConversionError: Send + Sync + 'static,
     Adp::SerializedConversionError: Send + Sync + 'static,
+    AdpProvider: AdapterProvider + ?Sized,
 {
-    async fn serialize(&self, domain: Arc<RwLock<Domain>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Serialized, AdapterRepoError> {
+    async fn serialize(&self, domain: Arc<RwLock<Domain>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, AdapterRepoError> {
         Adp::serialize(domain, context).await.map_err(AdapterRepoError::serialization_error)
     }
 
-    async fn deserialize(&self, serialized: Arc<RwLock<Serialized>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Domain, AdapterRepoError> {
+    async fn deserialize(&self, serialized: Arc<RwLock<Serialized>>, context: AdapterProviderContext<'_,AdpProvider>) -> Result<Domain, AdapterRepoError> {
         Adp::deserialize(serialized, context).await.map_err(AdapterRepoError::deserialization_error)
     }
 }
@@ -266,11 +276,11 @@ mod test {
         type ConversionError = Infallible;
         type SerializedConversionError = Infallible;
 
-        async fn deserialize(_serialized: Arc<RwLock<Serialized>>, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<Domain, Self::ConversionError> {
+        async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(_serialized: Arc<RwLock<Serialized>>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<Domain, Self::ConversionError> {
             Ok(Domain)
         }
 
-        async fn serialize(_domain: Arc<RwLock<Domain>>, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<Serialized, Self::SerializedConversionError> {
+        async fn serialize<AdpProvider: AdapterProvider + ?Sized>(_domain: Arc<RwLock<Domain>>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, Self::SerializedConversionError> {
             Ok(Serialized)
         }
     }
@@ -281,11 +291,11 @@ mod test {
         type ConversionError = TestAdapterError;
         type SerializedConversionError = TestAdapterError;
 
-        async fn deserialize(_serialized: Arc<RwLock<Serialized>>, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<Domain, Self::ConversionError> {
+        async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(_serialized: Arc<RwLock<Serialized>>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<Domain, Self::ConversionError> {
             Err(TestAdapterError)
         }
 
-        async fn serialize(_domain: Arc<RwLock<Domain>>, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<Serialized, Self::SerializedConversionError> {
+        async fn serialize<AdpProvider: AdapterProvider + ?Sized>(_domain: Arc<RwLock<Domain>>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, Self::SerializedConversionError> {
             Err(TestAdapterError)
         }
     }
@@ -326,7 +336,7 @@ mod test {
         // Given a repo with an adapter
 
         let repo = Arc::new(RwLock::new(AdapterRepository::new()));
-        let read_context = ReadOnlyAdapterProviderContext(repo.read().await);
+        let read_context = AdapterProviderContext(repo.read().await);
         let repo = repo.read().await;
         
         repo.register::<TestAdapter, Serialized, Domain>();
@@ -346,7 +356,7 @@ mod test {
         // Given an adapter which fails calls
 
         let repo = Arc::new(RwLock::new(AdapterRepository::new()));
-        let read_context = ReadOnlyAdapterProviderContext(repo.read().await);
+        let read_context = AdapterProviderContext(repo.read().await);
         let repo = repo.read().await;
 
         repo.register::<TestFailAdapter, Serialized, Domain>();
@@ -366,7 +376,7 @@ mod test {
         // Given an adapter that does not exist
 
         let repo = Arc::new(RwLock::new(AdapterRepository::new()));
-        let read_context = ReadOnlyAdapterProviderContext(repo.read().await);
+        let read_context = AdapterProviderContext(repo.read().await);
         let repo = repo.read().await;
 
         // When I try to serialize with that adapter
@@ -384,7 +394,7 @@ mod test {
         // Given a repo with an adapter
 
         let repo = Arc::new(RwLock::new(AdapterRepository::new()));
-        let read_context = ReadOnlyAdapterProviderContext(repo.read().await);
+        let read_context = AdapterProviderContext(repo.read().await);
         let repo = repo.read().await;
 
         repo.register::<TestAdapter, Serialized, Domain>();
@@ -404,7 +414,7 @@ mod test {
         // Given an adapter which fails calls
 
         let repo = Arc::new(RwLock::new(AdapterRepository::new()));
-        let read_context = ReadOnlyAdapterProviderContext(repo.read().await);
+        let read_context = AdapterProviderContext(repo.read().await);
         let repo = repo.read().await;
 
         repo.register::<TestFailAdapter, Serialized, Domain>();
@@ -424,7 +434,7 @@ mod test {
         // Given an adapter that does not exist
 
         let repo = Arc::new(RwLock::new(AdapterRepository::new()));
-        let read_context = ReadOnlyAdapterProviderContext(repo.read().await);
+        let read_context = AdapterProviderContext(repo.read().await);
         let repo = repo.read().await;
 
         // When I try to deserialize with that adapter

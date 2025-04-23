@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::domain::resource::resource::{ResourceLocation as DomainResourceLocation, ResourceLocationError};
 use crate::data::serialization::ResourceLocation as SerializationResourceLocation;
-use crate::repositories::adapter_repo::ReadOnlyAdapterProviderContext;
+use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
 
 pub struct ResourceLocationAdapter;
 #[async_trait::async_trait]
@@ -13,11 +13,11 @@ impl Adapter<SerializationResourceLocation, DomainResourceLocation> for Resource
     type ConversionError = ResourceLocationError;
     type SerializedConversionError = Infallible;
 
-    async fn deserialize(serialized: Arc<RwLock<SerializationResourceLocation>>, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<DomainResourceLocation, Self::ConversionError> {
+    async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(serialized: Arc<RwLock<SerializationResourceLocation>>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<DomainResourceLocation, Self::ConversionError> {
         DomainResourceLocation::from_str(serialized.read().await.to_string().as_str())
     }
 
-    async fn serialize(domain: Arc<RwLock<DomainResourceLocation>>, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<SerializationResourceLocation, Infallible> {
+    async fn serialize<AdpProvider: AdapterProvider + ?Sized>(domain: Arc<RwLock<DomainResourceLocation>>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<SerializationResourceLocation, Infallible> {
         Ok(SerializationResourceLocation::new(domain.read().await.to_string().as_str()))
     }
 }
@@ -28,13 +28,14 @@ impl AdapterError for ResourceLocationError {}
 mod tests {
     use once_cell::sync::Lazy;
     use tokio::sync::RwLock;
+    use crate::repositories::adapter_repo::AdapterRepository;
     use crate::services::project_service::DefaultAdapterProvider;
     use super::*;
     
     static ADAPTER_PROVIDER: Lazy<RwLock<DefaultAdapterProvider>> = Lazy::new(|| RwLock::new(DefaultAdapterProvider::new()));
     
-    async fn adapter_context<'a>() -> ReadOnlyAdapterProviderContext<'a> {
-        ReadOnlyAdapterProviderContext(ADAPTER_PROVIDER.read().await)
+    async fn adapter_context<'a>() -> AdapterProviderContext<'a, AdapterRepository> {
+        AdapterProviderContext(ADAPTER_PROVIDER.read().await)
     }
     
     #[tokio::test]

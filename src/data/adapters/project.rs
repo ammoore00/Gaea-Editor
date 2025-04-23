@@ -6,25 +6,20 @@ use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::domain::project::Project as DomainProject;
 use crate::data::serialization::project::Project as SerializedProject;
 use crate::repositories::adapter_repo::{AdapterProvider, AdapterRepository};
-use crate::repositories::adapter_repo::ReadOnlyAdapterProviderContext;
+use crate::repositories::adapter_repo::AdapterProviderContext;
 
-pub struct ProjectAdapter<AdpProvider:AdapterProvider = AdapterRepository> {
-    _phantom: std::marker::PhantomData<AdpProvider>,
-}
+pub struct ProjectAdapter;
 
 #[async_trait::async_trait]
-impl<AdpProvider> Adapter<SerializedProjectData, DomainProject> for ProjectAdapter<AdpProvider>
-where
-    AdpProvider: AdapterProvider
-{
+impl Adapter<SerializedProjectData, DomainProject> for ProjectAdapter {
     type ConversionError = ProjectConversionError;
     type SerializedConversionError = Infallible;
 
-    async fn deserialize(serialized: Arc<RwLock<SerializedProjectData>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<DomainProject, Self::ConversionError> {
+    async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(serialized: Arc<RwLock<SerializedProjectData>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<DomainProject, Self::ConversionError> {
         todo!()
     }
 
-    async fn serialize(domain: Arc<RwLock<DomainProject>>, context: ReadOnlyAdapterProviderContext<'_>) -> Result<SerializedProjectData, Infallible> {
+    async fn serialize<AdpProvider: AdapterProvider + ?Sized>(domain: Arc<RwLock<DomainProject>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<SerializedProjectData, Infallible> {
         todo!()
     }
 }
