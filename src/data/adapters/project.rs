@@ -4,11 +4,13 @@ use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::domain::project::Project as DomainProject;
 use crate::data::serialization::project::Project as SerializedProject;
 use crate::repositories::adapter_repo::{AdapterProvider, AdapterRepository};
+use crate::repositories::adapter_repo::ReadOnlyAdapterProviderContext;
 
 pub struct ProjectAdapter<AdpProvider:AdapterProvider = AdapterRepository> {
     _phantom: std::marker::PhantomData<AdpProvider>,
 }
 
+#[async_trait::async_trait]
 impl<AdpProvider> Adapter<SerializedProjectData, DomainProject> for ProjectAdapter<AdpProvider>
 where
     AdpProvider: AdapterProvider
@@ -16,11 +18,11 @@ where
     type ConversionError = ProjectConversionError;
     type SerializedConversionError = Infallible;
 
-    fn deserialize(serialized: &SerializedProjectData) -> Result<DomainProject, Self::ConversionError> {
+    async fn deserialize(serialized: &SerializedProjectData, context: ReadOnlyAdapterProviderContext<'_>) -> Result<DomainProject, Self::ConversionError> {
         todo!()
     }
 
-    fn serialize(domain: &DomainProject) -> Result<SerializedProjectData, Infallible> {
+    async fn serialize(domain: &DomainProject, context: ReadOnlyAdapterProviderContext<'_>) -> Result<SerializedProjectData, Infallible> {
         todo!()
     }
 }

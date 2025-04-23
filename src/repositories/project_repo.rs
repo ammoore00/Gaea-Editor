@@ -1,9 +1,10 @@
 use std::future::Future;
 use std::io;
-use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::Arc;
 use dashmap::DashMap;
+use tokio::sync::RwLock;
 use crate::data::domain::project::{Project, ProjectID};
 use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 
@@ -21,12 +22,7 @@ pub trait ProjectProvider {
 
     async fn with_project_async<'a, F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where
-        F: FnOnce(&Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync,
-        R: Send + Sync;
-
-    async fn with_project_mut_async<'a, F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
-    where
-        F: FnOnce(&mut Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync,
+        F: FnOnce(Arc<RwLock<Project>>) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync,
         R: Send + Sync;
 
     async fn open_project(&self, path: &Path) -> Result<ProjectID>;
@@ -42,7 +38,7 @@ pub type DefaultFilesystemProvider = FilesystemService;
 
 pub struct ProjectRepository<Filesystem: FilesystemProvider = DefaultFilesystemProvider> {
     filesystem_provider: Filesystem,
-    projects: DashMap<ProjectID, Project>,
+    projects: DashMap<ProjectID, Arc<RwLock<Project>>>,
 }
 
 impl<Filesystem: FilesystemProvider> ProjectRepository<Filesystem> {
@@ -72,7 +68,7 @@ impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Files
             }
         }
 
-        self.projects.insert(project_id, project);
+        self.projects.insert(project_id, Arc::new(RwLock::new(project)));
         Ok(project_id)
     }
 
@@ -83,8 +79,8 @@ impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Files
         let project = self.projects.get(&project_id);
         
         if let Some(project) = project {
-            let project = project.value();
-            Some(callback(project))
+            let project = project.value().blocking_read();
+            Some(callback(&*project))
         }
         else {
             None
@@ -95,10 +91,11 @@ impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Files
     where
         F: FnOnce(&mut Project) -> R
     {
-        let project = self.projects.get_mut(&project_id);
+        let project = self.projects.get(&project_id);
         
         if let Some(mut project) = project {
-            Some(callback(project.value_mut()))
+            let mut project = project.value().blocking_write();
+            Some(callback(&mut *project))
         }
         else {
             None
@@ -107,30 +104,14 @@ impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Files
 
     async fn with_project_async<'a, F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where
-        F: FnOnce(&Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync,
+        F: FnOnce(Arc<RwLock<Project>>) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync,
         R: Send + Sync,
     {
         let project = self.projects.get(&project_id);
 
         if let Some(project) = project {
             let project = project.value();
-            Some(callback(project).await)
-        }
-        else {
-            None
-        }
-    }
-
-    async fn with_project_mut_async<'a, F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
-    where
-        F: FnOnce(&mut Project) -> Pin<Box<dyn Future<Output = R> + Send + 'a>> + Send + Sync,
-        R: Send + Sync,
-    {
-
-        let project = self.projects.get_mut(&project_id);
-
-        if let Some(mut project) = project {
-            Some(callback(project.value_mut()).await)
+            Some(callback(project.clone()).await)
         }
         else {
             None

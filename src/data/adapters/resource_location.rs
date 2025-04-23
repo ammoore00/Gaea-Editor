@@ -3,17 +3,19 @@ use std::str::FromStr;
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::domain::resource::resource::{ResourceLocation as DomainResourceLocation, ResourceLocationError};
 use crate::data::serialization::ResourceLocation as SerializationResourceLocation;
+use crate::repositories::adapter_repo::ReadOnlyAdapterProviderContext;
 
 pub struct ResourceLocationAdapter;
+#[async_trait::async_trait]
 impl Adapter<SerializationResourceLocation, DomainResourceLocation> for ResourceLocationAdapter {
     type ConversionError = ResourceLocationError;
     type SerializedConversionError = Infallible;
-    
-    fn deserialize(serialized: &SerializationResourceLocation) -> Result<DomainResourceLocation, Self::ConversionError> {
+
+    async fn deserialize(serialized: &SerializationResourceLocation, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<DomainResourceLocation, Self::ConversionError> {
         DomainResourceLocation::from_str(serialized.to_string().as_str())
     }
 
-    fn serialize(domain: &DomainResourceLocation) -> Result<SerializationResourceLocation, Infallible> {
+    async fn serialize(domain: &DomainResourceLocation, _context: ReadOnlyAdapterProviderContext<'_>) -> Result<SerializationResourceLocation, Infallible> {
         Ok(SerializationResourceLocation::new(domain.to_string().as_str()))
     }
 }
@@ -22,49 +24,58 @@ impl AdapterError for ResourceLocationError {}
 
 #[cfg(test)]
 mod tests {
+    use once_cell::sync::Lazy;
+    use tokio::sync::RwLock;
+    use crate::services::project_service::DefaultAdapterProvider;
     use super::*;
     
-    #[test]
-    fn test_serialized_to_domain() {
+    static ADAPTER_PROVIDER: Lazy<RwLock<DefaultAdapterProvider>> = Lazy::new(|| RwLock::new(DefaultAdapterProvider::new()));
+    
+    async fn adapter_context<'a>() -> ReadOnlyAdapterProviderContext<'a> {
+        ReadOnlyAdapterProviderContext(ADAPTER_PROVIDER.read().await)
+    }
+    
+    #[tokio::test]
+    async fn test_serialized_to_domain() {
         let serialized = SerializationResourceLocation::new("minecraft:foo");
-        let domain = ResourceLocationAdapter::deserialize(&serialized).unwrap();
+        let domain = ResourceLocationAdapter::deserialize(&serialized, adapter_context().await).await.unwrap();
         assert_eq!(domain.to_string(), "minecraft:foo");
 
         let serialized = SerializationResourceLocation::new("foo:bar");
-        let domain = ResourceLocationAdapter::deserialize(&serialized).unwrap();
+        let domain = ResourceLocationAdapter::deserialize(&serialized, adapter_context().await).await.unwrap();
         assert_eq!(domain.to_string(), "foo:bar");
     }
     
-    #[test]
-    fn test_domain_to_serialized() {
+    #[tokio::test]
+    async fn test_domain_to_serialized() {
         let domain = DomainResourceLocation::new("minecraft", "foo").unwrap();
-        let serialized = ResourceLocationAdapter::serialize(&domain).unwrap();
+        let serialized = ResourceLocationAdapter::serialize(&domain, adapter_context().await).await.unwrap();
         assert_eq!(serialized.to_string(), "minecraft:foo");
 
         let domain = DomainResourceLocation::new("foo", "bar").unwrap();
-        let serialized = ResourceLocationAdapter::serialize(&domain).unwrap();
+        let serialized = ResourceLocationAdapter::serialize(&domain, adapter_context().await).await.unwrap();
         assert_eq!(serialized.to_string(), "foo:bar");
     }
     
-    #[test]
-    fn test_serialized_to_domain_no_namespace() {
+    #[tokio::test]
+    async fn test_serialized_to_domain_no_namespace() {
         let serialized = SerializationResourceLocation::new("foo");
-        let domain = ResourceLocationAdapter::deserialize(&serialized).unwrap();
+        let domain = ResourceLocationAdapter::deserialize(&serialized, adapter_context().await).await.unwrap();
         assert_eq!(domain.to_string(), "minecraft:foo");
     }
     
-    #[test]
-    fn test_serialized_to_domain_invalid() {
+    #[tokio::test]
+    async fn test_serialized_to_domain_invalid() {
         let serialized = SerializationResourceLocation::new("foo:bar:baz");
-        let domain = ResourceLocationAdapter::deserialize(&serialized);
+        let domain = ResourceLocationAdapter::deserialize(&serialized, adapter_context().await).await;
         assert!(domain.is_err());
 
         let serialized = SerializationResourceLocation::new("@#$%($%&U");
-        let domain = ResourceLocationAdapter::deserialize(&serialized);
+        let domain = ResourceLocationAdapter::deserialize(&serialized, adapter_context().await).await;
         assert!(domain.is_err());
         
         let serialized = SerializationResourceLocation::new("MINECRAFT:FOO");
-        let domain = ResourceLocationAdapter::deserialize(&serialized);
+        let domain = ResourceLocationAdapter::deserialize(&serialized, adapter_context().await).await;
         assert!(domain.is_err());
     }
 }

@@ -3,8 +3,22 @@ use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::sync::Arc;
 use dashmap::DashMap;
+use tokio::sync::RwLockReadGuard;
 use crate::data::adapters::{Adapter, AdapterError};
+use crate::services::project_service;
 
+// TODO: Remove this default type and fix errors
+pub struct ReadOnlyAdapterProviderContext<'a, AdpProvider: AdapterProvider + ?Sized = project_service::DefaultAdapterProvider>(pub RwLockReadGuard<'a, AdpProvider>);
+
+impl<'a, AdpProvider: AdapterProvider> std::ops::Deref for ReadOnlyAdapterProviderContext<'a, AdpProvider> {
+    type Target = AdpProvider;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
+#[async_trait::async_trait]
 pub trait AdapterProvider: Send + Sync + 'static {
     fn register<Adp, Serialized, Domain>(&self)
     where
@@ -13,12 +27,12 @@ pub trait AdapterProvider: Send + Sync + 'static {
         Adp: Adapter<Serialized, Domain> + 'static + Send + Sync;
     
     // TODO: make this async aware
-    fn serialize<Domain, Serialized>(&self, domain: &Domain) -> Result<Serialized, AdapterRepoError>
+    async fn serialize<Domain, Serialized>(&self, domain: &Domain, context: ReadOnlyAdapterProviderContext<'_, Self>) -> Result<Serialized, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static;
     
-    fn deserialize<Serialized, Domain>(&self, serialized: &Serialized) -> Result<Domain, AdapterRepoError>
+    async fn deserialize<Serialized, Domain>(&self, serialized: &Serialized, context: ReadOnlyAdapterProviderContext<'_, Self>) -> Result<Domain, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static;
@@ -60,6 +74,7 @@ impl AdapterRepository {
     }
 }
 
+#[async_trait::async_trait]
 impl AdapterProvider for AdapterRepository {
     fn register<Adp, Serialized, Domain>(&self)
     where
@@ -77,7 +92,7 @@ impl AdapterProvider for AdapterRepository {
         self.adapters.insert(adapter_type, Box::new(adapter));
     }
     
-    fn serialize<Domain, Serialized>(&self, domain: &Domain) -> Result<Serialized, AdapterRepoError>
+    async fn serialize<Domain, Serialized>(&self, domain: &Domain, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Serialized, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static,
@@ -90,10 +105,10 @@ impl AdapterProvider for AdapterRepository {
         let adapter = self.adapters.get(&adapter_type).ok_or_else(|| AdapterRepoError::NoAdapterFound)?;
         let adapter = adapter.downcast_ref::<AdapterWrapper<Domain, Serialized>>().unwrap();
 
-        adapter.serialize(domain)
+        adapter.serialize(domain, context).await
     }
 
-    fn deserialize<Serialized, Domain>(&self, serialized: &Serialized) -> Result<Domain, AdapterRepoError>
+    async fn deserialize<Serialized, Domain>(&self, serialized: &Serialized, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Domain, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static,
@@ -106,7 +121,7 @@ impl AdapterProvider for AdapterRepository {
         let adapter = self.adapters.get(&adapter_type).ok_or_else(|| AdapterRepoError::NoAdapterFound)?;
         let adapter = adapter.downcast_ref::<AdapterWrapper<Domain, Serialized>>().unwrap();
 
-        adapter.deserialize(serialized)
+        adapter.deserialize(serialized, context).await
     }
 }
 
@@ -125,11 +140,13 @@ impl<Domain, Serialized> Clone for AdapterWrapper<Domain, Serialized> {
     }
 }
 
-impl<Domain, Serialized> AdapterWrapper<Domain, Serialized> {
+impl<Domain, Serialized> AdapterWrapper<Domain, Serialized>
+where
+    Domain: Send + Sync + 'static,
+    Serialized: Send + Sync + 'static,
+{
     fn new<Adp>() -> Self
     where
-        Domain: Send + Sync + 'static,
-        Serialized: Send + Sync + 'static,
         Adp: Adapter<Serialized, Domain> + 'static + Send + Sync,
     {
         Self {
@@ -137,19 +154,24 @@ impl<Domain, Serialized> AdapterWrapper<Domain, Serialized> {
             _phantom: PhantomData,
         }
     }
-    
-    fn serialize(&self, domain: &Domain) -> Result<Serialized, AdapterRepoError> {
-        self.adapter.serialize(domain)
+
+    async fn serialize(&self, domain: &Domain, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Serialized, AdapterRepoError> {
+        self.adapter.serialize(domain, context).await
     }
-    
-    fn deserialize(&self, serialized: &Serialized) -> Result<Domain, AdapterRepoError> {
-        self.adapter.deserialize(serialized)
+
+    async fn deserialize(&self, serialized: &Serialized, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Domain, AdapterRepoError> {
+        self.adapter.deserialize(serialized, context).await
     }
 }
 
-trait AdapterObject<Domain, Serialized>: Send + Sync + Debug {
-    fn serialize(&self, domain: &Domain) -> Result<Serialized, AdapterRepoError>;
-    fn deserialize(&self, serialized: &Serialized) -> Result<Domain, AdapterRepoError>;
+#[async_trait::async_trait]
+trait AdapterObject<Domain, Serialized>: Send + Sync + Debug
+where
+    Domain: Send + Sync + 'static,
+    Serialized: Send + Sync + 'static,
+{
+    async fn serialize(&self, domain: &Domain, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Serialized, AdapterRepoError>;
+    async fn deserialize(&self, serialized: &Serialized, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Domain, AdapterRepoError>;
 }
 
 struct AdapterObjectImpl<Domain, Serialized, Adp>
@@ -184,6 +206,7 @@ where
     }
 }
 
+#[async_trait::async_trait]
 impl<Domain, Serialized, Adp> AdapterObject<Domain, Serialized> for AdapterObjectImpl<Domain, Serialized, Adp>
 where
     Domain: Send + Sync + 'static,
@@ -192,12 +215,12 @@ where
     Adp::ConversionError: Send + Sync + 'static,
     Adp::SerializedConversionError: Send + Sync + 'static,
 {
-    fn serialize(&self, domain: &Domain) -> Result<Serialized, AdapterRepoError> {
-        Adp::serialize(domain).map_err(|e| AdapterRepoError::serialization_error(e))
+    async fn serialize(&self, domain: &Domain, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Serialized, AdapterRepoError> {
+        Adp::serialize(domain, context).await.map_err(AdapterRepoError::serialization_error)
     }
 
-    fn deserialize(&self, serialized: &Serialized) -> Result<Domain, AdapterRepoError> {
-        Adp::deserialize(serialized).map_err(|e| AdapterRepoError::deserialization_error(e))
+    async fn deserialize(&self, serialized: &Serialized, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Domain, AdapterRepoError> {
+        Adp::deserialize(serialized, context).await.map_err(AdapterRepoError::deserialization_error)
     }
 }
 
@@ -230,6 +253,7 @@ impl AdapterRepoError {
 #[cfg(test)]
 mod test {
     use std::convert::Infallible;
+    use tokio::sync::RwLock;
     use super::*;
 
     #[derive(Debug, PartialEq, Eq)]
@@ -238,29 +262,31 @@ mod test {
     struct Serialized;
     
     struct TestAdapter;
+    #[async_trait::async_trait]
     impl Adapter<Serialized, Domain> for TestAdapter {
         type ConversionError = Infallible;
         type SerializedConversionError = Infallible;
 
-        fn deserialize(serialized: &Serialized) -> Result<Domain, Self::ConversionError> {
+        async fn deserialize(serialized: &Serialized, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Domain, Self::ConversionError> {
             Ok(Domain)
         }
 
-        fn serialize(domain: &Domain) -> Result<Serialized, Self::SerializedConversionError> {
+        async fn serialize(domain: &Domain, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Serialized, Self::SerializedConversionError> {
             Ok(Serialized)
         }
     }
 
     struct TestFailAdapter;
+    #[async_trait::async_trait]
     impl Adapter<Serialized, Domain> for TestFailAdapter {
         type ConversionError = TestAdapterError;
         type SerializedConversionError = TestAdapterError;
 
-        fn deserialize(serialized: &Serialized) -> Result<Domain, Self::ConversionError> {
+        async fn deserialize(serialized: &Serialized, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Domain, Self::ConversionError> {
             Err(TestAdapterError)
         }
 
-        fn serialize(domain: &Domain) -> Result<Serialized, Self::SerializedConversionError> {
+        async fn serialize(domain: &Domain, context: ReadOnlyAdapterProviderContext<'_>) -> Result<Serialized, Self::SerializedConversionError> {
             Err(TestAdapterError)
         }
     }
@@ -270,8 +296,8 @@ mod test {
     struct TestAdapterError;
     impl AdapterError for TestAdapterError {}
 
-    #[test]
-    fn test_register_adapter() {
+    #[tokio::test]
+    async fn test_register_adapter() {
         // Given an adapter (TestAdapter)
         // When I register it
 
@@ -286,26 +312,29 @@ mod test {
         // TODO: Verify that the correct adapter was returned
     }
     
-    #[test]
-    fn test_register_adapter_multiple() {
+    #[tokio::test]
+    async fn test_register_adapter_multiple() {
         // TODO: Implement test
     }
 
-    #[test]
-    fn test_register_adapter_already_registered() {
+    #[tokio::test]
+    async fn test_register_adapter_already_registered() {
         // TODO: Implement test
     }
     
-    #[test]
-    fn test_serialize() {
+    #[tokio::test]
+    async fn test_serialize() {
         // Given a repo with an adapter
 
-        let repo = AdapterRepository::new();
+        let repo = Arc::new(RwLock::new(AdapterRepository::new()));
+        let read_context = ReadOnlyAdapterProviderContext(repo.read().await);
+        let repo = repo.read().await;
+        
         repo.register::<TestAdapter, Serialized, Domain>();
         
         // When I try to serialize with that adapter
         
-        let result: Result<Serialized, _> = repo.serialize(&Domain);
+        let result: Result<Serialized, _> = repo.serialize(&Domain, read_context).await;
         
         // It should serialize correctly
         
@@ -313,16 +342,19 @@ mod test {
         assert_eq!(result.unwrap(), Serialized)
     }
     
-    #[test]
-    fn test_serialize_error() {
+    #[tokio::test]
+    async fn test_serialize_error() {
         // Given an adapter which fails calls
 
-        let repo = AdapterRepository::new();
+        let repo = Arc::new(RwLock::new(AdapterRepository::new()));
+        let read_context = ReadOnlyAdapterProviderContext(repo.read().await);
+        let repo = repo.read().await;
+
         repo.register::<TestFailAdapter, Serialized, Domain>();
 
         // When I try to serialize with that adapter
 
-        let result: Result<Serialized, _> = repo.serialize(&Domain);
+        let result: Result<Serialized, _> = repo.serialize(&Domain, read_context).await;
 
         // It should return an appropriate error
 
@@ -330,15 +362,17 @@ mod test {
         assert!(matches!(result.unwrap_err(), AdapterRepoError::SerializationError(_)))
     }
 
-    #[test]
-    fn test_serialize_no_adapter_found() {
+    #[tokio::test]
+    async fn test_serialize_no_adapter_found() {
         // Given an adapter that does not exist
-        
-        let repo = AdapterRepository::new();
-        
+
+        let repo = Arc::new(RwLock::new(AdapterRepository::new()));
+        let read_context = ReadOnlyAdapterProviderContext(repo.read().await);
+        let repo = repo.read().await;
+
         // When I try to serialize with that adapter
 
-        let result: Result<Serialized, _> = repo.serialize(&Domain);
+        let result: Result<Serialized, _> = repo.serialize(&Domain, read_context).await;
 
         // It should return an appropriate error
 
@@ -346,16 +380,19 @@ mod test {
         assert!(matches!(result.unwrap_err(), AdapterRepoError::NoAdapterFound))
     }
     
-    #[test]
-    fn test_deserialize() {
+    #[tokio::test]
+    async fn test_deserialize() {
         // Given a repo with an adapter
 
-        let repo = AdapterRepository::new();
+        let repo = Arc::new(RwLock::new(AdapterRepository::new()));
+        let read_context = ReadOnlyAdapterProviderContext(repo.read().await);
+        let repo = repo.read().await;
+
         repo.register::<TestAdapter, Serialized, Domain>();
 
         // When I try to deserialize with that adapter
 
-        let result: Result<Domain, _> = repo.deserialize(&Serialized);
+        let result: Result<Domain, _> = repo.deserialize(&Serialized, read_context).await;
 
         // It should serialize correctly
 
@@ -363,16 +400,19 @@ mod test {
         assert_eq!(result.unwrap(), Domain)
     }
 
-    #[test]
-    fn test_deserialize_error() {
+    #[tokio::test]
+    async fn test_deserialize_error() {
         // Given an adapter which fails calls
 
-        let repo = AdapterRepository::new();
+        let repo = Arc::new(RwLock::new(AdapterRepository::new()));
+        let read_context = ReadOnlyAdapterProviderContext(repo.read().await);
+        let repo = repo.read().await;
+
         repo.register::<TestFailAdapter, Serialized, Domain>();
 
         // When I try to deserialize with that adapter
 
-        let result: Result<Domain, _> = repo.deserialize(&Serialized);
+        let result: Result<Domain, _> = repo.deserialize(&Serialized, read_context).await;
 
         // It should return an appropriate error
 
@@ -380,15 +420,17 @@ mod test {
         assert!(matches!(result.unwrap_err(), AdapterRepoError::DeserializationError(_)))
     }
     
-    #[test]
-    fn test_deserialize_no_adapter_found() {
+    #[tokio::test]
+    async fn test_deserialize_no_adapter_found() {
         // Given an adapter that does not exist
-        
-        let repo = AdapterRepository::new();
-        
+
+        let repo = Arc::new(RwLock::new(AdapterRepository::new()));
+        let read_context = ReadOnlyAdapterProviderContext(repo.read().await);
+        let repo = repo.read().await;
+
         // When I try to deserialize with that adapter
 
-        let result: Result<Domain, _> = repo.deserialize(&Serialized);
+        let result: Result<Domain, _> = repo.deserialize(&Serialized, read_context).await;
 
         // It should return an appropriate error
 

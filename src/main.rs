@@ -4,7 +4,7 @@
 use iced::{Font, Task};
 
 use crate::application::gui::window::ApplicationWindow;
-use crate::application::app_context::{AppContextBuilder, DefaultAdapterProvider};
+use crate::application::app_context::AppContextBuilder;
 use crate::application::gui::window;
 
 mod application;
@@ -21,7 +21,7 @@ pub fn main() -> iced::Result {
         .run_with(create_application)
 }
 
-fn create_application() -> (ApplicationWindow<DefaultAdapterProvider>, Task<window::Message>) {
+fn create_application() -> (ApplicationWindow, Task<window::Message>) {
     let app_context = AppContextBuilder::default().build();
     ApplicationWindow::new(app_context)
 }

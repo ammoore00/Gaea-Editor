@@ -19,7 +19,7 @@ pub enum Message {
     TextEditorMessage(i32, text_editor::Message),
 }
 
-pub struct ApplicationWindow<AdpProvider: AdapterProvider> {
+pub struct ApplicationWindow {
     theme: highlighter::Theme,
     
     panes: pane_grid::State<PaneState>,
@@ -28,11 +28,11 @@ pub struct ApplicationWindow<AdpProvider: AdapterProvider> {
     header: Header,
     text_editors: Vec<TextEditor>,
     
-    app_context: AppContext<AdpProvider>,
+    app_context: AppContext,
 }
 
-impl<AdpProvider: AdapterProvider> ApplicationWindow<AdpProvider> {
-    pub fn new(app_context: AppContext<AdpProvider>) -> (Self, Task<Message>) {
+impl ApplicationWindow {
+    pub fn new(app_context: AppContext) -> (Self, Task<Message>) {
         let file_tree_pane = PaneState::new(PaneType::FileTree);
         let main_content_pane = PaneState::new(PaneType::MainContent);
         let preview_pane = PaneState::new(PaneType::Preview);
