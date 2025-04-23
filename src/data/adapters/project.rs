@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::domain::project::Project as DomainProject;
 use crate::data::serialization::project::Project as SerializedProject;
-use crate::repositories::adapter_repo::{AdapterProvider, AdapterRepository};
+use crate::repositories::adapter_repo::AdapterProvider;
 use crate::repositories::adapter_repo::AdapterProviderContext;
 
 pub struct ProjectAdapter;

@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "mc_versions"
+name = "mc_version_macro"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",

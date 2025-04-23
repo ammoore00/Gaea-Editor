@@ -3,35 +3,6 @@
 version = 4
 
 [[package]]
-name = "DatapackGen"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "dashmap",
- "glob",
- "iced",
- "iced_aw",
- "once_cell",
- "paste",
- "regex",
- "rfd",
- "sanitize-filename",
- "sea-orm",
- "serde",
- "serde_json",
- "serde_repr",
- "serde_with",
- "serial_test",
- "syntect",
- "syntect_minecraft_highlighting",
- "thiserror 1.0.69",
- "tokio",
- "uuid",
- "zip",
-]
-
-[[package]]
 name = "ab_glyph"
 version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1657,6 +1628,35 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "gaea-mc"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "dashmap",
+ "glob",
+ "iced",
+ "iced_aw",
+ "once_cell",
+ "paste",
+ "regex",
+ "rfd",
+ "sanitize-filename",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "serde_with",
+ "serial_test",
+ "syntect",
+ "syntect_minecraft_highlighting",
+ "thiserror 1.0.69",
+ "tokio",
+ "uuid",
+ "zip",
 ]
 
 [[package]]

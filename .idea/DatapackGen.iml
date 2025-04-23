@@ -4,9 +4,11 @@
     <content url="file://$MODULE_DIR$">
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
-      <sourceFolder url="file://$MODULE_DIR$/mc_versions/src" isTestSource="false" />
-      <excludeFolder url="file://$MODULE_DIR$/mc_versions/target" />
+      <sourceFolder url="file://$MODULE_DIR$/mc_version/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/mc_version_macro/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
+      <excludeFolder url="file://$MODULE_DIR$/mc_version/target" />
+      <excludeFolder url="file://$MODULE_DIR$/mc_version_macro/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

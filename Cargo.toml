@@ -1,5 +1,5 @@
 [package]
-name = "DatapackGen"
+name = "gaea-mc"
 version = "0.0.0"
 description = "Gaea - Minecraft Data and Resourcepack Generator"
 authors = ["The Lady Dawn"]
