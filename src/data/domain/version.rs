@@ -44,6 +44,11 @@ static VERSION_REGISTRY: Lazy<HashMap<String, MinecraftVersion>> = Lazy::new(|| 
     map
 });
 
+pub struct PackFormat {
+    format: u8,
+    mc_versions: Vec<MinecraftVersion>,
+}
+
 /// Represents supported Minecraft versions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MinecraftVersion {
