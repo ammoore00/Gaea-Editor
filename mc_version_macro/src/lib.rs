@@ -1,8 +1,8 @@
+use quote::quote;
 use std::collections::HashSet;
 use proc_macro2::TokenStream;
 use syn::parse::{Parse, ParseStream};
-use syn::spanned::Spanned;
-use syn::{ExprLit, Token};
+use syn::Token;
 
 /// Generates pack formats for resourcepacks and datapacks
 /// with associated Minecraft versions, and creates entries for
@@ -25,12 +25,128 @@ pub fn define_versions(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
     generate_output(parsed_input).into()
 }
 
-fn generate_output(input: u8) -> TokenStream {
-    todo!()
+fn generate_output(input: FormatList) -> TokenStream {
+    // Create unique, sorted list of all versions from both data and resource packs
+    let mut all_versions = input.mc_versions.clone();
+    all_versions.sort();
+
+    let mut output = TokenStream::new();
+
+    // Generate version static declarations
+    let version_statics = generate_version_statics(&all_versions);
+    output.extend(version_statics);
+
+    // Generate data format static declarations
+    let data_statics = generate_data_format_statics(&input.data_formats, &all_versions);
+    output.extend(data_statics);
+
+    // Generate resource format static declarations
+    let resource_statics = generate_resource_format_statics(&input.resource_packs, &all_versions);
+    output.extend(resource_statics);
+
+    output
 }
 
-fn parse_input(input: TokenStream) -> Result<u8, FormatSetParseError> {
-    todo!()
+// Generate static declarations for MinecraftVersion values
+fn generate_version_statics(versions: &[SemanticVersion]) -> TokenStream {
+    let mut output = TokenStream::new();
+
+    for version in versions {
+        // Create a name like V1_18, V1_18_1, V1_18_2
+        let name = format!("V{}_{}{}", 
+            version.major,
+            version.minor,
+            if version.patch > 0 { format!("_{}", version.patch) } else { String::new() }
+        );
+
+        let ident = syn::Ident::new(&name, proc_macro2::Span::call_site());
+
+        let minor = version.minor;
+        let patch = version.patch;
+        
+        let tokens = quote::quote! {
+            pub static #ident: ::once_cell::sync::Lazy<::mc_version::MinecraftVersion> = ::once_cell::sync::Lazy::new(|| 
+                ::mc_version::MinecraftVersion::new(#minor, #patch)
+            );
+        };
+
+        output.extend(TokenStream::from(tokens));
+    }
+
+    output
+}
+
+// Generate static declarations for data format values
+fn generate_data_format_statics(formats: &[PackFormat], all_versions: &[SemanticVersion]) -> TokenStream {
+    let mut output = TokenStream::new();
+
+    for format in formats {
+        // Create a name like D8, D9, etc.
+        let name = format!("D{}", format.format_id);
+        let ident = syn::Ident::new(&name, proc_macro2::Span::call_site());
+
+        // Generate a list of references to the version statics
+        let version_refs = format.versions.iter().map(|v| {
+            let version_name = format!("V{}_{}{}",
+                                       v.major,
+                                       v.minor,
+                                       if v.patch > 0 { format!("_{}", v.patch) } else { String::new() }
+            );
+            let version_ident = syn::Ident::new(&version_name, proc_macro2::Span::call_site());
+            quote::quote! { *#version_ident }
+        }).collect::<Vec<_>>();
+
+        let format_id = format.format_id;
+        
+        let tokens = quote::quote! {
+            pub static #ident: ::once_cell::sync::Lazy<::mc_version::PackFormat> = ::once_cell::sync::Lazy::new(|| 
+                ::mc_version::PackFormat::new(#format_id, vec![#(#version_refs),*])
+            );
+        };
+
+        output.extend(TokenStream::from(tokens));
+    }
+
+    output
+}
+
+// Generate static declarations for resource format values
+fn generate_resource_format_statics(formats: &[PackFormat], all_versions: &[SemanticVersion]) -> TokenStream {
+    let mut output = TokenStream::new();
+
+    for format in formats {
+        // Create a name like R8, R9, etc.
+        let name = format!("R{}", format.format_id);
+        let ident = syn::Ident::new(&name, proc_macro2::Span::call_site());
+
+        // Generate a list of references to the version statics
+        let version_refs = format.versions.iter().map(|v| {
+            let version_name = format!("V{}_{}{}",
+                                       v.major,
+                                       v.minor,
+                                       if v.patch > 0 { format!("_{}", v.patch) } else { String::new() }
+            );
+            let version_ident = syn::Ident::new(&version_name, proc_macro2::Span::call_site());
+            quote::quote! { *#version_ident }
+        }).collect::<Vec<_>>();
+
+        let format_id = format.format_id;
+
+        // Create the static declaration using once_cell::Lazy
+        let tokens = quote::quote! {
+            pub static #ident: ::once_cell::sync::Lazy<::mc_version::PackFormat> = ::once_cell::sync::Lazy::new(|| 
+                ::mc_version::PackFormat::new(#format_id, vec![#(#version_refs),*])
+            );
+        };
+
+        output.extend(TokenStream::from(tokens));
+    }
+
+    output
+}
+
+fn parse_input(input: TokenStream) -> syn::Result<FormatList> {
+    syn::parse2::<FormatList>(input)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -655,8 +771,10 @@ mod test {
                     (8, 1.18..1.18.2)
                 ]
             };
+            
             //When I parse it
             let format_list = syn::parse2::<FormatList>(input).unwrap();
+            
             // It should parse correctly
             let expected = FormatList {
                 data_formats: vec![
@@ -705,6 +823,7 @@ mod test {
                     (8, 1.18..1.18.2)
                 ]
             };
+            
             //When I parse it
             let result = syn::parse2::<FormatList>(input);
             // It should return an error
@@ -719,6 +838,7 @@ mod test {
                     (8, 1.18..1.18.2)
                 ]
             };
+            
             //When I parse it
             let result = syn::parse2::<FormatList>(input);
             // It should return an error
@@ -734,6 +854,7 @@ mod test {
                     (9, 1.18.2)
                 ]
             };
+            
             //When I parse it
             let result = syn::parse2::<FormatList>(input);
             // It should return an error
@@ -752,6 +873,7 @@ mod test {
                     (8, 1.18..1.18.2)
                 ]
             };
+            
             //When I parse it
             let result = syn::parse2::<FormatList>(input);
             // It should return an error
@@ -769,6 +891,7 @@ mod test {
                 resource = 
                     (8, 1.18..1.18.2)
             };
+            
             //When I parse it
             let result = syn::parse2::<FormatList>(input);
             // It should return an error
@@ -778,5 +901,56 @@ mod test {
 
     mod generate_output {
         use super::*;
+        
+        #[test]
+        fn test_generate_output() {
+            // Given a valid intermediate
+            let input = quote!(
+                data = [
+                    (8, [1.18, 1.18.1]),
+                    (9, 1.18.2)
+                ],
+                resource = [
+                    (8, 1.18..1.18.2)
+                ]
+            );
+            let intermediate = syn::parse2::<FormatList>(input).unwrap();
+            
+            // When I generate the output
+            let output = generate_output(intermediate);
+
+            //println!("{}", output);
+            
+            // It should generate correctly
+            // TODO: Properly implement this test
+            let expected = quote! {
+                static V1_18: ::once_cell::Lazy<::mc_version::Minecraft_version> = ::once_cell::Lazy::new(|| ::mc_version::Minecraft_version::new(18u8, 0u8));
+                static V1_18_1: ::once_cell::Lazy<::mc_version::Minecraft_version> = ::once_cell::Lazy::new(|| ::mc_version::Minecraft_version::new(18u8, 1u8));
+                static V1_18_2: ::once_cell::Lazy<::mc_version::Minecraft_version> = ::once_cell::Lazy::new(|| ::mc_version::Minecraft_version::new(18u8, 2u8));
+                
+                static D8: ::once_cell::Lazy<::mc_version::PackFormat> = ::once_cell::Lazy::new(|| ::mc_version::PackFormat {
+                    format_id: 8,
+                    versions: vec![
+                        &V1_18,
+                        &V1_18_1,
+                    ]
+                })
+                static D9: ::once_cell::Lazy<::mc_version::PackFormat> = ::once_cell::Lazy::new(|| ::mc_version::PackFormat {
+                    format_id: 8,
+                    versions: vec![
+                        &V1_18_2,
+                    ]
+                })
+                
+                static R8: ::once_cell::Lazy<::mc_version::PackFormat> = ::once_cell::Lazy::new(|| ::mc_version::PackFormat {
+                    format_id: 8,
+                    versions: vec![
+                        &V1_18,
+                        &V1_18_1,
+                        &V1_18_2,
+                    ]
+                })
+            };
+        }
     }
 }
