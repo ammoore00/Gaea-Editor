@@ -11,7 +11,7 @@ use iced::widget::{Column, horizontal_space, row, Row, text, text_editor, toggle
 
 use crate::application::gui::widgets::icons::{action, Icon, NEW_ICON, OPEN_ICON, SAVE_ICON};
 use crate::application::gui::window;
-use crate::data::domain::version::MinecraftVersion;
+use crate::data::domain::versions;
 
 pub mod highlighter;
 
@@ -218,7 +218,7 @@ impl<'a> TextEditor {
                 .push(controls)
                 .push(text_editor.highlight_with::<highlighter::MinecraftHighlighter>(
                 highlighter::Settings {
-                        version: MinecraftVersion::default(),
+                        version: versions::latest(),
                         theme: self.theme,
                         token: extension
                     },

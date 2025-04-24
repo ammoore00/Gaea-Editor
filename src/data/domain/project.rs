@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+use mc_version::MinecraftVersion;
 use uuid::{NoContext, Timestamp, Uuid};
-use crate::data::domain::version::MinecraftVersion;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Project {

@@ -14,9 +14,10 @@ use dashmap::DashMap;
 use glob::glob;
 use iced::{Color, Font, font};
 use iced::advanced::text::highlighter::Format;
+use mc_version::MinecraftVersion;
 use once_cell::sync::Lazy;
 use syntect::{highlighting, parsing};
-use crate::data::domain::version::MinecraftVersion;
+use crate::data::domain::versions;
 
 static THEMES: Lazy<highlighting::ThemeSet> =
     Lazy::new(highlighting::ThemeSet::load_defaults);
@@ -26,7 +27,7 @@ const LINES_PER_SNAPSHOT: usize = 50;
 static SYNTAXES: Lazy<DashMap<MinecraftVersion, parsing::SyntaxSet>> =
     Lazy::new(|| {
         let map = DashMap::new();
-        let default_version = MinecraftVersion::default();
+        let default_version = versions::latest();
         map.insert(default_version, load_syntax_set_for_version(default_version));
         map
     });

@@ -5,8 +5,6 @@ description = "Gaea - Minecraft Data and Resourcepack Generator"
 authors = ["The Lady Dawn"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -42,6 +40,9 @@ regex = "1.11.1"
 async-trait = "0.1"
 
 sanitize-filename = "0.6"
+
+mc_version = { path = "./mc_version" }
+mc_version_macro = { path = "./mc_version_macro" }
 
 [dev-dependencies]
 tokio = { version = "1.44", features = ["test-util"] }

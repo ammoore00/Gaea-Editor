@@ -1,9 +1,9 @@
 use std::convert::Infallible;
 use std::sync::Arc;
+use mc_version::MinecraftVersion;
 use tokio::sync::RwLock;
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::serialization::pack_info::PackInfo;
-use crate::data::domain::version::MinecraftVersion;
 use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
 
 pub struct PackInfoAdapter;
