@@ -3,28 +3,28 @@ use crate::data::serialization::TextComponent;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PackInfo {
-    pack: PackData,
+    pub pack: PackData,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    features: Option<Vec<ResourceLocation>>,
+    pub features: Option<Vec<ResourceLocation>>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    filter: Option<Vec<FilterPattern>>,
+    pub filter: Option<Vec<FilterPattern>>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    overlays: Option<Vec<Overlay>>,
+    pub overlays: Option<Vec<Overlay>>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    language: Option<Vec<Language>>,
+    pub language: Option<Vec<Language>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PackData {
-    description: TextComponent,
-    pack_format: u32,
+    pub description: TextComponent,
+    pub pack_format: u32,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    supported_formats: Option<PackFormat>,
+    pub supported_formats: Option<PackFormat>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -40,14 +40,14 @@ pub enum PackFormat {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct FilterPattern {
-    namespace: String,
-    path: String,
+    pub namespace: String,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Overlay {
-    formats: PackFormat,
-    path: String,
+    pub formats: PackFormat,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -58,6 +58,8 @@ pub struct Language {
 #[cfg(test)]
 mod tests {
     use super::*;
+    
+    // TODO: Test filters, features, overlays, languages
     
     mod deserialize {
         use serde_json::json;

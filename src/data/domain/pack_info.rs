@@ -1,19 +1,29 @@
+use crate::data::serialization::TextComponent;
+
 pub struct PackInfo {
-    description: String,
-    
-    type_specific_data: PackTypeData,
+    description: PackDescription,
 }
 
-pub enum PackTypeData {
-    DataPack(DatapackInfo),
-    ResourcePack(ResourcepackInfo),
-    Combined(DatapackInfo, ResourcepackInfo),
+impl PackInfo {
+    pub fn new(description: PackDescription) -> Self {
+        Self {
+            description
+        }
+    }
 }
 
-pub struct DatapackInfo {
-    // TODO: add datapack specific data
+pub struct PackDescription(String);
+
+impl PackDescription {
+    pub fn new(description: String) -> Self {
+        Self(description)
+    }
 }
 
-pub struct ResourcepackInfo {
-    // TODO: add resourcepack specific data
+impl From<&TextComponent> for PackDescription {
+    fn from(value: &TextComponent) -> Self {
+        match value {
+            TextComponent::String(string) => PackDescription(string.clone()),
+        }
+    }
 }

@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
+use std::sync::{Arc, RwLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MinecraftVersion {
@@ -67,29 +68,37 @@ pub enum VersionParseError {
     InvalidVersion(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct PackFormat {
     format_id: u8,
-    versions: Vec<MinecraftVersion>
+    versions: Arc<RwLock<Vec<MinecraftVersion>>>
 }
 
 impl PackFormat {
     pub fn new(format_id: u8, versions: Vec<MinecraftVersion>) -> Self {
         Self {
             format_id,
-            versions
+            versions: Arc::new(RwLock::new(versions))
         }
+    }
+    
+    pub fn get_format_id(&self) -> u8 {
+        self.format_id
+    }
+    
+    pub fn get_versions(&self) -> Arc<RwLock<Vec<MinecraftVersion>>> {
+        self.versions.clone()
+    }
+}
+
+impl PartialEq<Self> for PackFormat {
+    fn eq(&self, other: &Self) -> bool {
+        self.format_id == other.format_id
     }
 }
 
 impl PartialOrd for PackFormat {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(Self::cmp(self, other))
-    }
-}
-
-impl Ord for PackFormat {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.format_id.cmp(&other.format_id)
+        Some(self.format_id.cmp(&other.format_id))
     }
 }

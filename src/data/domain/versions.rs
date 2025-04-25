@@ -1,4 +1,4 @@
-use mc_version::MinecraftVersion;
+use mc_version::{MinecraftVersion, PackFormat};
 use mc_version_macro::define_versions;
 
 define_versions! {
@@ -40,4 +40,32 @@ define_versions! {
 
 pub fn latest() -> MinecraftVersion {
     V1_21_5.clone()
+}
+
+// TODO: cache this as part of the macro for better performance
+
+pub fn get_datapack_format_for_version(version: &MinecraftVersion) -> &PackFormat {
+    for format in &*DATA_FORMAT_MAP {
+        let format = *format.value();
+
+        if format.get_versions().read().unwrap().contains(version) {
+            return format
+        }
+    }
+
+    // Panic because this can only result from a static bug and should never fail at runtime
+    panic!("No datapack format found for version {}", version)
+}
+
+pub fn get_resourcepack_format_for_version(version: &MinecraftVersion) -> &PackFormat {
+    for format in &*RESOURCE_FORMAT_MAP {
+        let format = *format.value();
+        
+        if format.get_versions().read().unwrap().contains(version) {
+            return format
+        }
+    }
+    
+    // Panic because this can only result from a static bug and should never fail at runtime
+    panic!("No resourcepack format found for version {}", version)
 }
