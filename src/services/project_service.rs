@@ -310,12 +310,13 @@ mod test {
     use std::path::{Path, PathBuf};
     use std::pin::Pin;
     use std::sync::Arc;
+    use mc_version::MinecraftVersion;
     use once_cell::sync::Lazy;
     use tokio::sync::RwLock;
     use crate::data::adapters::Adapter;
     use crate::data::adapters::project::{ProjectConversionError, SerializedProjectData};
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
-    use crate::data::domain::version;
+    use crate::data::domain::versions;
     use crate::data::serialization::project::Project as SerializedProject;
     use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
     use crate::repositories::project_repo;
@@ -683,14 +684,14 @@ mod test {
         ProjectSettings {
             name: "Test Project".to_string(),
             path: Some("test/file/path".into()),
-            project_version: ProjectVersion { version: version::versions::V1_20_4 },
+            project_version: ProjectVersion { version: *versions::V1_20_4 },
             project_type: ProjectType::DataPack,
         }
     }
     
     mod create_project {
         use crate::data::domain::project::{ProjectType, ProjectVersion};
-        use crate::data::domain::version;
+        use crate::data::domain::versions;
         use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider};
         use super::*;
         
@@ -746,7 +747,7 @@ mod test {
                 // 测试项目 means "Test Project" in simplified chinese
                 name: "测试项目".to_string(),
                 path: Some("test/file/测试项目".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
 
@@ -785,7 +786,7 @@ mod test {
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
                 path: Some("test?/invalid</path>".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
 
@@ -813,7 +814,7 @@ mod test {
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
                 path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
             };
 
@@ -1382,7 +1383,7 @@ mod test {
             let project = Project::new(ProjectSettings {
                 name: "Test Project".to_string(),
                 path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::Combined,
             });
 
@@ -1431,7 +1432,7 @@ mod test {
             let project = Project::new(ProjectSettings {
                 name: "Test Project".to_string(),
                 path: Some("test/file/path".into()),
-                project_version: ProjectVersion { version: version::versions::V1_20_4 },
+                project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::Combined,
             });
 

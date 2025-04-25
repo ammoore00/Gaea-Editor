@@ -11,7 +11,9 @@ pub enum PackTypeData {
 }
 
 pub struct DatapackInfo {
+    // TODO: add datapack specific data
 }
 
 pub struct ResourcepackInfo {
+    // TODO: add resourcepack specific data
 }

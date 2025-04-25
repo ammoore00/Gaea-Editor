@@ -6,6 +6,7 @@ pub mod project;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(untagged)]
 pub enum TextComponent {
+    // TODO: Implement additional types
     String(String),
 }
 
