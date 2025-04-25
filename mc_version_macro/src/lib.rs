@@ -1,4 +1,4 @@
-use quote::quote;
+use quote::{format_ident, quote};
 use std::collections::HashSet;
 use proc_macro2::TokenStream;
 use syn::parse::{Parse, ParseStream};
@@ -44,8 +44,84 @@ fn generate_output(input: FormatList) -> TokenStream {
     let resource_statics = generate_resource_format_statics(&input.resource_packs, &all_versions);
     output.extend(resource_statics);
 
+    // Generate maps for formats and versions
+    let format_maps = generate_format_maps(&input.data_formats, &input.resource_packs);
+    output.extend(format_maps);
+
+    // Generate map for MC versions
+    let version_map = generate_version_map(&all_versions);
+    output.extend(version_map);
+
     output
 }
+
+fn generate_format_maps(data_formats: &[PackFormat], resource_formats: &[PackFormat]) -> TokenStream {
+    let mut output = TokenStream::new();
+
+    // Generate data format map
+    let data_format_entries = data_formats.iter().map(|format| {
+        let format_id = format.format_id;
+        let ident = format_ident!("D{}", format_id);
+        quote! { #format_id, &*#ident }
+    });
+
+    let data_map_tokens = quote! {
+        pub static DATA_FORMAT_MAP: ::once_cell::sync::Lazy<::dashmap::DashMap<u8, &'static ::mc_version::PackFormat>> = 
+            ::once_cell::sync::Lazy::new(|| {
+                let map = ::dashmap::DashMap::new();
+                #(map.insert(#data_format_entries);)*
+                map
+            });
+    };
+    output.extend(data_map_tokens);
+
+    // Generate resource format map
+    let resource_format_entries = resource_formats.iter().map(|format| {
+        let format_id = format.format_id;
+        let ident = format_ident!("R{}", format_id);
+        quote! { #format_id, &*#ident }
+    });
+
+    let resource_map_tokens = quote! {
+        pub static RESOURCE_FORMAT_MAP: ::once_cell::sync::Lazy<::dashmap::DashMap<u8, &'static ::mc_version::PackFormat>> = 
+            ::once_cell::sync::Lazy::new(|| {
+                let map = ::dashmap::DashMap::new();
+                #(map.insert(#resource_format_entries);)*
+                map
+            });
+    };
+    output.extend(resource_map_tokens);
+
+    output
+}
+
+fn generate_version_map(versions: &[SemanticVersion]) -> TokenStream {
+    let version_entries = versions.iter().map(|v| {
+        let version_str = if v.patch == 0 {
+            format!("{}.{}", v.major, v.minor)
+        } else {
+            format!("{}.{}.{}", v.major, v.minor, v.patch)
+        };
+
+        let ident = if v.patch == 0 {
+            format_ident!("V{}_{}",  v.major, v.minor)
+        } else {
+            format_ident!("V{}_{}_{}",  v.major, v.minor, v.patch)
+        };
+
+        quote! { #version_str.to_string(), &*#ident }
+    });
+
+    quote! {
+        pub static VERSION_MAP: ::once_cell::sync::Lazy<::dashmap::DashMap<String, &'static ::mc_version::MinecraftVersion>> = 
+            ::once_cell::sync::Lazy::new(|| {
+                let map = ::dashmap::DashMap::new();
+                #(map.insert(#version_entries);)*
+                map
+            });
+    }
+}
+
 
 // Generate static declarations for MinecraftVersion values
 fn generate_version_statics(versions: &[SemanticVersion]) -> TokenStream {
