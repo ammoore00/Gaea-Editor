@@ -1,11 +1,12 @@
 use std::convert::Infallible;
 use std::sync::Arc;
+use iced::advanced::graphics::color::pack;
 use mc_version::MinecraftVersion;
 use tokio::sync::RwLock;
 use crate::data::adapters::{Adapter, AdapterError};
 use crate::data::domain::pack_info::{PackDescription, PackInfo};
 use crate::data::domain::versions;
-use crate::data::serialization::pack_info::{PackFormat, PackInfo as SerializedPackInfo};
+use crate::data::serialization::pack_info::{PackData, PackFormat, PackInfo as SerializedPackInfo};
 use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
 
 pub struct PackInfoAdapter;
@@ -13,7 +14,7 @@ pub struct PackInfoAdapter;
 #[async_trait::async_trait]
 impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
     type ConversionError = PackInfoAdapterError;
-    type SerializedConversionError = Infallible;
+    type SerializedConversionError = PackInfoAdapterError;
 
     async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(
         serialized: Arc<RwLock<SerializedPackInfo>>,
@@ -33,7 +34,7 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
                 PackFormat::Range(min, max) => pack_format >= *min && pack_format <= *max,
                 PackFormat::Object { min_inclusive, max_inclusive } => pack_format >= *min_inclusive && pack_format <= *max_inclusive,
             } {
-                return Err(PackInfoAdapterError::PackFormatNotWithinSupportedFormats(pack_format as u8, supported_formats.clone()))
+                return Err(PackInfoAdapterError::InvalidPackFormat(pack_format as u8, supported_formats.clone()))
             }
         }
         
@@ -83,9 +84,27 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
         domain: Arc<RwLock<PackInfoDomainData>>,
         _context: AdapterProviderContext<'_, AdpProvider>
     ) -> Result<SerializedPackInfo, Self::SerializedConversionError> {
-        //let PackInfoDomainData { pack_info, version } = &*domain.read().await;
+        let PackInfoDomainData {
+            description,
+            version
+        } = &*domain.read().await;
         
-        todo!()
+        let format = match version {
+            PackVersionType::Data(version) => versions::get_datapack_format_for_version(version),
+            PackVersionType::Resource(version) => versions::get_resourcepack_format_for_version(version),
+            PackVersionType::Unknown { .. } => return Err(PackInfoAdapterError::UnknownVersionTypeInSerialization.into()),
+        };
+        
+        let pack = PackData::new(
+            description.clone().into(),
+            format.get_format_id() as u32,
+            None
+        );
+        
+        Ok(SerializedPackInfo::new(
+            pack,
+            None, None, None, None
+        ))
     }
 }
 
@@ -114,10 +133,12 @@ pub enum PackVersionType {
 
 #[derive(Debug, thiserror::Error)]
 pub enum PackInfoAdapterError {
-    #[error("No valid format found for pack format {0}")]
+    #[error("No valid format found for pack format {0}!")]
     NoValidFormatFound(u8),
-    #[error("Pack format {0} is not within supported formats {1:?}")]
-    PackFormatNotWithinSupportedFormats(u8, PackFormat)
+    #[error("Pack format {0} is not within supported formats {1:?}!")]
+    InvalidPackFormat(u8, PackFormat),
+    #[error("Unknown version type is not allowed in serialization!")]
+    UnknownVersionTypeInSerialization,
 }
 impl AdapterError for PackInfoAdapterError {}
 
@@ -299,7 +320,7 @@ mod tests {
             
             // It should return an error
             assert!(result.is_err());
-            assert!(matches!(result, Err(PackInfoAdapterError::PackFormatNotWithinSupportedFormats(_, _))));
+            assert!(matches!(result, Err(PackInfoAdapterError::InvalidPackFormat(_, _))));
         }
 
         #[tokio::test]
@@ -332,7 +353,7 @@ mod tests {
 
             // It should return an error
             assert!(result.is_err());
-            assert!(matches!(result, Err(PackInfoAdapterError::PackFormatNotWithinSupportedFormats(_, _))));
+            assert!(matches!(result, Err(PackInfoAdapterError::InvalidPackFormat(_, _))));
         }
 
         #[tokio::test]
@@ -365,7 +386,7 @@ mod tests {
 
             // It should return an error
             assert!(result.is_err());
-            assert!(matches!(result, Err(PackInfoAdapterError::PackFormatNotWithinSupportedFormats(_, _))));
+            assert!(matches!(result, Err(PackInfoAdapterError::InvalidPackFormat(_, _))));
         }
     }
     

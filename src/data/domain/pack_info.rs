@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use crate::data::domain::resource::resource::ResourceLocation;
 use crate::data::serialization::TextComponent;
 
@@ -17,6 +18,14 @@ pub enum PackDescription {
 impl PackDescription {
     pub fn new(description: String) -> Self {
         Self::String(description)
+    }
+}
+
+impl Display for PackDescription {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PackDescription::String(description) => write!(f, "{}", description),
+        }
     }
 }
 
