@@ -70,6 +70,16 @@ impl AdapterRepository {
                 a.downcast_ref::<AdapterWrapper<Domain, Serialized, Self>>().unwrap()
             }).cloned()
     }
+    
+    #[cfg(test)]
+    pub async fn create_repo<'a>() -> Arc<RwLock<Self>> {
+        Arc::new(RwLock::new(Self::new()))
+    }
+    
+    #[cfg(test)]
+    pub async fn context_from_repo<'a>(repo: &'a Arc<RwLock<Self>>) -> AdapterProviderContext<'a, Self> {
+        AdapterProviderContext(repo.read().await)
+    }
 }
 
 #[async_trait::async_trait]

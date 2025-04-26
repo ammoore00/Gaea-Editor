@@ -1,30 +1,32 @@
 use crate::data::serialization::ResourceLocation;
 use crate::data::serialization::TextComponent;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
+#[getset(get = "pub")]
 pub struct PackInfo {
-    pub pack: PackData,
+    pack: PackData,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub features: Option<Vec<ResourceLocation>>,
+    features: Option<Vec<ResourceLocation>>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub filter: Option<Vec<FilterPattern>>,
+    filter: Option<Vec<FilterPattern>>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub overlays: Option<Vec<Overlay>>,
+    overlays: Option<Vec<Overlay>>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub language: Option<Vec<Language>>,
+    language: Option<Vec<Language>>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
+#[getset(get = "pub")]
 pub struct PackData {
-    pub description: TextComponent,
-    pub pack_format: u32,
+    description: TextComponent,
+    pack_format: u32,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub supported_formats: Option<PackFormat>,
+    supported_formats: Option<PackFormat>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -38,16 +40,18 @@ pub enum PackFormat {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
+#[getset(get = "pub")]
 pub struct FilterPattern {
-    pub namespace: String,
-    pub path: String,
+    namespace: String,
+    path: String,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
+#[getset(get = "pub")]
 pub struct Overlay {
-    pub formats: PackFormat,
-    pub path: String,
+    formats: PackFormat,
+    path: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -58,9 +62,9 @@ pub struct Language {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     // TODO: Test filters, features, overlays, languages
-    
+
     mod deserialize {
         use serde_json::json;
         use super::*;
@@ -162,7 +166,7 @@ mod tests {
             assert_eq!(pack_format, 71);
             assert!(matches!(supported_formats, Some(PackFormat::Object { min_inclusive: 61, max_inclusive: 71 })))
         }
-        
+
         #[test]
         fn test_pack_info_deser_missing_description() {
             // Given a simple pack.mcmeta json
@@ -195,11 +199,11 @@ mod tests {
             assert!(result.is_err());
         }
     }
-    
+
     mod serialize {
         use serde_json::json;
         use super::*;
-        
+
         #[test]
         fn test_pack_info_ser() {
             // Given a simple valid pack info
@@ -214,10 +218,10 @@ mod tests {
                 overlays: None,
                 language: None,
             };
-            
+
             // When I serialize it
             let serialized = serde_json::to_string(&pack).unwrap();
-            
+
             // It should serialize correctly
             let expected = json!({
                 "pack": {
@@ -327,7 +331,7 @@ mod tests {
                     }
                 }
             });
-            
+
             let actual: serde_json::Value = serde_json::from_str(serialized.as_str()).unwrap();
             assert_eq!(actual, expected);
         }

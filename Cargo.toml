@@ -41,6 +41,9 @@ async-trait = "0.1"
 
 sanitize-filename = "0.6"
 
+derive-new = "0.7"
+getset = "0.1"
+
 mc_version = { path = "./mc_version" }
 mc_version_macro = { path = "./mc_version_macro" }
 
