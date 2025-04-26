@@ -3,7 +3,7 @@ use std::sync::Arc;
 use mc_version::MinecraftVersion;
 use tokio::sync::RwLock;
 use crate::data::adapters::{Adapter, AdapterError};
-use crate::data::domain::pack_info::PackInfo;
+use crate::data::domain::pack_info::{PackDescription, PackInfo};
 use crate::data::domain::versions;
 use crate::data::serialization::pack_info::{PackFormat, PackInfo as SerializedPackInfo};
 use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
@@ -25,7 +25,8 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
         let description = pack.description();
         let pack_format = *pack.pack_format();
         let supported_formats = pack.supported_formats();
-        
+
+        // By the pack.mcmeta spec, pack format must be included within supported formats
         if let Some(supported_formats) = supported_formats {
             if !match supported_formats {
                 PackFormat::Single(format) => *format == pack_format,
@@ -36,11 +37,12 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
             }
         }
         
-        let pack_info = PackInfo::new(description.into());
-        
         let version_if_data = versions::DATA_FORMAT_MAP.get(&(pack_format as u8));
         let version_if_resource = versions::RESOURCE_FORMAT_MAP.get(&(pack_format as u8));
-        
+
+        // The adapter has no way to know based on provided serialized info whether this pack
+        // is a resourcepack or datapack. Therefore, we provide information for whichever is valid,
+        // and return both if both are valid. It is up to the caller to decide which to use
         let version = match (version_if_data, version_if_resource) {
             (Some(data_version), Some(resource_version)) => {
                 let data_version = *data_version.value();
@@ -72,7 +74,7 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
         };
         
         Ok (PackInfoDomainData {
-            pack_info,
+            description: description.into(),
             version
         })
     }
@@ -81,7 +83,7 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
         domain: Arc<RwLock<PackInfoDomainData>>,
         _context: AdapterProviderContext<'_, AdpProvider>
     ) -> Result<SerializedPackInfo, Self::SerializedConversionError> {
-        let PackInfoDomainData { pack_info, version } = &*domain.read().await;
+        //let PackInfoDomainData { pack_info, version } = &*domain.read().await;
         
         todo!()
     }
@@ -90,11 +92,17 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
 #[derive(Debug, Clone, derive_new::new, getset::Getters)]
 #[getset(get = "pub")]
 pub struct PackInfoDomainData {
-    pack_info: PackInfo,
+    description: PackDescription,
     version: PackVersionType,
 }
 
-#[derive(Debug, Clone)]
+impl Into<PackInfo> for PackInfoDomainData {
+    fn into(self) -> PackInfo {
+        PackInfo::new(self.description, None)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum PackVersionType {
     Data(MinecraftVersion),
     Resource(MinecraftVersion),
@@ -128,7 +136,7 @@ mod tests {
         async fn test_pack_info_adapter_deser_data() {
             // Given a pack info with a format valid only for datapacks
             let format = &*versions::D48;
-            
+
             let pack = PackData::new(
                 TextComponent::String("Test desccription".to_string()),
                 format.get_format_id() as u32,
@@ -148,12 +156,12 @@ mod tests {
             
             // It should deserialize properly
             let PackInfoDomainData {
-                pack_info,
+                description,
                 version
             } = pack_data;
-            
-            assert!(matches!(pack_info.description(), PackDescription::String(text) if text == "Test desccription"));
-            
+
+            assert!(matches!(description, PackDescription::String(text) if text == "Test desccription"));
+
             let version = match version {
                 PackVersionType::Data(version) => version,
                 _ => panic!("Expected data version")
@@ -185,11 +193,11 @@ mod tests {
 
             // It should deserialize properly
             let PackInfoDomainData {
-                pack_info,
+                description,
                 version
             } = pack_data;
 
-            assert!(matches!(pack_info.description(), PackDescription::String(text) if text == "Test desccription"));
+            assert!(matches!(description, PackDescription::String(text) if text == "Test desccription"));
 
             let version = match version {
                 PackVersionType::Resource(version) => version,
@@ -224,11 +232,11 @@ mod tests {
 
             // It should give options for the primary MC version for both
             let PackInfoDomainData {
-                pack_info,
+                description,
                 version
             } = pack_data;
 
-            assert!(matches!(pack_info.description(), PackDescription::String(text) if text == "Test desccription"));
+            assert!(matches!(description, PackDescription::String(text) if text == "Test desccription"));
 
             let versions = match version {
                 PackVersionType::Unknown { version_if_data, version_if_resource } => (version_if_data, version_if_resource),
@@ -259,7 +267,7 @@ mod tests {
             
             // When I deserialize it
             let result = PackInfoAdapter::deserialize(pack_info, context).await;
-            
+
             // It should return an error
             assert!(result.is_err());
             assert!(matches!(result, Err(PackInfoAdapterError::NoValidFormatFound(_))));
@@ -363,5 +371,10 @@ mod tests {
     
     mod serialize {
         use super::*;
+    }
+    
+    mod misc {
+        use super::*;
+        // TODO: test proper conversion from pack info data to proper domain pack info
     }
 }

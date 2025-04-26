@@ -1,9 +1,12 @@
+use crate::data::domain::resource::resource::ResourceLocation;
 use crate::data::serialization::TextComponent;
 
 #[derive(Debug, Clone, derive_new::new, getset::Getters)]
 #[getset(get = "pub")]
 pub struct PackInfo {
     description: PackDescription,
+    // TODO: filters
+    datapack_info: Option<DatapackInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -23,4 +26,9 @@ impl From<&TextComponent> for PackDescription {
             TextComponent::String(string) => Self::String(string.clone()),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct DatapackInfo {
+    features: Option<ResourceLocation>
 }
