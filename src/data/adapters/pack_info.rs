@@ -1,6 +1,4 @@
-use std::convert::Infallible;
 use std::sync::Arc;
-use iced::advanced::graphics::color::pack;
 use mc_version::MinecraftVersion;
 use tokio::sync::RwLock;
 use crate::data::adapters::{Adapter, AdapterError};
@@ -13,8 +11,8 @@ pub struct PackInfoAdapter;
 
 #[async_trait::async_trait]
 impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
-    type ConversionError = PackInfoAdapterError;
-    type SerializedConversionError = PackInfoAdapterError;
+    type ConversionError = PackInfoDeserializationError;
+    type SerializedConversionError = PackInfoSerializationError;
 
     async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(
         serialized: Arc<RwLock<SerializedPackInfo>>,
@@ -34,7 +32,7 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
                 PackFormat::Range(min, max) => pack_format >= *min && pack_format <= *max,
                 PackFormat::Object { min_inclusive, max_inclusive } => pack_format >= *min_inclusive && pack_format <= *max_inclusive,
             } {
-                return Err(PackInfoAdapterError::InvalidPackFormat(pack_format as u8, supported_formats.clone()))
+                return Err(PackInfoDeserializationError::InvalidPackFormat(pack_format as u8, supported_formats.clone()))
             }
         }
         
@@ -70,7 +68,7 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
                 PackVersionType::Resource(version)
             }
             (None, None) => {
-                return Err(PackInfoAdapterError::NoValidFormatFound(pack_format as u8))
+                return Err(PackInfoDeserializationError::NoValidFormatFound(pack_format as u8))
             }
         };
         
@@ -92,7 +90,7 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
         let format = match version {
             PackVersionType::Data(version) => versions::get_datapack_format_for_version(version),
             PackVersionType::Resource(version) => versions::get_resourcepack_format_for_version(version),
-            PackVersionType::Unknown { .. } => return Err(PackInfoAdapterError::UnknownVersionTypeInSerialization.into()),
+            PackVersionType::Unknown { .. } => return Err(PackInfoSerializationError::UnknownVersionTypeInSerialization.into()),
         };
         
         let pack = PackData::new(
@@ -132,15 +130,20 @@ pub enum PackVersionType {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum PackInfoAdapterError {
+pub enum PackInfoDeserializationError {
     #[error("No valid format found for pack format {0}!")]
     NoValidFormatFound(u8),
     #[error("Pack format {0} is not within supported formats {1:?}!")]
     InvalidPackFormat(u8, PackFormat),
+}
+impl AdapterError for PackInfoDeserializationError {}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PackInfoSerializationError {
     #[error("Unknown version type is not allowed in serialization!")]
     UnknownVersionTypeInSerialization,
 }
-impl AdapterError for PackInfoAdapterError {}
+impl AdapterError for PackInfoSerializationError {}
 
 #[cfg(test)]
 mod tests {
@@ -291,7 +294,7 @@ mod tests {
 
             // It should return an error
             assert!(result.is_err());
-            assert!(matches!(result, Err(PackInfoAdapterError::NoValidFormatFound(_))));
+            assert!(matches!(result, Err(PackInfoDeserializationError::NoValidFormatFound(_))));
         }
         
         #[tokio::test]
@@ -320,7 +323,7 @@ mod tests {
             
             // It should return an error
             assert!(result.is_err());
-            assert!(matches!(result, Err(PackInfoAdapterError::InvalidPackFormat(_, _))));
+            assert!(matches!(result, Err(PackInfoDeserializationError::InvalidPackFormat(_, _))));
         }
 
         #[tokio::test]
@@ -353,7 +356,7 @@ mod tests {
 
             // It should return an error
             assert!(result.is_err());
-            assert!(matches!(result, Err(PackInfoAdapterError::InvalidPackFormat(_, _))));
+            assert!(matches!(result, Err(PackInfoDeserializationError::InvalidPackFormat(_, _))));
         }
 
         #[tokio::test]
@@ -386,7 +389,7 @@ mod tests {
 
             // It should return an error
             assert!(result.is_err());
-            assert!(matches!(result, Err(PackInfoAdapterError::InvalidPackFormat(_, _))));
+            assert!(matches!(result, Err(PackInfoDeserializationError::InvalidPackFormat(_, _))));
         }
     }
     
@@ -396,6 +399,6 @@ mod tests {
     
     mod misc {
         use super::*;
-        // TODO: test proper conversion from pack info data to proper domain pack info
+        // TODO: test conversion from pack info data to proper domain pack info
     }
 }
