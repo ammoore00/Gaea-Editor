@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::sync::{RwLock, RwLockReadGuard};
-use crate::data::adapters::{Adapter, AdapterError};
+use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
 
 // TODO: Remove this default type and fix errors
 pub struct AdapterProviderContext<'a, AdpProvider: AdapterProvider + ?Sized>(pub RwLockReadGuard<'a, AdpProvider>);
@@ -25,12 +25,12 @@ pub trait AdapterProvider: Send + Sync + 'static {
         Serialized: Send + Sync + 'static,
         Adp: Adapter<Serialized, Domain> + 'static + Send + Sync;
     
-    async fn serialize<Domain, Serialized>(&self, domain: Arc<RwLock<Domain>>, context: AdapterProviderContext<'_, Self>) -> Result<Serialized, AdapterRepoError>
+    async fn serialize<Domain, Serialized>(&self, domain: AdapterInput<'_, Domain>, context: AdapterProviderContext<'_, Self>) -> Result<Serialized, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static;
     
-    async fn deserialize<Serialized, Domain>(&self, serialized: Arc<RwLock<Serialized>>, context: AdapterProviderContext<'_, Self>) -> Result<Domain, AdapterRepoError>
+    async fn deserialize<Serialized, Domain>(&self, serialized: AdapterInput<'_, Serialized>, context: AdapterProviderContext<'_, Self>) -> Result<Domain, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static;
@@ -100,7 +100,7 @@ impl AdapterProvider for AdapterRepository {
         self.adapters.insert(adapter_type, Box::new(adapter));
     }
     
-    async fn serialize<Domain, Serialized>(&self, domain: Arc<RwLock<Domain>>, context: AdapterProviderContext<'_, Self>) -> Result<Serialized, AdapterRepoError>
+    async fn serialize<Domain, Serialized>(&self, domain: AdapterInput<'_, Domain>, context: AdapterProviderContext<'_, Self>) -> Result<Serialized, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static,
@@ -109,6 +109,8 @@ impl AdapterProvider for AdapterRepository {
             domain: TypeId::of::<Domain>(),
             serialized: TypeId::of::<Serialized>(),
         };
+        
+        dbg!(&adapter_type);
 
         let adapter = self.adapters.get(&adapter_type).ok_or_else(|| AdapterRepoError::NoAdapterFound)?;
         let adapter = adapter.downcast_ref::<AdapterWrapper<Domain, Serialized, Self>>().unwrap();
@@ -116,7 +118,7 @@ impl AdapterProvider for AdapterRepository {
         adapter.serialize(domain, context).await
     }
 
-    async fn deserialize<Serialized, Domain>(&self, serialized: Arc<RwLock<Serialized>>, context: AdapterProviderContext<'_, Self>) -> Result<Domain, AdapterRepoError>
+    async fn deserialize<Serialized, Domain>(&self, serialized: AdapterInput<'_, Serialized>, context: AdapterProviderContext<'_, Self>) -> Result<Domain, AdapterRepoError>
     where
         Domain: Send + Sync + 'static,
         Serialized: Send + Sync + 'static,
@@ -169,11 +171,11 @@ where
         }
     }
 
-    async fn serialize(&self, domain: Arc<RwLock<Domain>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, AdapterRepoError> {
+    async fn serialize(&self, domain: AdapterInput<'_, Domain>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, AdapterRepoError> {
         self.adapter.serialize(domain, context).await
     }
 
-    async fn deserialize(&self, serialized: Arc<RwLock<Serialized>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Domain, AdapterRepoError> {
+    async fn deserialize(&self, serialized: AdapterInput<'_, Serialized>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Domain, AdapterRepoError> {
         self.adapter.deserialize(serialized, context).await
     }
 }
@@ -185,8 +187,8 @@ where
     Serialized: Send + Sync + 'static,
     AdpProvider: AdapterProvider + ?Sized,
 {
-    async fn serialize(&self, domain: Arc<RwLock<Domain>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, AdapterRepoError>;
-    async fn deserialize(&self, serialized: Arc<RwLock<Serialized>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Domain, AdapterRepoError>;
+    async fn serialize(&self, domain: AdapterInput<'_, Domain>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, AdapterRepoError>;
+    async fn deserialize(&self, serialized: AdapterInput<'_, Serialized>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Domain, AdapterRepoError>;
 }
 
 struct AdapterObjectImpl<Domain, Serialized, Adp, AdpProvider>
@@ -234,11 +236,11 @@ where
     Adp::SerializedConversionError: Send + Sync + 'static,
     AdpProvider: AdapterProvider + ?Sized,
 {
-    async fn serialize(&self, domain: Arc<RwLock<Domain>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, AdapterRepoError> {
+    async fn serialize(&self, domain: AdapterInput<'_, Domain>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, AdapterRepoError> {
         Adp::serialize(domain, context).await.map_err(AdapterRepoError::serialization_error)
     }
 
-    async fn deserialize(&self, serialized: Arc<RwLock<Serialized>>, context: AdapterProviderContext<'_,AdpProvider>) -> Result<Domain, AdapterRepoError> {
+    async fn deserialize(&self, serialized: AdapterInput<'_, Serialized>, context: AdapterProviderContext<'_,AdpProvider>) -> Result<Domain, AdapterRepoError> {
         Adp::deserialize(serialized, context).await.map_err(AdapterRepoError::deserialization_error)
     }
 }
@@ -273,6 +275,7 @@ impl AdapterRepoError {
 mod test {
     use std::convert::Infallible;
     use tokio::sync::RwLock;
+    use crate::data::adapters::AdapterInput;
     use super::*;
 
     #[derive(Debug, PartialEq, Eq)]
@@ -286,11 +289,11 @@ mod test {
         type ConversionError = Infallible;
         type SerializedConversionError = Infallible;
 
-        async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(_serialized: Arc<RwLock<Serialized>>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<Domain, Self::ConversionError> {
+        async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(_serialized: AdapterInput<'_, Serialized>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<Domain, Self::ConversionError> {
             Ok(Domain)
         }
 
-        async fn serialize<AdpProvider: AdapterProvider + ?Sized>(_domain: Arc<RwLock<Domain>>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, Self::SerializedConversionError> {
+        async fn serialize<AdpProvider: AdapterProvider + ?Sized>(_domain: AdapterInput<'_, Domain>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, Self::SerializedConversionError> {
             Ok(Serialized)
         }
     }
@@ -301,11 +304,11 @@ mod test {
         type ConversionError = TestAdapterError;
         type SerializedConversionError = TestAdapterError;
 
-        async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(_serialized: Arc<RwLock<Serialized>>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<Domain, Self::ConversionError> {
+        async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(_serialized: AdapterInput<'_, Serialized>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<Domain, Self::ConversionError> {
             Err(TestAdapterError)
         }
 
-        async fn serialize<AdpProvider: AdapterProvider + ?Sized>(_domain: Arc<RwLock<Domain>>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, Self::SerializedConversionError> {
+        async fn serialize<AdpProvider: AdapterProvider + ?Sized>(_domain: AdapterInput<'_, Domain>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<Serialized, Self::SerializedConversionError> {
             Err(TestAdapterError)
         }
     }
@@ -353,7 +356,9 @@ mod test {
         
         // When I try to serialize with that adapter
         
-        let result: Result<Serialized, _> = repo.serialize(Arc::new(RwLock::new(Domain)), read_context).await;
+        let domain = Arc::new(RwLock::new(Domain));
+        let domain = AdapterInput::new(Arc::new(domain.read().await));
+        let result: Result<Serialized, _> = repo.serialize(domain, read_context).await;
         
         // It should serialize correctly
         
@@ -373,7 +378,9 @@ mod test {
 
         // When I try to serialize with that adapter
 
-        let result: Result<Serialized, _> = repo.serialize(Arc::new(RwLock::new(Domain)), read_context).await;
+        let domain = Arc::new(RwLock::new(Domain));
+        let domain = AdapterInput::new(Arc::new(domain.read().await));
+        let result: Result<Serialized, _> = repo.serialize(domain, read_context).await;
 
         // It should return an appropriate error
 
@@ -391,7 +398,9 @@ mod test {
 
         // When I try to serialize with that adapter
 
-        let result: Result<Serialized, _> = repo.serialize(Arc::new(RwLock::new(Domain)), read_context).await;
+        let domain = Arc::new(RwLock::new(Domain));
+        let domain = AdapterInput::new(Arc::new(domain.read().await));
+        let result: Result<Serialized, _> = repo.serialize(domain, read_context).await;
 
         // It should return an appropriate error
 
@@ -411,7 +420,9 @@ mod test {
 
         // When I try to deserialize with that adapter
 
-        let result: Result<Domain, _> = repo.deserialize(Arc::new(RwLock::new(Serialized)), read_context).await;
+        let serialized = Arc::new(RwLock::new(Serialized));
+        let serialized = AdapterInput::new(Arc::new(serialized.read().await));
+        let result: Result<Domain, _> = repo.deserialize(serialized, read_context).await;
 
         // It should serialize correctly
 
@@ -431,7 +442,9 @@ mod test {
 
         // When I try to deserialize with that adapter
 
-        let result: Result<Domain, _> = repo.deserialize(Arc::new(RwLock::new(Serialized)), read_context).await;
+        let serialized = Arc::new(RwLock::new(Serialized));
+        let serialized = AdapterInput::new(Arc::new(serialized.read().await));
+        let result: Result<Domain, _> = repo.deserialize(serialized, read_context).await;
 
         // It should return an appropriate error
 
@@ -449,7 +462,9 @@ mod test {
 
         // When I try to deserialize with that adapter
 
-        let result: Result<Domain, _> = repo.deserialize(Arc::new(RwLock::new(Serialized)), read_context).await;
+        let serialized = Arc::new(RwLock::new(Domain));
+        let serialized = AdapterInput::new(Arc::new(serialized.read().await));
+        let result: Result<Domain, _> = repo.deserialize(serialized, read_context).await;
 
         // It should return an appropriate error
 

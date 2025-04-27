@@ -1,7 +1,5 @@
-use std::sync::Arc;
 use mc_version::MinecraftVersion;
-use tokio::sync::RwLock;
-use crate::data::adapters::{Adapter, AdapterError};
+use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
 use crate::data::domain::pack_info::{PackDescription, PackInfo};
 use crate::data::domain::versions;
 use crate::data::serialization::pack_info::{PackData, PackFormat, PackInfo as SerializedPackInfo};
@@ -15,10 +13,10 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
     type SerializedConversionError = PackInfoSerializationError;
 
     async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(
-        serialized: Arc<RwLock<SerializedPackInfo>>,
+        serialized: AdapterInput<'_, SerializedPackInfo>,
         _context: AdapterProviderContext<'_, AdpProvider>
     ) -> Result<PackInfoDomainData, Self::ConversionError> {
-        let pack_info = &*serialized.read().await;
+        let pack_info = &*serialized;
         let pack = pack_info.pack();
 
         let description = pack.description();
@@ -79,13 +77,11 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
     }
 
     async fn serialize<AdpProvider: AdapterProvider + ?Sized>(
-        domain: Arc<RwLock<PackInfoDomainData>>,
+        domain: AdapterInput<'_, PackInfoDomainData>,
         _context: AdapterProviderContext<'_, AdpProvider>
     ) -> Result<SerializedPackInfo, Self::SerializedConversionError> {
-        let PackInfoDomainData {
-            description,
-            version
-        } = &*domain.read().await;
+        let description = &domain.description;
+        let version = &domain.version;
         
         let format = match version {
             PackVersionType::Data(version) => versions::get_datapack_format_for_version(version),
@@ -150,6 +146,8 @@ mod tests {
     use super::*;
     
     mod deserialize {
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
         use crate::data::domain::pack_info::PackDescription;
         use crate::data::serialization::pack_info::PackData;
         use crate::data::serialization::TextComponent;
@@ -171,6 +169,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
+            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -208,6 +207,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
+            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -247,6 +247,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
+            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -285,6 +286,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
+            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -314,6 +316,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
+            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -347,6 +350,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
+            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -380,6 +384,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
+            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;

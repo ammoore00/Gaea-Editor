@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use iced::futures::TryFutureExt;
 use tokio::sync::{RwLock, RwLockReadGuard};
-use crate::data::adapters::{Adapter, AdapterError};
+use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
 use crate::data::adapters::project::SerializedProjectData;
 use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType};
 use crate::data::serialization::project::Project as SerializedProject;
@@ -157,7 +157,10 @@ where
         };
 
         let adapter_context = AdapterProviderContext(self.adapter_provider.read().await);
-        let project: Project = self.adapter_provider.read().await.deserialize(Arc::new(RwLock::new(serialized_project)), adapter_context).await.map_err(ZipError::Deserialization)?;
+        let serialize_input = Arc::new(RwLock::new(serialized_project));
+        let serialize_input = AdapterInput::new(Arc::new(serialize_input.read().await));
+        
+        let project: Project = self.adapter_provider.read().await.deserialize(serialize_input, adapter_context).await.map_err(ZipError::Deserialization)?;
         let project_id = project.get_id();
 
         // TODO: Maybe prevent accidental duplicate importing somehow?
@@ -180,9 +183,11 @@ where
             project_provider.with_project_async(zip_data.project_id, |project: Arc<RwLock<Project>>| {
                 Box::pin(async move {
                     let project_settings = project.read().await.get_settings().clone();
+                    
+                    let project_input: AdapterInput<Project> = AdapterInput::new(Arc::new(project.read().await));
 
                     // TODO: Assumed to be infallible for now - add proper error handling in the future
-                    let serialized_project = adapter_provider.serialize(project, adapter_context).await.unwrap();
+                    let serialized_project = adapter_provider.serialize(project_input, adapter_context).await.unwrap();
 
                     (serialized_project, project_settings)
                 })
@@ -313,7 +318,7 @@ mod test {
     use mc_version::MinecraftVersion;
     use once_cell::sync::Lazy;
     use tokio::sync::RwLock;
-    use crate::data::adapters::Adapter;
+    use crate::data::adapters::{Adapter, AdapterInput};
     use crate::data::adapters::project::{ProjectConversionError, SerializedProjectData};
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
     use crate::data::domain::versions;
@@ -616,7 +621,7 @@ mod test {
         type ConversionError = ProjectConversionError;
         type SerializedConversionError = Infallible;
 
-        async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(_serialized: Arc<RwLock<SerializedProjectData>>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Project, Self::ConversionError> {
+        async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(_serialized: AdapterInput<'_, SerializedProjectData>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Project, Self::ConversionError> {
             let config = PROJECT_ADAPTER_CONFIG.read().unwrap();
 
             if *config.fail_conversion.read().unwrap() {
@@ -626,8 +631,8 @@ mod test {
             Ok(config.project.clone().unwrap())
         }
 
-        async fn serialize<AdpProvider: AdapterProvider + ?Sized>(domain: Arc<RwLock<Project>>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<SerializedProjectData, Self::SerializedConversionError> {
-            match domain.read().await.get_settings().project_type {
+        async fn serialize<AdpProvider: AdapterProvider + ?Sized>(domain: AdapterInput<'_, Project>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<SerializedProjectData, Self::SerializedConversionError> {
+            match domain.get_settings().project_type {
                 ProjectType::Combined => {
                     let serialized_project = PROJECT_ADAPTER_CONFIG.read().unwrap().serialized_project.clone().unwrap();
                     Ok(SerializedProjectData::Combined {
