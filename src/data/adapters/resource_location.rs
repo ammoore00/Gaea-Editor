@@ -47,12 +47,12 @@ mod tests {
     #[tokio::test]
     async fn test_serialized_to_domain() {
         let serialized = Arc::new(RwLock::new(SerializationResourceLocation::new("minecraft:foo")));
-        let serialized = AdapterInput::new(Arc::new(serialized.read().await));
+        let serialized = AdapterInput::new(serialized.read().await);
         let domain = ResourceLocationAdapter::deserialize(serialized, adapter_context().await).await.unwrap();
         assert_eq!(domain.to_string(), "minecraft:foo");
 
         let serialized = Arc::new(RwLock::new(SerializationResourceLocation::new("foo:bar")));
-        let serialized = AdapterInput::new(Arc::new(serialized.read().await));
+        let serialized = AdapterInput::new(serialized.read().await);
         let domain = ResourceLocationAdapter::deserialize(serialized, adapter_context().await).await.unwrap();
         assert_eq!(domain.to_string(), "foo:bar");
     }
@@ -60,7 +60,7 @@ mod tests {
     #[tokio::test]
     async fn test_serialized_to_domain_no_namespace() {
         let serialized = Arc::new(RwLock::new(SerializationResourceLocation::new("foo")));
-        let serialized = AdapterInput::new(Arc::new(serialized.read().await));
+        let serialized = AdapterInput::new(serialized.read().await);
         let domain = ResourceLocationAdapter::deserialize(serialized, adapter_context().await).await.unwrap();
         assert_eq!(domain.to_string(), "minecraft:foo");
     }
@@ -68,17 +68,17 @@ mod tests {
     #[tokio::test]
     async fn test_serialized_to_domain_invalid() {
         let serialized = Arc::new(RwLock::new(SerializationResourceLocation::new("foo:bar:baz")));
-        let serialized = AdapterInput::new(Arc::new(serialized.read().await));
+        let serialized = AdapterInput::new(serialized.read().await);
         let domain = ResourceLocationAdapter::deserialize(serialized, adapter_context().await).await;
         assert!(domain.is_err());
 
         let serialized = Arc::new(RwLock::new(SerializationResourceLocation::new("@#$%($%&U")));
-        let serialized = AdapterInput::new(Arc::new(serialized.read().await));
+        let serialized = AdapterInput::new(serialized.read().await);
         let domain = ResourceLocationAdapter::deserialize(serialized, adapter_context().await).await;
         assert!(domain.is_err());
         
         let serialized = Arc::new(RwLock::new(SerializationResourceLocation::new("MINECRAFT:FOO")));
-        let serialized = AdapterInput::new(Arc::new(serialized.read().await));
+        let serialized = AdapterInput::new(serialized.read().await);
         let domain = ResourceLocationAdapter::deserialize(serialized, adapter_context().await).await;
         assert!(domain.is_err());
     }
@@ -86,12 +86,12 @@ mod tests {
     #[tokio::test]
     async fn test_domain_to_serialized() {
         let domain = Arc::new(RwLock::new(DomainResourceLocation::new("minecraft", "foo").unwrap()));
-        let domain = AdapterInput::new(Arc::new(domain.read().await));
+        let domain = AdapterInput::new(domain.read().await);
         let serialized = ResourceLocationAdapter::serialize(domain, adapter_context().await).await.unwrap();
         assert_eq!(serialized.to_string(), "minecraft:foo");
 
         let domain = Arc::new(RwLock::new(DomainResourceLocation::new("foo", "bar").unwrap()));
-        let domain = AdapterInput::new(Arc::new(domain.read().await));
+        let domain = AdapterInput::new(domain.read().await);
         let serialized = ResourceLocationAdapter::serialize(domain, adapter_context().await).await.unwrap();
         assert_eq!(serialized.to_string(), "foo:bar");
     }

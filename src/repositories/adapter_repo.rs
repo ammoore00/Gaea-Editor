@@ -357,7 +357,7 @@ mod test {
         // When I try to serialize with that adapter
         
         let domain = Arc::new(RwLock::new(Domain));
-        let domain = AdapterInput::new(Arc::new(domain.read().await));
+        let domain = AdapterInput::new(domain.read().await);
         let result: Result<Serialized, _> = repo.serialize(domain, read_context).await;
         
         // It should serialize correctly
@@ -379,7 +379,7 @@ mod test {
         // When I try to serialize with that adapter
 
         let domain = Arc::new(RwLock::new(Domain));
-        let domain = AdapterInput::new(Arc::new(domain.read().await));
+        let domain = AdapterInput::new(domain.read().await);
         let result: Result<Serialized, _> = repo.serialize(domain, read_context).await;
 
         // It should return an appropriate error
@@ -399,7 +399,7 @@ mod test {
         // When I try to serialize with that adapter
 
         let domain = Arc::new(RwLock::new(Domain));
-        let domain = AdapterInput::new(Arc::new(domain.read().await));
+        let domain = AdapterInput::new(domain.read().await);
         let result: Result<Serialized, _> = repo.serialize(domain, read_context).await;
 
         // It should return an appropriate error
@@ -421,7 +421,7 @@ mod test {
         // When I try to deserialize with that adapter
 
         let serialized = Arc::new(RwLock::new(Serialized));
-        let serialized = AdapterInput::new(Arc::new(serialized.read().await));
+        let serialized = AdapterInput::new(serialized.read().await);
         let result: Result<Domain, _> = repo.deserialize(serialized, read_context).await;
 
         // It should serialize correctly
@@ -443,7 +443,7 @@ mod test {
         // When I try to deserialize with that adapter
 
         let serialized = Arc::new(RwLock::new(Serialized));
-        let serialized = AdapterInput::new(Arc::new(serialized.read().await));
+        let serialized = AdapterInput::new(serialized.read().await);
         let result: Result<Domain, _> = repo.deserialize(serialized, read_context).await;
 
         // It should return an appropriate error
@@ -463,7 +463,7 @@ mod test {
         // When I try to deserialize with that adapter
 
         let serialized = Arc::new(RwLock::new(Domain));
-        let serialized = AdapterInput::new(Arc::new(serialized.read().await));
+        let serialized = AdapterInput::new(serialized.read().await);
         let result: Result<Domain, _> = repo.deserialize(serialized, read_context).await;
 
         // It should return an appropriate error

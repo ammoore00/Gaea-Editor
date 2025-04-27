@@ -169,7 +169,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
-            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
+            let pack_info = AdapterInput::new(pack_info.read().await);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -207,7 +207,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
-            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
+            let pack_info = AdapterInput::new(pack_info.read().await);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -247,7 +247,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
-            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
+            let pack_info = AdapterInput::new(pack_info.read().await);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -286,7 +286,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
-            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
+            let pack_info = AdapterInput::new(pack_info.read().await);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -316,7 +316,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
-            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
+            let pack_info = AdapterInput::new(pack_info.read().await);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -350,7 +350,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
-            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
+            let pack_info = AdapterInput::new(pack_info.read().await);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -384,7 +384,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             )));
-            let pack_info = AdapterInput::new(Arc::new(pack_info.read().await));
+            let pack_info = AdapterInput::new(pack_info.read().await);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;

@@ -158,7 +158,7 @@ where
 
         let adapter_context = AdapterProviderContext(self.adapter_provider.read().await);
         let serialize_input = Arc::new(RwLock::new(serialized_project));
-        let serialize_input = AdapterInput::new(Arc::new(serialize_input.read().await));
+        let serialize_input = AdapterInput::new(serialize_input.read().await);
         
         let project: Project = self.adapter_provider.read().await.deserialize(serialize_input, adapter_context).await.map_err(ZipError::Deserialization)?;
         let project_id = project.get_id();
@@ -184,7 +184,7 @@ where
                 Box::pin(async move {
                     let project_settings = project.read().await.get_settings().clone();
                     
-                    let project_input: AdapterInput<Project> = AdapterInput::new(Arc::new(project.read().await));
+                    let project_input: AdapterInput<Project> = AdapterInput::new(project.read().await);
 
                     // TODO: Assumed to be infallible for now - add proper error handling in the future
                     let serialized_project = adapter_provider.serialize(project_input, adapter_context).await.unwrap();
