@@ -1,29 +1,30 @@
 use std::convert::Infallible;
 use std::str::FromStr;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
 use crate::data::domain::resource::resource::{ResourceLocation as DomainResourceLocation, ResourceLocationError};
 use crate::data::serialization::ResourceLocation as SerializationResourceLocation;
 use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
 
+pub type SerializedType = SerializationResourceLocation;
+pub type DomainType = DomainResourceLocation;
+
 pub struct ResourceLocationAdapter;
 #[async_trait::async_trait]
-impl Adapter<SerializationResourceLocation, DomainResourceLocation> for ResourceLocationAdapter {
+impl Adapter<SerializedType, DomainType> for ResourceLocationAdapter {
     type ConversionError = ResourceLocationError;
     type SerializedConversionError = Infallible;
 
     async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(
-        serialized: AdapterInput<'_, SerializationResourceLocation>,
+        serialized: AdapterInput<'_, SerializedType>,
         _context: AdapterProviderContext<'_, AdpProvider>
-    ) -> Result<DomainResourceLocation, Self::ConversionError> {
+    ) -> Result<DomainType, Self::ConversionError> {
         DomainResourceLocation::from_str(serialized.to_string().as_str())
     }
 
     async fn serialize<AdpProvider: AdapterProvider + ?Sized>(
-        domain: AdapterInput<'_, DomainResourceLocation>,
+        domain: AdapterInput<'_, DomainType>,
         _context: AdapterProviderContext<'_, AdpProvider>
-    ) -> Result<SerializationResourceLocation, Infallible> {
+    ) -> Result<SerializedType, Infallible> {
         Ok(SerializationResourceLocation::new(domain.to_string().as_str()))
     }
 }
@@ -32,6 +33,7 @@ impl AdapterError for ResourceLocationError {}
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use once_cell::sync::Lazy;
     use tokio::sync::RwLock;
     use crate::repositories::adapter_repo::AdapterRepository;

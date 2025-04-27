@@ -6,21 +6,24 @@ use crate::data::serialization::project::Project as SerializedProject;
 use crate::repositories::adapter_repo::AdapterProvider;
 use crate::repositories::adapter_repo::AdapterProviderContext;
 
+pub type SerializedType = SerializedProjectData;
+pub type DomainType = DomainProject;
+
 pub struct ProjectAdapter;
 
 #[async_trait::async_trait]
-impl Adapter<SerializedProjectData, DomainProject> for ProjectAdapter {
+impl Adapter<SerializedType, DomainType> for ProjectAdapter {
     type ConversionError = ProjectConversionError;
     type SerializedConversionError = Infallible;
 
     async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(
-        serialized: AdapterInput<'_, SerializedProjectData>,
+        serialized: AdapterInput<'_, SerializedType>,
         context: AdapterProviderContext<'_, AdpProvider>
-    ) -> Result<DomainProject, Self::ConversionError> {
+    ) -> Result<DomainType, Self::ConversionError> {
         todo!()
     }
 
-    async fn serialize<AdpProvider: AdapterProvider + ?Sized>(domain: AdapterInput<'_, DomainProject>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<SerializedProjectData, Infallible> {
+    async fn serialize<AdpProvider: AdapterProvider + ?Sized>(domain: AdapterInput<'_, DomainType>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<SerializedType, Infallible> {
         todo!()
     }
 }

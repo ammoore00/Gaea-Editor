@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::data::serialization::project::Project as SerializedProject;
-use crate::repositories::adapter_repo::AdapterRepository;
 use crate::repositories::{adapter_repo, project_repo};
 use crate::services::project_service::{ProjectService, ProjectServiceProvider};
 use crate::services::{project_service, zip_service};
@@ -22,8 +21,6 @@ impl Default for AppContextBuilder<Finalized> {
             project_service::DefaultZipService::default(),
             project_service::DefaultAdapterProvider::new()
         );
-        
-        let adapter_repo = AdapterRepository::new();
         
         let self_ = AppContextBuilder::new()
             .with_project_service(project_service);

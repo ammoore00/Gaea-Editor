@@ -5,17 +5,20 @@ use crate::data::domain::versions;
 use crate::data::serialization::pack_info::{PackData, PackFormat, PackInfo as SerializedPackInfo};
 use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
 
+pub type SerializedType = SerializedPackInfo;
+pub type DomainType = PackInfoDomainData;
+
 pub struct PackInfoAdapter;
 
 #[async_trait::async_trait]
-impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
+impl Adapter<SerializedType, DomainType> for PackInfoAdapter {
     type ConversionError = PackInfoDeserializationError;
     type SerializedConversionError = PackInfoSerializationError;
 
     async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(
-        serialized: AdapterInput<'_, SerializedPackInfo>,
+        serialized: AdapterInput<'_, SerializedType>,
         _context: AdapterProviderContext<'_, AdpProvider>
-    ) -> Result<PackInfoDomainData, Self::ConversionError> {
+    ) -> Result<DomainType, Self::ConversionError> {
         let pack_info = &*serialized;
         let pack = pack_info.pack();
 
@@ -77,24 +80,24 @@ impl Adapter<SerializedPackInfo, PackInfoDomainData> for PackInfoAdapter {
     }
 
     async fn serialize<AdpProvider: AdapterProvider + ?Sized>(
-        domain: AdapterInput<'_, PackInfoDomainData>,
+        domain: AdapterInput<'_, DomainType>,
         _context: AdapterProviderContext<'_, AdpProvider>
-    ) -> Result<SerializedPackInfo, Self::SerializedConversionError> {
+    ) -> Result<SerializedType, Self::SerializedConversionError> {
         let description = &domain.description;
         let version = &domain.version;
-        
+
         let format = match version {
             PackVersionType::Data(version) => versions::get_datapack_format_for_version(version),
             PackVersionType::Resource(version) => versions::get_resourcepack_format_for_version(version),
             PackVersionType::Unknown { .. } => return Err(PackInfoSerializationError::UnknownVersionTypeInSerialization.into()),
         };
-        
+
         let pack = PackData::new(
             description.clone().into(),
             format.get_format_id() as u32,
             None
         );
-        
+
         Ok(SerializedPackInfo::new(
             pack,
             None, None, None, None
@@ -401,7 +404,7 @@ mod tests {
     mod serialize {
         use super::*;
     }
-    
+
     mod misc {
         use super::*;
         // TODO: test conversion from pack info data to proper domain pack info

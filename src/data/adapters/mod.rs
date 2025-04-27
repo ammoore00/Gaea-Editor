@@ -3,6 +3,11 @@ use std::error::Error;
 use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::{RwLock, RwLockReadGuard};
+use crate::data::adapters::project::ProjectAdapter;
+use crate::data::adapters::resource_location::ResourceLocationAdapter;
+use crate::data::{domain, serialization};
+use crate::data::adapters::pack_info::PackInfoAdapter;
+use crate::repositories::adapter_repo;
 use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
 
 mod pack_info;
@@ -47,4 +52,12 @@ impl<'a, T> Deref for AdapterInput<'a, T> {
     fn deref(&self) -> &Self::Target {
         &self.0
     }
+}
+
+pub fn register_default_adapters<AdapterProvider: adapter_repo::AdapterProvider + Send + Sync + 'static>(provider: &mut AdapterProvider) {
+    provider.register::<ProjectAdapter, project::SerializedType, project::DomainType>();
+    
+    provider.register::<PackInfoAdapter, pack_info::SerializedType, pack_info::DomainType>();
+    
+    provider.register::<ResourceLocationAdapter, resource_location::SerializedType, resource_location::DomainType>();
 }
