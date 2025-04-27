@@ -6,7 +6,6 @@ use dashmap::DashMap;
 use tokio::sync::{RwLock, RwLockReadGuard};
 use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
 
-// TODO: Remove this default type and fix errors
 pub struct AdapterProviderContext<'a, AdpProvider: AdapterProvider + ?Sized>(pub RwLockReadGuard<'a, AdpProvider>);
 
 impl<'a, AdpProvider: AdapterProvider> std::ops::Deref for AdapterProviderContext<'a, AdpProvider> {
