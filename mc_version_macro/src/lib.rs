@@ -37,11 +37,11 @@ fn generate_output(input: FormatList) -> TokenStream {
     output.extend(version_statics);
 
     // Generate data format static declarations
-    let data_statics = generate_data_format_statics(&input.data_formats, &all_versions);
+    let data_statics = generate_data_format_statics(&input.data_formats);
     output.extend(data_statics);
 
     // Generate resource format static declarations
-    let resource_statics = generate_resource_format_statics(&input.resource_packs, &all_versions);
+    let resource_statics = generate_resource_format_statics(&input.resource_packs);
     output.extend(resource_statics);
 
     // Generate maps for formats and versions
@@ -153,7 +153,7 @@ fn generate_version_statics(versions: &[SemanticVersion]) -> TokenStream {
 }
 
 // Generate static declarations for data format values
-fn generate_data_format_statics(formats: &[PackFormat], all_versions: &[SemanticVersion]) -> TokenStream {
+fn generate_data_format_statics(formats: &[PackFormat]) -> TokenStream {
     let mut output = TokenStream::new();
 
     for format in formats {
@@ -187,7 +187,7 @@ fn generate_data_format_statics(formats: &[PackFormat], all_versions: &[Semantic
 }
 
 // Generate static declarations for resource format values
-fn generate_resource_format_statics(formats: &[PackFormat], all_versions: &[SemanticVersion]) -> TokenStream {
+fn generate_resource_format_statics(formats: &[PackFormat]) -> TokenStream {
     let mut output = TokenStream::new();
 
     for format in formats {
@@ -223,12 +223,6 @@ fn generate_resource_format_statics(formats: &[PackFormat], all_versions: &[Sema
 
 fn parse_input(input: TokenStream) -> syn::Result<FormatList> {
     syn::parse2::<FormatList>(input)
-}
-
-#[derive(Debug, thiserror::Error)]
-enum FormatSetParseError {
-    #[error("Invalid format!")]
-    InvalidFormat,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

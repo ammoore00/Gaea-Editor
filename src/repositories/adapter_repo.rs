@@ -108,8 +108,6 @@ impl AdapterProvider for AdapterRepository {
             domain: TypeId::of::<Domain>(),
             serialized: TypeId::of::<Serialized>(),
         };
-        
-        dbg!(&adapter_type);
 
         let adapter = self.adapters.get(&adapter_type).ok_or_else(|| AdapterRepoError::NoAdapterFound)?;
         let adapter = adapter.downcast_ref::<AdapterWrapper<Domain, Serialized, Self>>().unwrap();
