@@ -402,7 +402,84 @@ mod tests {
     }
     
     mod serialize {
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+        use crate::data::serialization::TextComponent;
+        use crate::repositories::adapter_repo::AdapterRepository;
         use super::*;
+        
+        #[tokio::test]
+        async fn test_pack_info_adapter_ser_data() {
+            // Given a valid pack info for a datapack
+            let version = *versions::V1_20_5;
+            
+            let pack_info = Arc::new(RwLock::new(PackInfoDomainData::new(
+                PackDescription::String("Test description".to_string()),
+                PackVersionType::Data(version)
+            )));
+            let pack_info = AdapterInput::new(pack_info.read().await);
+            
+            let repo = AdapterRepository::create_repo().await;
+            let context = AdapterRepository::context_from_repo(&repo).await;
+            
+            // When I serialize it
+            let serialized = PackInfoAdapter::serialize(pack_info, context).await.unwrap();
+            
+            // It should work correctly
+            let expected_format = versions::get_datapack_format_for_version(&version);
+            
+            assert_eq!(*serialized.pack().pack_format(), expected_format.get_format_id() as u32);
+            assert!(matches!(serialized.pack().description(), TextComponent::String(text) if text == "Test description"));
+        }
+
+        #[tokio::test]
+        async fn test_pack_info_adapter_ser_resource() {
+            // Given a valid pack info for a resourcepack
+            let version = *versions::V1_20_5;
+
+            let pack_info = Arc::new(RwLock::new(PackInfoDomainData::new(
+                PackDescription::String("Test description".to_string()),
+                PackVersionType::Resource(version)
+            )));
+            let pack_info = AdapterInput::new(pack_info.read().await);
+
+            let repo = AdapterRepository::create_repo().await;
+            let context = AdapterRepository::context_from_repo(&repo).await;
+
+            // When I serialize it
+            let serialized = PackInfoAdapter::serialize(pack_info, context).await.unwrap();
+
+            // It should work correctly
+            let expected_format = versions::get_resourcepack_format_for_version(&version);
+            
+            assert_eq!(*serialized.pack().pack_format(), expected_format.get_format_id() as u32);
+            assert!(matches!(serialized.pack().description(), TextComponent::String(text) if text == "Test description"));
+        }
+
+        #[tokio::test]
+        async fn test_pack_info_adapter_ser_unknown_version_type_is_invalid() {
+            // Given a pack info with unknown version type
+            let version = *versions::V1_20_5;
+
+            let pack_info = Arc::new(RwLock::new(PackInfoDomainData::new(
+                PackDescription::String("Test description".to_string()),
+                PackVersionType::Unknown {
+                    version_if_data: version,
+                    version_if_resource: version,
+                }
+            )));
+            let pack_info = AdapterInput::new(pack_info.read().await);
+
+            let repo = AdapterRepository::create_repo().await;
+            let context = AdapterRepository::context_from_repo(&repo).await;
+            
+            // When I try to serialize it
+            let result = PackInfoAdapter::serialize(pack_info, context).await;
+            
+            // It should return an error
+            assert!(result.is_err());
+            assert!(matches!(result, Err(PackInfoSerializationError::UnknownVersionTypeInSerialization)));
+        }
     }
 
     mod misc {
