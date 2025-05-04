@@ -19,6 +19,18 @@ impl From<PackDescription> for TextComponent {
     }
 }
 
+impl From<String> for TextComponent {
+    fn from(text: String) -> Self {
+        TextComponent::String(text)
+    }
+}
+
+impl From<&str> for TextComponent {
+    fn from(text: &str) -> Self {
+        TextComponent::String(text.to_string())
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ResourceLocation(String);
 

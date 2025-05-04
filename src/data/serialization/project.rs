@@ -1,12 +1,10 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use crate::data::serialization::pack_info::PackInfo;
 
-#[derive(Debug, Clone)]
-pub struct Project;
-
-impl Default for Project {
-    fn default() -> Self {
-        Self {}
-    }
+#[derive(Debug, Clone, derive_new::new, getset::Getters)]
+#[getset(get = "pub")]
+pub struct Project {
+    pack_info: PackInfo
 }
 
 impl Serialize for Project {
@@ -25,4 +23,9 @@ impl<'de> Deserialize<'de> for Project {
     {
         todo!()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 }

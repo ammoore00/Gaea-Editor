@@ -357,6 +357,7 @@ mod test {
     use crate::data::adapters::project::{ProjectConversionError, SerializedProjectData};
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
     use crate::data::domain::versions;
+    use crate::data::serialization::pack_info::{PackData, PackInfo};
     use crate::data::serialization::project::Project as SerializedProject;
     use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
     use crate::repositories::project_repo;
@@ -727,6 +728,19 @@ mod test {
             project_version: ProjectVersion { version: *versions::V1_20_4 },
             project_type: ProjectType::DataPack,
         }
+    }
+    
+    fn default_serialized_project() -> SerializedProject {
+        SerializedProject::new(
+            PackInfo::new(
+                PackData::new(
+                    "test_pack".into(),
+                    versions::get_datapack_format_for_version(&versions::latest()).get_format_id() as u32,
+                    None
+                ),
+                None, None, None, None
+            )
+        )
     }
     
     mod create_project {
@@ -1255,7 +1269,7 @@ mod test {
         async fn test_import_from_zip() {
             // Given a valid zip
 
-            let serialized_project = SerializedProject::default();
+            let serialized_project = default_serialized_project();
             let project = Project::new(default_test_project_settings());
             
             MockProjectAdapter::reset_config();
@@ -1295,7 +1309,7 @@ mod test {
         async fn test_import_combined_project() {
             // Given a valid zip pair
 
-            let serialized_project = SerializedProject::default();
+            let serialized_project = default_serialized_project();
             let project = Project::new(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
@@ -1339,7 +1353,7 @@ mod test {
         async fn test_import_provider_error() {
             // Given an error from the zip provider
 
-            let serialized_project = SerializedProject::default();
+            let serialized_project = default_serialized_project();
             let project = Project::new(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
@@ -1378,7 +1392,7 @@ mod test {
         async fn test_export_to_zip() {
             // Given a valid project
 
-            let serialized_project = SerializedProject::default();
+            let serialized_project = default_serialized_project();
             let project = Project::new(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
@@ -1419,7 +1433,7 @@ mod test {
         async fn test_export_combined_project() {
             // Given a project with both resource and data components
 
-            let serialized_project = SerializedProject::default();
+            let serialized_project = default_serialized_project();
             let project = Project::new(ProjectSettings {
                 name: "Test Project".to_string(),
                 path: Some("test/file/path".into()),
@@ -1468,7 +1482,7 @@ mod test {
         async fn test_export_combined_project_single_path() {
             // Given a project with combined type and a single path
 
-            let serialized_project = SerializedProject::default();
+            let serialized_project = default_serialized_project();
             let project = Project::new(ProjectSettings {
                 name: "Test Project".to_string(),
                 path: Some("test/file/path".into()),
@@ -1511,7 +1525,7 @@ mod test {
         async fn test_export_single_project_combined_path() {
             // Given a project with combined type and a single path
 
-            let serialized_project = SerializedProject::default();
+            let serialized_project = default_serialized_project();
             let project = Project::new(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
@@ -1552,7 +1566,7 @@ mod test {
         async fn test_export_duplicate_zip() {
             // Given a zip that already exists
 
-            let serialized_project = SerializedProject::default();
+            let serialized_project = default_serialized_project();
             let project = Project::new(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
@@ -1596,7 +1610,7 @@ mod test {
         async fn test_overwrite_existing_zip() {
             // Given a zip that already exists
 
-            let serialized_project = SerializedProject::default();
+            let serialized_project = default_serialized_project();
             let project = Project::new(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
@@ -1638,7 +1652,7 @@ mod test {
         async fn test_export_error() {
             // Given an error from the zip provider
 
-            let serialized_project = SerializedProject::default();
+            let serialized_project = default_serialized_project();
             let project = Project::new(default_test_project_settings());
 
             MockProjectAdapter::reset_config();

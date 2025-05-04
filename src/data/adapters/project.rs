@@ -23,7 +23,10 @@ impl Adapter<SerializedType, DomainType> for ProjectAdapter {
         todo!()
     }
 
-    async fn serialize<AdpProvider: AdapterProvider + ?Sized>(domain: AdapterInput<'_, DomainType>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<SerializedType, Infallible> {
+    async fn serialize<AdpProvider: AdapterProvider + ?Sized>(
+        domain: AdapterInput<'_, DomainType>,
+        context: AdapterProviderContext<'_, AdpProvider>
+    ) -> Result<SerializedType, Infallible> {
         todo!()
     }
 }
