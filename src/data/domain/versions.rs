@@ -42,6 +42,20 @@ pub fn latest() -> MinecraftVersion {
     *V1_21_5
 }
 
+#[macro_export]
+macro_rules! latest_data_format {
+    () => {
+        crate::data::domain::versions::get_datapack_format_for_version(&crate::data::domain::versions::latest())
+    };
+}
+
+#[macro_export]
+macro_rules! latest_resource_format {
+    () => {
+        crate::data::domain::versions::get_resourcepack_format_for_version(&crate::data::domain::versions::latest())
+    };
+}
+
 // TODO: cache this as part of the macro for better performance
 
 pub fn get_datapack_format_for_version(version: &MinecraftVersion) -> &PackFormat {

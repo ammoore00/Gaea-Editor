@@ -21,6 +21,8 @@ impl Serialize for Project {
         zip.start_file::<&str, ExtendedFileOptions>("pack.mcmeta", FileOptions::default()).map_err(serde::ser::Error::custom)?;
         zip.write_all(serde_json::to_string(&self.pack_info).unwrap().as_bytes()).map_err(serde::ser::Error::custom)?;
         
+        // TODO: implement handling for other files
+        
         let zip_data = zip.finish().map_err(serde::ser::Error::custom)?;
         serializer.serialize_bytes(&zip_data.into_inner())
     }
@@ -57,4 +59,34 @@ impl<'de> Deserialize<'de> for Project {
 #[cfg(test)]
 mod tests {
     use super::*;
+    
+    mod serialize {
+        use super::*;
+
+        #[test]
+        fn test_serialize_pack_info() {
+            // Given a simple project with only a pack info
+            let pack_info = PackInfo::default_data();
+            let project = Project {
+                pack_info
+            };
+            
+            // When I serialize it
+            
+            // It should return a zip file containing the serialized pack info
+        }
+    }
+    
+    mod deserialize {
+        use super::*;
+        
+        #[test]
+        fn test_deserialize_pack_info() {
+            // Given a simple zip file with only a pack.mcmeta
+            
+            // When I deserialize it
+            
+            // It should be loaded correctly into the project
+        }
+    }
 }
