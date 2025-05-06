@@ -1,5 +1,6 @@
 use crate::data::serialization::ResourceLocation;
 use crate::data::serialization::TextComponent;
+use crate::{latest_data_format, latest_resource_format};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
 #[getset(get = "pub")]
@@ -17,6 +18,31 @@ pub struct PackInfo {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     language: Option<Vec<Language>>,
+}
+
+#[cfg(test)]
+impl PackInfo {
+    pub fn default_data() -> Self {
+        Self::new(
+            PackData::new(
+                TextComponent::String("Test Pack".to_string()),
+                latest_data_format!().get_format_id() as u32,
+                None,
+            ),
+            None, None, None, None,
+        )
+    }
+
+    pub fn default_resource() -> Self {
+        Self::new(
+            PackData::new(
+                TextComponent::String("Test Pack".to_string()),
+                latest_resource_format!().get_format_id() as u32,
+                None,
+            ),
+            None, None, None, None,
+        )
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]

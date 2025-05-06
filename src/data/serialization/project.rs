@@ -57,4 +57,34 @@ impl<'de> Deserialize<'de> for Project {
 #[cfg(test)]
 mod tests {
     use super::*;
+    
+    mod serialize {
+        use super::*;
+
+        #[test]
+        fn test_serialize_pack_info() {
+            // Given a simple project with only a pack info
+            let pack_info = PackInfo::default_data();
+            let project = Project {
+                pack_info
+            };
+            
+            // When I serialize it
+            
+            // It should return a zip file containing the serialized pack info
+        }
+    }
+    
+    mod deserialize {
+        use super::*;
+        
+        #[test]
+        fn test_deserialize_pack_info() {
+            // Given a simple zip file with only a pack.mcmeta
+            
+            // When I deserialize it
+            
+            // It should be loaded correctly into the project
+        }
+    }
 }
