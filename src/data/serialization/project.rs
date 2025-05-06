@@ -37,6 +37,7 @@ impl<'de> Deserialize<'de> for Project {
 
         let mut files = HashMap::new();
 
+        // TODO: implement real file handling
         for i in 0..zip.len() {
             let mut file = zip.by_index(i).map_err(serde::de::Error::custom)?;
             let mut content = String::new();
@@ -45,9 +46,11 @@ impl<'de> Deserialize<'de> for Project {
 
             files.insert(file.name().to_string(), content);
         }
-
-        todo!()
-        //Ok(Project { files })
+        let pack_info = serde_json::from_str(&files["pack.mcmeta"]).unwrap();
+        
+        Ok(Project {
+            pack_info
+        })
     }
 }
 
