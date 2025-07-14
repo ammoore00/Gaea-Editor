@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use std::io;
 use std::io::{Cursor, Read, Write};
-use std::path::Path;
 use serde::{Deserialize, Serialize};
 use zip::result::ZipError;
 use zip::write::{ExtendedFileOptions, FileOptions};
+use zip::ZipArchive;
 use crate::data::serialization::pack_info::PackInfo;
 
 pub trait ZippableProject {
     fn zip(&self) -> Result<Vec<u8>, ZipError>;
-    fn extract(path: &Path) -> Result<Self, io::Error> where Self: Sized;
+    fn extract(zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, io::Error> where Self: Sized;
 }
 
 #[derive(Debug, Clone, derive_new::new, getset::Getters)]
@@ -33,16 +33,12 @@ impl ZippableProject for Project {
         Ok(zip_data.into_inner())
     }
     
-    fn extract(path: &Path) -> Result<Self, io::Error> {
-        let file_data = std::fs::read(path)?;
-        let reader = Cursor::new(file_data);
-        let mut zip = zip::ZipArchive::new(reader)?;
-
+    fn extract(mut zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, io::Error> {
         let mut files = HashMap::new();
 
         // TODO: implement real file handling
-        for i in 0..zip.len() {
-            let mut file = zip.by_index(i)?;
+        for i in 0..zip_archive.len() {
+            let mut file = zip_archive.by_index(i)?;
             let mut content = String::new();
             file.read_to_string(&mut content)?;
 
@@ -88,15 +84,29 @@ mod tests {
     }
     
     mod extract {
+        use ::zip::ZipWriter;
         use super::*;
 
         #[test]
         fn test_extract_pack_info() {
             // Given a simple zip file with only a pack.mcmeta
+            let pack_info = PackInfo::default_data();
+            let pack_info_string = serde_json::to_string(&pack_info).unwrap();
+            
+            let buffer = Cursor::new(Vec::new());
+            let mut zip = ZipWriter::new(buffer);
+
+            zip.start_file::<&str, ExtendedFileOptions>("pack.mcmeta", FileOptions::default()).unwrap();
+            zip.write_all(pack_info_string.as_bytes()).unwrap();
+            
+            let zip_data = zip.finish().unwrap();
+            let zip_archive = ZipArchive::new(zip_data).unwrap();
 
             // When I deserialize it
+            let project = Project::extract(zip_archive).unwrap();
 
             // It should be loaded correctly into the project
+            assert_eq!(project.pack_info, pack_info);
         }
     }
 }

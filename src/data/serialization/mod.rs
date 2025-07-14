@@ -4,7 +4,7 @@ use crate::data::domain::pack_info::PackDescription;
 pub(crate) mod pack_info;
 pub mod project;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(untagged)]
 pub enum TextComponent {
     // TODO: Implement additional types
@@ -31,7 +31,7 @@ impl From<&str> for TextComponent {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct ResourceLocation(String);
 
 impl ResourceLocation {

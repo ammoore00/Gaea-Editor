@@ -2,7 +2,7 @@ use crate::data::serialization::ResourceLocation;
 use crate::data::serialization::TextComponent;
 use crate::{latest_data_format, latest_resource_format};
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
 #[getset(get = "pub")]
 pub struct PackInfo {
     pack: PackData,
@@ -45,7 +45,7 @@ impl PackInfo {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
 #[getset(get = "pub")]
 pub struct PackData {
     description: TextComponent,
@@ -55,7 +55,7 @@ pub struct PackData {
     supported_formats: Option<PackFormat>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(untagged)]
 pub enum PackFormat {
     Single(u32),
@@ -66,21 +66,21 @@ pub enum PackFormat {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
 #[getset(get = "pub")]
 pub struct FilterPattern {
     namespace: String,
     path: String,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]
 #[getset(get = "pub")]
 pub struct Overlay {
     formats: PackFormat,
     path: String,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Language {
     // TODO: Figure out how to store this
 }
