@@ -1,18 +1,30 @@
-use std::fs::File;
+use std::fs::{File, Metadata};
 use std::io;
 use std::path::{Path, PathBuf};
 
 #[async_trait::async_trait]
 pub trait FilesystemProvider: Send + Sync {
-    async fn save_file(&self, file: File);
-    async fn load_file(&self, path: &Path) -> Result<File, io::Error>;
-    async fn delete_file(&self, path: &Path) -> Result<(), io::Error>;
-    async fn create_directory(&self, path: &Path) -> Result<(), io::Error>;
-    async fn create_directory_recursive(&self, path: &Path) -> Result<(), io::Error>;
-    async fn delete_directory(&self, path: &Path) -> Result<(), io::Error>;
-    async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>, io::Error>;
-    async fn validate_path(&self, path: &Path) -> PathValidationStatus;
-    fn file_exists(&self, path: &Path) -> bool;
+    async fn write_file(&self, path: &Path, content: &[u8]) -> Result<()>;
+    async fn append_file(&self, path: &Path, content: &[u8]) -> Result<()>;
+    async fn read_file(&self, path: &Path) -> Result<Vec<u8>>;
+    async fn delete_file(&self, path: &Path) -> Result<()>;
+    async fn copy_file(&self, source: &Path, destination: &Path) -> Result<()>;
+    async fn move_file(&self, source: &Path, destination: &Path) -> Result<()>;
+    async fn create_directory(&self, path: &Path) -> Result<()>;
+    async fn create_directory_recursive(&self, path: &Path) -> Result<()>;
+    async fn delete_directory(&self, path: &Path) -> Result<()>;
+    async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>>;
+    async fn validate_path(&self, path: &Path) -> Result<PathValidationStatus>;
+    async fn file_exists(&self, path: &Path) -> Result<bool>;
+    async fn is_directory(&self, path: &Path) -> Result<bool>;
+    async fn get_metadata(&self, path: &Path) -> Result<Metadata>;
+}
+
+pub type Result<T> = std::result::Result<T, io::Error>;
+#[derive(Debug, thiserror::Error)]
+pub enum FilesystemProviderError {
+    #[error(transparent)]
+    IO(#[from] io::Error),
 }
 
 pub struct FilesystemService;
@@ -25,39 +37,59 @@ impl FilesystemService {
 
 #[async_trait::async_trait]
 impl FilesystemProvider for FilesystemService {
-    async fn save_file(&self, file: File) {
+    async fn write_file(&self, path: &Path, content: &[u8]) -> Result<()> {
+        todo!()
+    }
+    
+    async fn append_file(&self, path: &Path, content: &[u8]) -> Result<()> {
         todo!()
     }
 
-    async fn load_file(&self, path: &Path) -> Result<File, std::io::Error> {
+    async fn read_file(&self, path: &Path) -> Result<Vec<u8>> {
         todo!()
     }
 
-    async fn delete_file(&self, path: &Path) -> Result<(), std::io::Error> {
+    async fn delete_file(&self, path: &Path) -> Result<()> {
         todo!()
     }
 
-    async fn create_directory(&self, path: &Path) -> Result<(), std::io::Error> {
+    async fn copy_file(&self, source: &Path, destination: &Path) -> Result<()> {
         todo!()
     }
 
-    async fn create_directory_recursive(&self, path: &Path) -> Result<(), std::io::Error> {
+    async fn move_file(&self, source: &Path, destination: &Path) -> Result<()> {
         todo!()
     }
 
-    async fn delete_directory(&self, path: &Path) -> Result<(), std::io::Error> {
+    async fn create_directory(&self, path: &Path) -> Result<()> {
         todo!()
     }
 
-    async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
+    async fn create_directory_recursive(&self, path: &Path) -> Result<()> {
         todo!()
     }
 
-    async fn validate_path(&self, path: &Path) -> PathValidationStatus {
+    async fn delete_directory(&self, path: &Path) -> Result<()> {
         todo!()
     }
 
-    fn file_exists(&self, path: &Path) -> bool {
+    async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>> {
+        todo!()
+    }
+
+    async fn validate_path(&self, path: &Path) -> Result<PathValidationStatus> {
+        todo!()
+    }
+
+    async fn file_exists(&self, path: &Path) -> Result<bool> {
+        todo!()
+    }
+
+    async fn is_directory(&self, path: &Path) -> Result<bool> {
+        todo!()
+    }
+
+    async fn get_metadata(&self, path: &Path) -> Result<Metadata> {
         todo!()
     }
 }
@@ -69,4 +101,35 @@ pub enum PathValidationStatus {
     MissingFile,
     /// One or more directories are missing, indicated by the index
     MissingDirectories{ missing_segment_index: usize },
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::{tempdir, TempDir};
+    use super::*;
+
+    struct TestContext {
+        _temp_dir: TempDir,
+        service: FilesystemService,
+        root_path: PathBuf,
+    }
+
+    impl TestContext {
+        fn new() -> Self {
+            let temp_dir = tempdir().expect("Failed to create temp directory");
+            let root_path = temp_dir.path().to_path_buf();
+
+            let service = FilesystemService::new();
+
+            Self {
+                _temp_dir: temp_dir,
+                service,
+                root_path,
+            }
+        }
+
+        fn path(&self, relative: &str) -> PathBuf {
+            self.root_path.join(relative)
+        }
+    }
 }

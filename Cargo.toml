@@ -51,3 +51,4 @@ mc_version_macro = { path = "./mc_version_macro" }
 [dev-dependencies]
 tokio = { version = "1.44", features = ["test-util"] }
 serial_test = "3.2"
+tempfile = "3.20"
