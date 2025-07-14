@@ -1,11 +1,8 @@
 use std::fmt::Debug;
-use std::marker::PhantomData;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use iced::futures::TryFutureExt;
-use tokio::sync::{RwLock, RwLockReadGuard};
-use crate::data::adapters::{register_default_adapters, Adapter, AdapterError, AdapterInput};
+use tokio::sync::RwLock;
+use crate::data::adapters::{self, AdapterInput};
 use crate::data::adapters::project::SerializedProjectData;
 use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType};
 use crate::data::serialization::project::Project as SerializedProject;
@@ -60,7 +57,7 @@ where
         zip_provider: ZipProvider,
         mut adapter_provider: AdapterProvider,
     ) -> Self {
-        register_default_adapters(&mut adapter_provider);
+        adapters::register_default_adapters(&mut adapter_provider);
         
         Self {
             project_provider: Arc::new(RwLock::new(project_provider)),
@@ -79,7 +76,7 @@ where
         // Then any others can be re-registered
         // This code should only be run once at app startup, so performance is not a concern,
         // Plus the adapter wrappers stored by the repo are tiny anyway
-        register_default_adapters(&mut adapter_provider);
+        adapters::register_default_adapters(&mut adapter_provider);
         adapter_register_fn(&mut adapter_provider);
         
         Self {
@@ -93,7 +90,7 @@ where
     fn with_no_adapters(
         project_provider: ProjectProvider,
         zip_provider: ZipProvider,
-        mut adapter_provider: AdapterProvider,
+        adapter_provider: AdapterProvider,
     ) -> Self {
         Self {
             project_provider: Arc::new(RwLock::new(project_provider)),
@@ -346,11 +343,9 @@ mod test {
     use std::convert::Infallible;
     use std::future::Future;
     use std::io;
-    use std::ops::{Deref, DerefMut};
     use std::path::{Path, PathBuf};
     use std::pin::Pin;
     use std::sync::Arc;
-    use mc_version::MinecraftVersion;
     use once_cell::sync::Lazy;
     use tokio::sync::RwLock;
     use crate::data::adapters::{Adapter, AdapterInput};
@@ -362,7 +357,7 @@ mod test {
     use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
     use crate::repositories::project_repo;
     use crate::repositories::project_repo::{ProjectCloseError, ProjectCreationError, ProjectOpenError, ProjectProvider, ProjectRepoError};
-    use crate::services::project_service::{DefaultAdapterProvider, ProjectService};
+    use crate::services::project_service::{DefaultAdapterProvider, ProjectService, ProjectServiceError, ProjectServiceProvider};
     use crate::services::zip_service::{self, ZipProvider};
 
     #[derive(Debug, Default)]
@@ -746,7 +741,6 @@ mod test {
     mod create_project {
         use crate::data::domain::project::{ProjectType, ProjectVersion};
         use crate::data::domain::versions;
-        use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider};
         use super::*;
         
         /// Test creating a project
@@ -942,7 +936,6 @@ mod test {
     }
     
     mod open_project {
-        use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider};
         use super::*;
         
         /// Test opening a project
@@ -1066,7 +1059,6 @@ mod test {
     }
     
     mod close_project {
-        use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider};
         use super::*;
         
         /// Test closing a project
@@ -1191,7 +1183,6 @@ mod test {
     }
     
     mod save_project {
-        use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider};
         use super::*;
 
         /// Test saving a project
@@ -1260,7 +1251,7 @@ mod test {
     }
     
     mod import_zip {
-        use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider, ZipError, ZipPath};
+        use crate::services::project_service::{ZipError, ZipPath};
         use super::*;
 
         /// Test importing a datapack from a zip as a new project
@@ -1383,7 +1374,7 @@ mod test {
     }
     
     mod export_zip {
-        use crate::services::project_service::{ProjectServiceError, ProjectServiceProvider, ProjectZipData, ZipError, ZipPath};
+        use crate::services::project_service::{ProjectZipData, ZipError, ZipPath};
         use super::*;
 
         /// Test exporting a single-typed project to a zip
