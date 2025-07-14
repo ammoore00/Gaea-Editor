@@ -1,13 +1,13 @@
 use std::io;
 use std::marker::PhantomData;
 use std::path::Path;
-use serde::Serialize;
+use crate::data::serialization::project::ZippableProject;
 use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 
 #[async_trait::async_trait]
 pub trait ZipProvider<T>
 where
-    T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>,
+    T: Send + Sync + Sized + ZippableProject,
 {
     async fn extract(&self, path: &Path) -> Result<T>;
     async fn zip(&self, path: &Path, data: &T, overwrite_existing: bool) -> Result<()>;
@@ -26,7 +26,7 @@ pub enum ZipError {
 
 pub struct ZipService<T, Filesystem = FilesystemService>
 where
-    T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>,
+    T: Send + Sync + Sized + ZippableProject,
     Filesystem: FilesystemProvider,
 {
     _phantom: PhantomData<(T)>,
@@ -35,7 +35,7 @@ where
 
 impl<T> Default for ZipService<T>
 where
-    T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>
+    T: Send + Sync + Sized + ZippableProject,
 {
     fn default() -> Self {
         Self {
@@ -48,7 +48,7 @@ where
 #[async_trait::async_trait]
 impl<T, Filesystem> ZipProvider<T> for ZipService<T, Filesystem>
 where
-    T: Send + Sync + Sized + Serialize + for<'de> serde::Deserialize<'de>,
+    T: Send + Sync + Sized + ZippableProject,
     Filesystem: FilesystemProvider,
 {
     async fn extract(&self, path: &Path) -> Result<T> {
