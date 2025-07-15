@@ -142,121 +142,58 @@ mod tests {
     /// Tests for the tests
     /// These tests ensure that the test fixture behaves as expected
     mod fixture_tests {
-        use std::{env, panic};
-        use std::panic::PanicHookInfo;
-        use std::sync::{Arc, Barrier, Mutex, Once};
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use lazy_static::lazy_static;
+        use std::panic;
+        use std::sync::{Arc, Barrier};
         use once_cell::sync::Lazy;
+        use panic_silencer::PanicSilencer;
         use super::*;
 
         static TEST_BARRIER: Lazy<Arc<Barrier>> = Lazy::new(|| Arc::new(Barrier::new(2)));
 
-        lazy_static! {
-            static ref HOOK_INIT: Once = Once::new();
-            static ref ORIGINAL_HOOK: Mutex<Option<Box<dyn Fn(&PanicHookInfo<'_>) + Send + Sync + 'static>>> = Mutex::new(None);
-            static ref EXPECTED_PANICS: AtomicUsize = AtomicUsize::new(0);
-            static ref OCCURRED_PANICS: AtomicUsize = AtomicUsize::new(0);
-        }
-
-        pub struct PanicSilencer {
-            expected_panic_count: usize,
-        }
-
-        impl PanicSilencer {
-            pub fn new(expected_panic_count: usize) -> Self {
-                // Store previous environment variable and set to suppress backtraces
-                unsafe {
-                    let _ = env::var("RUST_BACKTRACE").map(|_| env::set_var("RUST_BACKTRACE", "0"));
-                }
-
-                // Initialize the custom panic hook exactly once
-                HOOK_INIT.call_once(|| {
-                    // Store the original hook
-                    let original_hook = panic::take_hook();
-                    *ORIGINAL_HOOK.lock().unwrap() = Some(original_hook);
-
-                    // Install our custom hook that counts panics
-                    panic::set_hook(Box::new(|info| {
-                        let occurred = OCCURRED_PANICS.fetch_add(1, Ordering::SeqCst) + 1;
-                        let expected = EXPECTED_PANICS.load(Ordering::SeqCst);
-
-                        // Only show panic information if we exceed expected panics
-                        if occurred > expected {
-                            if let Some(loc) = info.location() {
-                                eprintln!("panic occurred at {}:{}: {}", loc.file(), loc.line(),
-                                          info.payload().downcast_ref::<&str>().unwrap_or(&"<unknown panic message>"));
-                            } else {
-                                eprintln!("panic occurred: {}",
-                                          info.payload().downcast_ref::<&str>().unwrap_or(&"<unknown panic message>"));
-                            }
-                        }
-                    }));
-                });
-
-                // Add this silencer's expected panics to the global count
-                EXPECTED_PANICS.fetch_add(expected_panic_count, Ordering::SeqCst);
-
-                Self { expected_panic_count }
-            }
-        }
-
-        impl Drop for PanicSilencer {
-            fn drop(&mut self) {
-                // Decrement the expected panic count
-                // This is safe even during a panic
-                let current = EXPECTED_PANICS.load(Ordering::SeqCst);
-                let new_val = current.saturating_sub(self.expected_panic_count);
-                EXPECTED_PANICS.store(new_val, Ordering::SeqCst);
-
-                // We never restore the original hook because it could be called during a panic
-                // Instead, we'll let the process exit normally, which is safer
-            }
-        }
-
         #[fixture]
-        fn panic_silencer() -> PanicSilencer {
+        fn panic_silencer_fixture() -> PanicSilencer {
             PanicSilencer::new(1) // Expect 1 panic
         }
 
-
-        // First test creates a marker file and panics
+        // This test and the following test (verify_cleanup_after_panic) should be considered the
+        // same test - these tests verify that temp files and directories get properly cleaned up
+        // in the event of a panic during a test
         #[rstest::rstest]
         #[tokio::test]
         #[should_panic]
-        async fn setup_panic_test(#[future] test_context: TestContext, _panic_silencer: PanicSilencer) {
+        async fn setup_panic_test(#[future] test_context: TestContext, _panic_silencer_fixture: PanicSilencer) {
+            // Given a test context with temp files and directories
             let ctx = test_context.await;
-
-            // Write the path to a known location for the other test to check
+            
             let cleanup_marker_path = std::env::temp_dir().join("cleanup_test_marker.txt");
             std::fs::write(&cleanup_marker_path, ctx.root_path.to_string_lossy().as_bytes())
                 .expect("Failed to write marker file");
 
-            // Create a file in the temp directory
             let test_file = ctx.path("rstest_fixture_test.txt");
             tokio::fs::write(&test_file, b"Testing fixture cleanup").await
                 .expect("Failed to write test file");
 
-            // Now intentionally panic
+            // When I panic
             TEST_BARRIER.wait();
             panic!("Intentional panic to test cleanup");
-            // TestContext will be dropped after this panic
+            // Then it should cleanup when dropped
         }
 
-        // Second test verifies cleanup happened
+        // See setup_panic_test for info
         #[tokio::test]
         async fn verify_cleanup_after_panic() {
+            // Given a test which created a temp directory and files, then panicked
             TEST_BARRIER.wait();
             // Give the previous test time to run and clean up
             tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
-            // Read the path from the marker file
+            // When I check for the temp directory
             let cleanup_marker_path = std::env::temp_dir().join("cleanup_test_marker.txt");
             let path_str = std::fs::read_to_string(&cleanup_marker_path)
                 .expect("Failed to read marker file");
             let path = std::path::PathBuf::from(path_str.trim());
 
-            // Verify the directory no longer exists
+            // Then it should no longer exist
             assert!(!path.exists(), "Temp directory still exists after panic: {:?}", path);
 
             // Clean up the marker file
