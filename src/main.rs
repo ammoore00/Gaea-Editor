@@ -2,7 +2,8 @@
 #![feature(associated_type_defaults)]
 
 use iced::{Font, Task};
-
+use once_cell::sync::Lazy;
+use tokio::runtime::Runtime;
 use crate::application::gui::window::ApplicationWindow;
 use crate::application::app_context::AppContextBuilder;
 use crate::application::gui::window;
@@ -12,6 +13,10 @@ mod services;
 mod data;
 mod repositories;
 mod database;
+
+pub static RUNTIME: Lazy<Runtime> = Lazy::new(|| {
+    Runtime::new().unwrap()
+});
 
 pub fn main() -> iced::Result {
     iced::application("Gaea - Minecraft Resource and Datapack Editor", ApplicationWindow::update, ApplicationWindow::view)

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::sync::RwLock;
 use crate::data::domain::project::{Project, ProjectID};
+use crate::RUNTIME;
 use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
 
 static PROJECT_EXTENSION: &str = "json";
@@ -63,7 +64,9 @@ impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Files
         let path = project.get_settings().path.clone();
 
         if let Some(path) = path {
-            if self.filesystem_provider.file_exists(path.as_path()) && !overwrite_existing {
+            let file_exists = RUNTIME.block_on(self.filesystem_provider.file_exists(path.as_path()))?;
+            
+            if file_exists && !overwrite_existing {
                 return Err(ProjectCreationError::FileAlreadyExists.into());
             }
         }

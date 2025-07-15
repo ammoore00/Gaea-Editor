@@ -47,8 +47,11 @@ getset = "0.1"
 
 mc_version = { path = "./mc_version" }
 mc_version_macro = { path = "./mc_version_macro" }
+lazy_static = "1.5.0"
 
 [dev-dependencies]
 tokio = { version = "1.44", features = ["test-util"] }
 serial_test = "3.2"
 tempfile = "3.20"
+rstest = "0.25.0"
+ctrlc = "3.4.7"
