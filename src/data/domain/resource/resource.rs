@@ -6,7 +6,7 @@ use regex::Regex;
 use serde::{Deserializer, Serializer};
 use uuid::Uuid;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ResourceLocation {
     namespace: String,
     value: String,

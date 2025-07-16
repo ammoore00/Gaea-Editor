@@ -2,13 +2,17 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use mc_version::MinecraftVersion;
 use uuid::{NoContext, Timestamp, Uuid};
+use crate::data::domain::pack_info::PackInfo;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Project {
     settings: ProjectSettings,
     id: ProjectID,
+    
     // TODO: make this more comprehensive
     unsaved_changes: bool,
+    
+    pack_info: PackInfo,
 }
 
 impl Project {
@@ -17,14 +21,6 @@ impl Project {
             settings,
             id: Self::generate_id(),
             unsaved_changes: false,
-        }
-    }
-
-    #[cfg(test)]
-    pub fn with_unsaved_changes(settings: ProjectSettings) -> Self {
-        Self {
-            unsaved_changes: true,
-            ..Self::new(settings)
         }
     }
     
@@ -51,18 +47,7 @@ impl Project {
     fn generate_id() -> ProjectID {
         let timestamp = Timestamp::from_unix(NoContext, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(), 0);
         let id = Uuid::new_v7(timestamp);
-
         id
-    }
-
-    #[cfg(test)]
-    pub fn generate_test_id() -> ProjectID {
-        Self::generate_id()
-    }
-
-    #[cfg(test)]
-    pub fn set_id(&mut self, id: ProjectID) {
-        self.id = id;
     }
 }
 
@@ -93,4 +78,22 @@ pub enum ProjectType {
     DataPack,
     ResourcePack,
     Combined,
+}
+
+#[cfg(test)]
+impl Project {
+    pub fn with_unsaved_changes(settings: ProjectSettings) -> Self {
+        Self {
+            unsaved_changes: true,
+            ..Self::new(settings)
+        }
+    }
+
+    pub fn generate_test_id() -> ProjectID {
+        Self::generate_id()
+    }
+
+    pub fn set_id(&mut self, id: ProjectID) {
+        self.id = id;
+    }
 }

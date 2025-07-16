@@ -44,15 +44,16 @@ sanitize-filename = "0.6"
 
 derive-new = "0.7"
 getset = "0.1"
-mockall = "0.13.1"
 
 mc_version = { path = "./mc_version" }
 mc_version_macro = { path = "./mc_version_macro" }
+translation_macro = { path = "./translation_macro" }
 
 [dev-dependencies]
 tokio = { version = "1.44", features = ["test-util"] }
 serial_test = "3.2"
 tempfile = "3.20"
 rstest = "0.25.0"
+mockall = "0.13.1"
 
 panic_silencer = { path = "./panic_silencer" }

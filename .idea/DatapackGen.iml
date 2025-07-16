@@ -7,10 +7,12 @@
       <sourceFolder url="file://$MODULE_DIR$/mc_version/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/mc_version_macro/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/panic_silencer/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/translation_macro/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/mc_version/target" />
       <excludeFolder url="file://$MODULE_DIR$/mc_version_macro/target" />
       <excludeFolder url="file://$MODULE_DIR$/panic_silencer/target" />
+      <excludeFolder url="file://$MODULE_DIR$/translation_macro/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
