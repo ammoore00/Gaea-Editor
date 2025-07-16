@@ -898,6 +898,96 @@ mod tests {
     }
     
     mod directory_ops {
-        
+        use super::*;
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_create_directory(#[future] test_context: TestContext) {
+            // Given a path for a new directory
+            let ctx = test_context.await;
+            let dir_path = ctx.path("new_dir");
+
+            // When I create the directory
+            ctx.service.create_directory(&dir_path).await.unwrap();
+
+            // Then the directory should exist
+            assert!(dir_path.is_dir());
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_remove_existing_directory(#[future] test_context: TestContext) {
+            // Given an existing directory
+            let ctx = test_context.await;
+            let dir_path = ctx.path("existing_dir");
+            tokio::fs::create_dir(&dir_path).await.unwrap();
+            assert!(dir_path.is_dir());
+
+            // When I remove the directory
+            ctx.service.delete_directory(&dir_path).await.unwrap();
+
+            // Then the directory should no longer exist
+            assert!(!dir_path.exists());
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_remove_nonexistent_directory(#[future] test_context: TestContext) {
+            // Given a path to a directory that does not exist
+            let ctx = test_context.await;
+            let dir_path = ctx.path("nonexistent_dir");
+            assert!(!dir_path.exists());
+
+            // When I try to remove the directory
+            let result = ctx.service.delete_directory(&dir_path).await;
+
+            // Then it should return an error
+            assert!(result.is_err());
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_list_directory_contents(#[future] test_context: TestContext) {
+            // Given a directory with some files and subdirectories
+            let ctx = test_context.await;
+            let dir_path = ctx.path("test_dir");
+            tokio::fs::create_dir(&dir_path).await.unwrap();
+
+            let file1_path = dir_path.join("file1.txt");
+            let file2_path = dir_path.join("file2.txt");
+            let sub_dir_path = dir_path.join("sub_dir");
+
+            tokio::fs::write(&file1_path, b"File 1 content").await.unwrap();
+            tokio::fs::write(&file2_path, b"File 2 content").await.unwrap();
+            tokio::fs::create_dir(&sub_dir_path).await.unwrap();
+
+            // When I list the contents of the directory
+            let contents = ctx.service.list_directory(&dir_path).await.unwrap();
+
+            // Then the returned list should contain all files and subdirectories
+            assert!(contents.contains(&file1_path));
+            assert!(contents.contains(&file2_path));
+            assert!(contents.contains(&sub_dir_path));
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_remove_empty_directory(#[future] test_context: TestContext) {
+            // Given an empty directory
+            let ctx = test_context.await;
+            let dir_path = ctx.path("empty_dir");
+            tokio::fs::create_dir(&dir_path).await.unwrap();
+
+            // When I remove the directory
+            ctx.service.delete_directory(&dir_path).await.unwrap();
+
+            // Then the directory should no longer exist
+            assert!(!dir_path.exists());
+        }
     }
 }
