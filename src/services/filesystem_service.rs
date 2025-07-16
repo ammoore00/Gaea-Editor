@@ -1,6 +1,6 @@
 use std::convert::Infallible;
 use std::error::Error;
-use std::fs::{Metadata};
+use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use tokio::fs::OpenOptions;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
@@ -210,45 +210,78 @@ impl FilesystemProvider for FilesystemService {
     }
 
     async fn create_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
-        todo!()
+        tokio::fs::create_dir(path).await?;
+        Ok(())
     }
 
     async fn create_directory_recursive<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
-        todo!()
+        tokio::fs::create_dir_all(path).await?;
+        Ok(())
     }
 
     async fn delete_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
-        todo!()
+        tokio::fs::remove_dir(path).await?;
+        Ok(())
     }
 
     async fn list_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<Vec<PathBuf>> {
-        todo!()
+        let mut entries = tokio::fs::read_dir(path).await?;
+        let mut result = Vec::new();
+
+        while let Some(entry) = entries.next_entry().await? {
+            result.push(entry.path());
+        }
+
+        Ok(result)
     }
 
     async fn validate_path<T: AsRef<Path> + Send>(&self, path: T) -> Result<PathValidationStatus> {
-        todo!()
+        let path_ref = path.as_ref();
+        if path_ref.exists() {
+            Ok(PathValidationStatus::Valid {
+                is_file: path_ref.is_file(),
+            })
+        } else {
+            let mut count = 0;
+            for parent in path_ref.ancestors() {
+                if parent.exists() {
+                    break;
+                }
+                count += 1;
+            }
+            Ok(PathValidationStatus::Missing {
+                missing_segment_index: count,
+            })
+        }
     }
 
     async fn file_exists<T: AsRef<Path> + Send>(&self, path: T) -> Result<bool> {
-        todo!()
+        Ok(tokio::fs::metadata(path).await.is_ok())
     }
 
     async fn is_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<bool> {
-        todo!()
+        let result = tokio::fs::metadata(path).await
+            .map(|metadata| metadata.is_dir())
+            .unwrap_or(false);
+        
+        Ok(result)
     }
 
     async fn get_metadata<T: AsRef<Path> + Send>(&self, path: T) -> Result<Metadata> {
-        todo!()
+        let metadata = tokio::fs::metadata(path).await?;
+        Ok(metadata)
     }
 }
 
 pub enum PathValidationStatus {
     /// Path is fully valid
-    Valid,
-    /// All directories exist, but the file pointed to does not
-    MissingFile,
-    /// One or more directories are missing, indicated by the index
-    MissingDirectories{ missing_segment_index: usize },
+    Valid {
+        is_file: bool,
+    },
+    /// One or more path elements are missing, indicated by the index
+    Missing {
+        missing_segment_index: usize
+    },
 }
 
 #[cfg(test)]
@@ -749,5 +782,122 @@ mod tests {
             // Then it should return an error
             assert!(result.is_err());
         }
+        
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_get_metadata(#[future] test_context: TestContext) {
+            // Given a basic text file
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content = b"Hello World";
+            tokio::fs::write(&path, content).await.unwrap();
+
+            // When I get the metadata
+            let metadata = ctx.service.get_metadata(&path).await.unwrap();
+
+            // Then the metadata should contain the correct information
+            assert!(metadata.is_file());
+            assert_eq!(metadata.len(), content.len() as u64);
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_file_exists(#[future] test_context: TestContext) {
+            // Given a basic text file
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content = b"Hello World";
+            tokio::fs::write(&path, content).await.unwrap();
+
+            // When I check if the file exists
+            let exists = ctx.service.file_exists(&path).await.unwrap();
+
+            // Then it should return true
+            assert!(exists);
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_file_exists_nonexistent(#[future] test_context: TestContext) {
+            // Given a path to a file that does not exist
+            let ctx = test_context.await;
+            let non_existent_path = ctx.path("nonexistent.txt");
+
+            // When I check if the file exists
+            let exists = ctx.service.file_exists(&non_existent_path).await.unwrap();
+
+            // Then it should return false
+            assert!(!exists);
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_validate_path_existing_file(#[future] test_context: TestContext) {
+            // Given a temporary directory with an existing file
+            let ctx = test_context.await;
+            let file_path = ctx.path("test_file.txt");
+            let content = b"Hello World";
+            tokio::fs::write(&file_path, content).await.unwrap();
+
+            // When validating the path to the existing file
+            let result = ctx.service.validate_path(&file_path).await.unwrap();
+
+            // Then the result should be Valid with is_file=true
+            assert!(matches!(result, PathValidationStatus::Valid { is_file } if is_file));
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_validate_path_existing_directory(#[future] test_context: TestContext) {
+            // Given a temporary directory with a subdirectory
+            let ctx = test_context.await;
+            let dir_path = ctx.path("test_dir");
+            tokio::fs::create_dir(&dir_path).await.unwrap();
+
+            // When validating the path to the existing directory
+            let result = ctx.service.validate_path(&dir_path).await.unwrap();
+
+            // Then the result should be Valid with is_file=false
+            assert!(matches!(result, PathValidationStatus::Valid { is_file } if !is_file));
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_validate_path_missing_one_level(#[future] test_context: TestContext) {
+            // Given a temporary directory and a path to a non-existent file
+            let ctx = test_context.await;
+            let missing_path = ctx.path("missing_file.txt");
+
+            // When validating the non-existent path
+            let result = ctx.service.validate_path(&missing_path).await.unwrap();
+
+            // Then the result should be Missing with missing_segment_index=1
+            assert!(matches!(result, PathValidationStatus::Missing { missing_segment_index } if missing_segment_index == 1));
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_validate_path_missing_multiple_levels(#[future] test_context: TestContext) {
+            // Given a temporary directory and a path with multiple missing segments
+            let ctx = test_context.await;
+            let missing_path = ctx.path("missing_dir/another_dir/file.txt");
+
+            // When validating the path with multiple missing segments
+            let result = ctx.service.validate_path(&missing_path).await.unwrap();
+
+            // Then the result should be Missing with missing_segment_index=3
+            assert!(matches!(result, PathValidationStatus::Missing { missing_segment_index } if missing_segment_index == 3));
+        }
+    }
+    
+    mod directory_ops {
+        
     }
 }
