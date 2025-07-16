@@ -153,7 +153,7 @@ mod tests {
         use tokio::sync::RwLock;
         use crate::data::domain::pack_info::PackDescription;
         use crate::data::serialization::pack_info::PackData;
-        use crate::data::serialization::TextComponent;
+        use crate::data::serialization::text_component::TextComponent;
         use crate::repositories::adapter_repo::AdapterRepository;
         use super::*;
         
@@ -404,7 +404,7 @@ mod tests {
     mod serialize {
         use std::sync::Arc;
         use tokio::sync::RwLock;
-        use crate::data::serialization::TextComponent;
+        use crate::data::serialization::text_component::TextComponent;
         use crate::repositories::adapter_repo::AdapterRepository;
         use super::*;
         

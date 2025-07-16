@@ -1,5 +1,5 @@
-use crate::data::serialization::ResourceLocation;
-use crate::data::serialization::TextComponent;
+use crate::data::serialization::resource_location::ResourceLocation;
+use crate::data::serialization::text_component::TextComponent;
 use crate::{latest_data_format, latest_resource_format};
 
 #[derive(Debug, Clone, Eq, PartialEq, serde::Deserialize, serde::Serialize, derive_new::new, getset::Getters)]

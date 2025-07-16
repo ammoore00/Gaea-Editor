@@ -2,7 +2,7 @@ use std::convert::Infallible;
 use std::str::FromStr;
 use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
 use crate::data::domain::resource::resource::{ResourceLocation as DomainResourceLocation, ResourceLocationError};
-use crate::data::serialization::ResourceLocation as SerializationResourceLocation;
+use crate::data::serialization::resource_location::ResourceLocation as SerializationResourceLocation;
 use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
 
 pub type SerializedType = SerializationResourceLocation;

@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 use crate::data::domain::resource::resource::ResourceLocation;
-use crate::data::serialization::TextComponent;
+use crate::data::serialization::text_component::TextComponent;
 
 #[derive(Debug, Clone, derive_new::new, getset::Getters)]
 #[getset(get = "pub")]
