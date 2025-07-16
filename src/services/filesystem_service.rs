@@ -1,26 +1,11 @@
-use std::fs::{File, Metadata};
+use std::fs::{Metadata};
 use std::io;
 use std::path::{Path, PathBuf};
-
-#[async_trait::async_trait]
-pub trait FilesystemProvider: Send + Sync {
-    async fn write_file(&self, path: &Path, content: &[u8]) -> Result<()>;
-    async fn append_file(&self, path: &Path, content: &[u8]) -> Result<()>;
-    async fn read_file(&self, path: &Path) -> Result<Vec<u8>>;
-    async fn delete_file(&self, path: &Path) -> Result<()>;
-    async fn copy_file(&self, source: &Path, destination: &Path) -> Result<()>;
-    async fn move_file(&self, source: &Path, destination: &Path) -> Result<()>;
-    async fn create_directory(&self, path: &Path) -> Result<()>;
-    async fn create_directory_recursive(&self, path: &Path) -> Result<()>;
-    async fn delete_directory(&self, path: &Path) -> Result<()>;
-    async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>>;
-    async fn validate_path(&self, path: &Path) -> Result<PathValidationStatus>;
-    async fn file_exists(&self, path: &Path) -> Result<bool>;
-    async fn is_directory(&self, path: &Path) -> Result<bool>;
-    async fn get_metadata(&self, path: &Path) -> Result<Metadata>;
-}
+use tokio::fs::OpenOptions;
+use tokio::io::AsyncWriteExt;
 
 pub type Result<T> = std::result::Result<T, io::Error>;
+
 #[derive(Debug, thiserror::Error)]
 pub enum FilesystemProviderError {
     #[error(transparent)]
@@ -35,61 +20,120 @@ impl FilesystemService {
     }
 }
 
+pub enum FileWriteOptions {
+    /// Create a new file, error if the file already exists
+    CreateNew,
+    /// Overwrite any existing file, or create a new file
+    Overwrite,
+    /// Append to an existing file, or create a new file
+    Append,
+    /// Append only if the file already exists
+    AppendDontCreate,
+}
+
+#[async_trait::async_trait]
+pub trait FilesystemProvider: Send + Sync {
+    /// Write contents to a file
+    async fn write_file<T: AsRef<Path> + Send>(&self, path: T, content: &[u8], options: FileWriteOptions) -> Result<()>;
+    async fn read_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<Vec<u8>>;
+    async fn read_file_chunked<T: AsRef<Path> + Send>(
+        &self,
+        path: T,
+        chunk_size: usize,
+        callback: impl FnMut(&[u8]) -> Result<()> + Send,
+    ) -> Result<()>;
+    async fn delete_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<()>;
+    async fn copy_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()>;
+    async fn move_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()>;
+    async fn create_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<()>;
+    async fn create_directory_recursive<T: AsRef<Path> + Send>(&self, path: T) -> Result<()>;
+    async fn delete_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<()>;
+    async fn list_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<Vec<PathBuf>>;
+    async fn validate_path<T: AsRef<Path> + Send>(&self, path: T) -> Result<PathValidationStatus>;
+    async fn file_exists<T: AsRef<Path> + Send>(&self, path: T) -> Result<bool>;
+    async fn is_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<bool>;
+    async fn get_metadata<T: AsRef<Path> + Send>(&self, path: T) -> Result<Metadata>;
+}
+
 #[async_trait::async_trait]
 impl FilesystemProvider for FilesystemService {
-    async fn write_file(&self, path: &Path, content: &[u8]) -> Result<()> {
+    async fn write_file<T: AsRef<Path> + Send>(&self, path: T, content: &[u8], options: FileWriteOptions) -> Result<()> {
+        let mut file = OpenOptions::new();
+        file.write(true);
+        
+        let file = match options {
+            FileWriteOptions::CreateNew => {
+                file.create_new(true)
+            },
+            FileWriteOptions::Overwrite => {
+                file.truncate(true)
+            },
+            FileWriteOptions::Append => {
+                file.append(true)
+                    .create(true)
+            },
+            FileWriteOptions::AppendDontCreate => {
+                file.append(true)
+            },
+        };
+        
+        let mut file = file.open(path).await?;
+
+        file.write_all(content).await?;
+        file.flush().await?;
+
+        Ok(())
+    }
+
+    async fn read_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<Vec<u8>> {
         todo!()
     }
 
-    async fn append_file(&self, path: &Path, content: &[u8]) -> Result<()> {
+    async fn read_file_chunked<T: AsRef<Path> + Send>(&self, path: T, chunk_size: usize, callback: impl FnMut(&[u8]) -> Result<()> + Send) -> Result<()> {
         todo!()
     }
 
-    async fn read_file(&self, path: &Path) -> Result<Vec<u8>> {
+    async fn delete_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
         todo!()
     }
 
-    async fn delete_file(&self, path: &Path) -> Result<()> {
+    async fn copy_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()> {
         todo!()
     }
 
-    async fn copy_file(&self, source: &Path, destination: &Path) -> Result<()> {
+    async fn move_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()> {
         todo!()
     }
 
-    async fn move_file(&self, source: &Path, destination: &Path) -> Result<()> {
+    async fn create_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
         todo!()
     }
 
-    async fn create_directory(&self, path: &Path) -> Result<()> {
+    async fn create_directory_recursive<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
         todo!()
     }
 
-    async fn create_directory_recursive(&self, path: &Path) -> Result<()> {
+    async fn delete_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
         todo!()
     }
 
-    async fn delete_directory(&self, path: &Path) -> Result<()> {
+    async fn list_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<Vec<PathBuf>> {
         todo!()
     }
 
-    async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>> {
+    async fn validate_path<T: AsRef<Path> + Send>(&self, path: T) -> Result<PathValidationStatus> {
         todo!()
     }
 
-    async fn validate_path(&self, path: &Path) -> Result<PathValidationStatus> {
+    async fn file_exists<T: AsRef<Path> + Send>(&self, path: T) -> Result<bool> {
         todo!()
     }
 
-    async fn file_exists(&self, path: &Path) -> Result<bool> {
+    async fn is_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<bool> {
         todo!()
     }
 
-    async fn is_directory(&self, path: &Path) -> Result<bool> {
-        todo!()
-    }
-
-    async fn get_metadata(&self, path: &Path) -> Result<Metadata> {
+    async fn get_metadata<T: AsRef<Path> + Send>(&self, path: T) -> Result<Metadata> {
         todo!()
     }
 }
@@ -201,15 +245,118 @@ mod tests {
         }
     }
 
-    mod file_handling {
+    mod write_files {
         use super::*;
 
-        #[tokio::test]
         #[rstest::rstest]
+        #[tokio::test]
         async fn test_write_file(#[future] test_context: TestContext) {
+            // Given a basic text file
             let ctx = test_context.await;
             let path = ctx.path("test.txt");
             let content = b"Hello World";
+            
+            // When I write it to disk
+            ctx.service.write_file(&path, content, FileWriteOptions::CreateNew).await.unwrap();
+            
+            // Then it should be created successfully
+            assert!(path.exists());
+            assert_eq!(content, tokio::fs::read(&path).await.unwrap().as_slice());
         }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        async fn test_write_file_already_exists(#[future] test_context: TestContext) {
+            // Given a basic text file that already exists
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content = b"Hello World";
+            tokio::fs::write(&path, content).await.unwrap();
+
+            // When I try to write to it
+            let new_content = b"\nHello World Again";
+            let result = ctx.service.write_file(&path, new_content, FileWriteOptions::CreateNew).await;
+
+            // Then it should return an error
+            assert!(result.is_err());
+            assert_eq!(content, tokio::fs::read(&path).await.unwrap().as_slice());
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        async fn test_overwrite_file(#[future] test_context: TestContext) {
+            // Given a basic text file
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content = b"Hello World";
+            tokio::fs::write(&path, content).await.unwrap();
+
+            // When I write it to disk
+            let new_content = b"\nHello World Again";
+            ctx.service.write_file(&path, new_content, FileWriteOptions::Overwrite).await.unwrap();
+
+            // Then it should be overwritten successfully
+            assert!(path.exists());
+            assert_eq!(new_content, tokio::fs::read(&path).await.unwrap().as_slice());
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        async fn test_append_file(#[future] test_context: TestContext) {
+            // Given a basic text file that already exists
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content = b"Hello World";
+            tokio::fs::write(&path, content).await.unwrap();
+            
+            // When I try to append to it
+            let new_content = b"\nHello World Again";
+            ctx.service.write_file(&path, new_content, FileWriteOptions::Append).await.unwrap();
+
+            // Then it should append successfully
+            let result_content = tokio::fs::read(&path).await.unwrap();
+
+            let mut expected_content = Vec::with_capacity(content.len() + new_content.len());
+            expected_content.extend_from_slice(content);
+            expected_content.extend_from_slice(new_content);
+
+            assert_eq!(result_content.as_slice(), expected_content.as_slice());
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        async fn test_append_file_create_new(#[future] test_context: TestContext) {
+            // Given a basic text file which does not exist
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content = b"Hello World";
+            assert!(!path.exists());
+
+            // When I try to append to that file using normal append rules
+            ctx.service.write_file(&path, content, FileWriteOptions::Append).await.unwrap();
+
+            // Then it should be created successfully
+            assert!(path.exists());
+            assert_eq!(content, tokio::fs::read(&path).await.unwrap().as_slice());
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        async fn test_append_file_nonexistent(#[future] test_context: TestContext) {
+            // Given a basic text file which does not exist
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content = b"Hello World";
+            assert!(!path.exists());
+
+            // When I try to append to that file
+            let result = ctx.service.write_file(&path, content, FileWriteOptions::AppendDontCreate).await;
+
+            // Then it should return an error
+            assert!(result.is_err());
+            assert!(!path.exists());
+        }
+        
+        // TODO: Test more complex cases, also OS-specific things (e.g. windows reserved filenames, permissions, etc)
     }
 }
