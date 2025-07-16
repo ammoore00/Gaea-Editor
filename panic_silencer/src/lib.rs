@@ -16,11 +16,6 @@ pub struct PanicSilencer {
 
 impl PanicSilencer {
     pub fn new(expected_panic_count: usize) -> Self {
-        // Store previous environment variable and set to suppress backtraces
-        unsafe {
-            let _ = env::var("RUST_BACKTRACE").map(|_| env::set_var("RUST_BACKTRACE", "0"));
-        }
-
         // Initialize the custom panic hook exactly once
         HOOK_INIT.call_once(|| {
             // Store the original hook
@@ -34,13 +29,7 @@ impl PanicSilencer {
 
                 // Only show panic information if we exceed expected panics
                 if occurred > expected {
-                    if let Some(loc) = info.location() {
-                        eprintln!("panic occurred at {}:{}: {}", loc.file(), loc.line(),
-                                  info.payload().downcast_ref::<&str>().unwrap_or(&"<unknown panic message>"));
-                    } else {
-                        eprintln!("panic occurred: {}",
-                                  info.payload().downcast_ref::<&str>().unwrap_or(&"<unknown panic message>"));
-                    }
+                    ORIGINAL_HOOK.lock().unwrap().as_ref().map(|hook| hook(info));
                 }
             }));
         });
@@ -49,18 +38,5 @@ impl PanicSilencer {
         EXPECTED_PANICS.fetch_add(expected_panic_count, Ordering::SeqCst);
 
         Self { expected_panic_count }
-    }
-}
-
-impl Drop for PanicSilencer {
-    fn drop(&mut self) {
-        // Decrement the expected panic count
-        // This is safe even during a panic
-        let current = EXPECTED_PANICS.load(Ordering::SeqCst);
-        let new_val = current.saturating_sub(self.expected_panic_count);
-        EXPECTED_PANICS.store(new_val, Ordering::SeqCst);
-
-        // We never restore the original hook because it could be called during a panic
-        // Instead, we'll let the process exit normally, which is safer
     }
 }
