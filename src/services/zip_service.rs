@@ -1,6 +1,5 @@
 use std::marker::PhantomData;
 use std::path::Path;
-use async_trait::async_trait;
 use zip::ZipArchive;
 use crate::data::serialization::project::ZippableProject;
 use crate::services::filesystem_service::{FileDeleteOptions, FileWriteOptions, FilesystemProvider, FilesystemProviderError, FilesystemService};
