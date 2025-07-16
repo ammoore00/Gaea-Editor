@@ -1,8 +1,9 @@
+use std::io::Read;
 use std::fs::{Metadata};
 use std::io;
 use std::path::{Path, PathBuf};
 use tokio::fs::OpenOptions;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub type Result<T> = std::result::Result<T, io::Error>;
 
@@ -40,7 +41,7 @@ pub trait FilesystemProvider: Send + Sync {
         &self,
         path: T,
         chunk_size: usize,
-        callback: impl FnMut(&[u8]) -> Result<()> + Send,
+        callback: impl FnMut(Vec<u8>) -> Result<()> + Send,
     ) -> Result<()>;
     async fn delete_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<()>;
     async fn copy_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()>;
@@ -53,6 +54,9 @@ pub trait FilesystemProvider: Send + Sync {
     async fn file_exists<T: AsRef<Path> + Send>(&self, path: T) -> Result<bool>;
     async fn is_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<bool>;
     async fn get_metadata<T: AsRef<Path> + Send>(&self, path: T) -> Result<Metadata>;
+    
+    // TODO: Symlink support (needs OS-specific handling)
+    // TODO: FileReader for more complex read operations
 }
 
 #[async_trait::async_trait]
@@ -86,11 +90,54 @@ impl FilesystemProvider for FilesystemService {
     }
 
     async fn read_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<Vec<u8>> {
-        todo!()
+        let mut file = tokio::fs::File::open(path).await?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer).await?;
+        Ok(buffer)
     }
 
-    async fn read_file_chunked<T: AsRef<Path> + Send>(&self, path: T, chunk_size: usize, callback: impl FnMut(&[u8]) -> Result<()> + Send) -> Result<()> {
-        todo!()
+    async fn read_file_chunked<T: AsRef<Path> + Send>(
+        &self,
+        path: T,
+        chunk_size: usize,
+        mut callback: impl FnMut(Vec<u8>) -> Result<()> + Send,
+    ) -> Result<()> {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(5);
+
+        let file_path = path.as_ref().to_path_buf();
+
+        // Spawn a task to read the file and send chunks
+        let read_task = tokio::spawn(async move {
+            let mut file = tokio::fs::File::open(&file_path).await?;
+
+            let mut buffer = vec![0; chunk_size];
+            loop {
+                let bytes_read = file.read(&mut buffer).await?;
+
+                if bytes_read == 0 {
+                    break; // EOF
+                }
+
+                let chunk = buffer[..bytes_read].to_vec();
+                if tx.send(chunk).await.is_err() {
+                    break; // Receiver dropped
+                }
+
+                if bytes_read < chunk_size {
+                    break; // Partial read (likely EOF)
+                }
+            }
+
+            Ok(())
+        });
+
+        // Process received chunks
+        while let Some(chunk) = rx.recv().await {
+            callback(chunk)?;
+        }
+
+        // Check if the read task encountered an error
+        read_task.await?
     }
 
     async fn delete_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
@@ -245,16 +292,19 @@ mod tests {
         }
     }
 
-    mod write_files {
+    mod write {
+        use serial_test::serial;
         use super::*;
 
         #[rstest::rstest]
         #[tokio::test]
+        #[serial(filesystem)]
         async fn test_write_file(#[future] test_context: TestContext) {
-            // Given a basic text file
+            // Given a basic text file which does not exist
             let ctx = test_context.await;
             let path = ctx.path("test.txt");
             let content = b"Hello World";
+            assert!(!path.exists());
             
             // When I write it to disk
             ctx.service.write_file(&path, content, FileWriteOptions::CreateNew).await.unwrap();
@@ -266,6 +316,7 @@ mod tests {
 
         #[rstest::rstest]
         #[tokio::test]
+        #[serial(filesystem)]
         async fn test_write_file_already_exists(#[future] test_context: TestContext) {
             // Given a basic text file that already exists
             let ctx = test_context.await;
@@ -284,6 +335,7 @@ mod tests {
 
         #[rstest::rstest]
         #[tokio::test]
+        #[serial(filesystem)]
         async fn test_overwrite_file(#[future] test_context: TestContext) {
             // Given a basic text file
             let ctx = test_context.await;
@@ -302,6 +354,7 @@ mod tests {
 
         #[rstest::rstest]
         #[tokio::test]
+        #[serial(filesystem)]
         async fn test_append_file(#[future] test_context: TestContext) {
             // Given a basic text file that already exists
             let ctx = test_context.await;
@@ -325,6 +378,7 @@ mod tests {
 
         #[rstest::rstest]
         #[tokio::test]
+        #[serial(filesystem)]
         async fn test_append_file_create_new(#[future] test_context: TestContext) {
             // Given a basic text file which does not exist
             let ctx = test_context.await;
@@ -342,6 +396,7 @@ mod tests {
 
         #[rstest::rstest]
         #[tokio::test]
+        #[serial(filesystem)]
         async fn test_append_file_nonexistent(#[future] test_context: TestContext) {
             // Given a basic text file which does not exist
             let ctx = test_context.await;
@@ -358,5 +413,71 @@ mod tests {
         }
         
         // TODO: Test more complex cases, also OS-specific things (e.g. windows reserved filenames, permissions, etc)
+    }
+    
+    mod read {
+        use serial_test::serial;
+        use super::*;
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_read_file(#[future] test_context: TestContext) {
+            // Given a basic text file
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content = b"Hello World";
+            tokio::fs::write(&path, content).await.unwrap();
+            
+            // When I read that file
+            let result = ctx.service.read_file(&path).await.unwrap();
+            
+            // Then it should match the expected contents
+            assert_eq!(content, result.as_slice());
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_read_file_nonexistent(#[future] test_context: TestContext) {
+            // Given a path which does not exist
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            assert!(!path.exists());
+            
+            // When I try to read that file
+            let result = ctx.service.read_file(&path).await;
+            
+            // It should return an error
+            assert!(result.is_err());
+        }
+        
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_read_file_chunked(#[future] test_context: TestContext) {
+            // Given a large file
+            let filesize_kb = 1024; // 1MB file
+            
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content: Vec<u8> = (0..=255).cycle().take(filesize_kb * 1024).collect();
+            tokio::fs::write(&path, content.clone()).await.unwrap();
+            
+            // When I read that file in chunks
+            let calls = &mut 0;
+            
+            ctx.service.read_file_chunked(&path, 1024, |chunk| {
+                // Then each chunk should match the expected value
+                let expected_content = content.chunks(1024).next().unwrap();
+                assert_eq!(expected_content, chunk);
+                
+                *calls += 1;
+                Ok(())
+            }).await.unwrap();
+            
+            // Sanity check that the correct number of chunks were read
+            assert_eq!(*calls, filesize_kb);
+        }
     }
 }
