@@ -1,16 +1,27 @@
-use std::io::Read;
+use std::convert::Infallible;
+use std::error::Error;
 use std::fs::{Metadata};
-use std::io;
 use std::path::{Path, PathBuf};
 use tokio::fs::OpenOptions;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 
-pub type Result<T> = std::result::Result<T, io::Error>;
+pub type Result<T> = std::result::Result<T, FilesystemProviderError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FilesystemProviderError {
     #[error(transparent)]
     IO(#[from] io::Error),
+    #[error(transparent)]
+    JoinError(#[from] tokio::task::JoinError),
+    #[error("Error in chunked reader callback: {0}")]
+    ChunkedReaderCallbackError(String)
+}
+
+#[derive(Debug)]
+pub enum ChunkedFileReadResult<E: Error + Send = Infallible> {
+    Continue,
+    Done,
+    Err(E),
 }
 
 pub struct FilesystemService;
@@ -22,14 +33,21 @@ impl FilesystemService {
 }
 
 pub enum FileWriteOptions {
-    /// Create a new file, error if the file already exists
-    CreateNew,
     /// Overwrite any existing file, or create a new file
     Overwrite,
+    /// Create a new file, error if the file already exists
+    CreateNew,
     /// Append to an existing file, or create a new file
     Append,
     /// Append only if the file already exists
     AppendDontCreate,
+}
+
+pub enum FileDeleteOptions {
+    /// Allow deleting a file that doesn't exist
+    AllowNonexistent,
+    /// Error if the file to delete does not exist
+    ErrorIfNotExists,
 }
 
 #[async_trait::async_trait]
@@ -37,13 +55,19 @@ pub trait FilesystemProvider: Send + Sync {
     /// Write contents to a file
     async fn write_file<T: AsRef<Path> + Send>(&self, path: T, content: &[u8], options: FileWriteOptions) -> Result<()>;
     async fn read_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<Vec<u8>>;
-    async fn read_file_chunked<T: AsRef<Path> + Send>(
+
+    /// Read file in chunks
+    /// Callback
+    async fn read_file_chunked<
+        T: AsRef<Path> + Send,
+        E: Error + Send
+    >(
         &self,
         path: T,
         chunk_size: usize,
-        callback: impl FnMut(Vec<u8>) -> Result<()> + Send,
+        callback: impl FnMut(Vec<u8>) -> ChunkedFileReadResult<E> + Send,
     ) -> Result<()>;
-    async fn delete_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<()>;
+    async fn delete_file<T: AsRef<Path> + Send>(&self, path: T, options: FileDeleteOptions) -> Result<()>;
     async fn copy_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()>;
     async fn move_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()>;
     async fn create_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<()>;
@@ -66,11 +90,11 @@ impl FilesystemProvider for FilesystemService {
         file.write(true);
         
         let file = match options {
-            FileWriteOptions::CreateNew => {
-                file.create_new(true)
-            },
             FileWriteOptions::Overwrite => {
                 file.truncate(true)
+            },
+            FileWriteOptions::CreateNew => {
+                file.create_new(true)
             },
             FileWriteOptions::Append => {
                 file.append(true)
@@ -96,13 +120,17 @@ impl FilesystemProvider for FilesystemService {
         Ok(buffer)
     }
 
-    async fn read_file_chunked<T: AsRef<Path> + Send>(
+    async fn read_file_chunked<
+        T: AsRef<Path> + Send,
+        E: Error + Send
+    >(
         &self,
         path: T,
         chunk_size: usize,
-        mut callback: impl FnMut(Vec<u8>) -> Result<()> + Send,
+        mut callback: impl FnMut(Vec<u8>) -> ChunkedFileReadResult<E> + Send,
     ) -> Result<()> {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(5);
+        let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
 
         let file_path = path.as_ref().to_path_buf();
 
@@ -112,6 +140,10 @@ impl FilesystemProvider for FilesystemService {
 
             let mut buffer = vec![0; chunk_size];
             loop {
+                if cancel_rx.try_recv().is_ok() {
+                    break;
+                }
+                
                 let bytes_read = file.read(&mut buffer).await?;
 
                 if bytes_read == 0 {
@@ -133,15 +165,38 @@ impl FilesystemProvider for FilesystemService {
 
         // Process received chunks
         while let Some(chunk) = rx.recv().await {
-            callback(chunk)?;
+            match callback(chunk) {
+                ChunkedFileReadResult::Continue => {}
+                ChunkedFileReadResult::Done => {
+                    cancel_tx.send(()).ok();
+                    break;
+                },
+                ChunkedFileReadResult::Err(err) => return Err(FilesystemProviderError::ChunkedReaderCallbackError(err.to_string())),
+            };
         }
 
         // Check if the read task encountered an error
+        drop(rx);
         read_task.await?
     }
 
-    async fn delete_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
-        todo!()
+    async fn delete_file<T: AsRef<Path> + Send>(&self, path: T, options: FileDeleteOptions) -> Result<()> {
+        let result = tokio::fs::remove_file(path).await;
+
+        match options {
+            FileDeleteOptions::AllowNonexistent => {
+                if let Err(err) = &result {
+                    if err.kind() == io::ErrorKind::NotFound {
+                        return Ok(());
+                    }
+                }
+
+                result.map_err(Into::into)
+            }
+            FileDeleteOptions::ErrorIfNotExists => {
+                result.map_err(Into::into)
+            }
+        }
     }
 
     async fn copy_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()> {
@@ -197,6 +252,7 @@ pub enum PathValidationStatus {
 #[cfg(test)]
 mod tests {
     use rstest::fixture;
+    use serial_test::serial;
     use tempfile::{tempdir, TempDir};
     use super::*;
 
@@ -293,7 +349,6 @@ mod tests {
     }
 
     mod write {
-        use serial_test::serial;
         use super::*;
 
         #[rstest::rstest]
@@ -416,7 +471,6 @@ mod tests {
     }
     
     mod read {
-        use serial_test::serial;
         use super::*;
 
         #[rstest::rstest]
@@ -473,11 +527,82 @@ mod tests {
                 assert_eq!(expected_content, chunk);
                 
                 *calls += 1;
-                Ok(())
+                ChunkedFileReadResult::<Infallible>::Continue
             }).await.unwrap();
             
             // Sanity check that the correct number of chunks were read
             assert_eq!(*calls, filesize_kb);
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_read_file_chunked_abort(#[future] test_context: TestContext) {
+            // Given a large file
+            let filesize_kb = 1024; // 1MB file
+
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content: Vec<u8> = (0..=255).cycle().take(filesize_kb * 1024).collect();
+            tokio::fs::write(&path, content.clone()).await.unwrap();
+
+            // When I read that file in chunks, then abort half way
+            let calls = &mut 0;
+
+            ctx.service.read_file_chunked(&path, 1024, |chunk| {
+                *calls += 1;
+                
+                if *calls < filesize_kb / 2 {
+                    ChunkedFileReadResult::<Infallible>::Continue
+                }
+                else {
+                    ChunkedFileReadResult::<Infallible>::Done
+                }
+            }).await.unwrap();
+
+            // Then only part of the file should be read
+            assert_eq!(*calls, filesize_kb / 2);
+        }
+        
+        #[derive(Debug, thiserror::Error)]
+        #[error("Test error")]
+        struct TestError;
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_read_file_chunked_error(#[future] test_context: TestContext) {
+            // Given a large file
+            let filesize_kb = 1024; // 1MB file
+
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content: Vec<u8> = (0..=255).cycle().take(filesize_kb * 1024).collect();
+            tokio::fs::write(&path, content.clone()).await.unwrap();
+
+            // When I read that file in chunks, but an error is thrown by the callback
+            let result = ctx.service.read_file_chunked(&path, 1024, |chunk| {
+                ChunkedFileReadResult::Err(TestError)
+            }).await;
+            
+            // Then the error should be passed through
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), FilesystemProviderError::ChunkedReaderCallbackError(_)));
+        }
+    }
+    
+    mod other_file_ops {
+        use super::*;
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_delete_file(#[future] test_context: TestContext) {
+            // Given a basic text file
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content = b"Hello World";
+            tokio::fs::write(&path, content).await.unwrap();
         }
     }
 }

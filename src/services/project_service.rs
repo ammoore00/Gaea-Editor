@@ -357,6 +357,7 @@ mod test {
     use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
     use crate::repositories::project_repo;
     use crate::repositories::project_repo::{ProjectCloseError, ProjectCreationError, ProjectOpenError, ProjectProvider, ProjectRepoError};
+    use crate::services::filesystem_service::FilesystemProviderError;
     use crate::services::project_service::{DefaultAdapterProvider, ProjectService, ProjectServiceError, ProjectServiceProvider};
     use crate::services::zip_service::{self, ZipProvider};
 
@@ -418,7 +419,7 @@ mod test {
             }
             
             if self.settings.fail_calls {
-                return Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::Other, "Mock error!")));
+                return Err(ProjectRepoError::Filesystem(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::Other, "Mock error!"))));
             }
 
             let id = project.get_id();
@@ -478,7 +479,7 @@ mod test {
             self.call_tracker.write().unwrap().open_project_calls += 1;
 
             if self.settings.fail_calls {
-                return Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::Other, "Mock error!")));
+                return Err(ProjectRepoError::Filesystem(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::Other, "Mock error!"))));
             }
 
             if *self.is_project_open.read().unwrap() {
@@ -491,7 +492,7 @@ mod test {
                     *is_project_open = true;
                     Ok(project.get_id())
                 },
-                None => Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::NotFound, "Project not found"))),
+                None => Err(ProjectRepoError::Filesystem(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::Other, "Mock error!")))),
             }
         }
 
@@ -499,7 +500,7 @@ mod test {
             self.call_tracker.write().unwrap().close_project_calls += 1;
 
             if self.settings.fail_calls {
-                return Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::Other, "Mock error!")));
+                return Err(ProjectRepoError::Filesystem(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::Other, "Mock error!"))));
             }
 
             if !*self.is_project_open.read().unwrap() {
@@ -515,7 +516,7 @@ mod test {
             self.call_tracker.write().unwrap().save_project_calls += 1;
 
             if self.settings.fail_calls {
-                return Err(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::Other, "Mock error!")));
+                return Err(ProjectRepoError::Filesystem(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::Other, "Mock error!"))));
             }
 
             if !*self.is_project_open.read().unwrap() {
@@ -525,7 +526,7 @@ mod test {
             self.project.read().unwrap().clone()
                 .map(|project| project.get_settings().path.clone())
                 .flatten()
-                .ok_or(ProjectRepoError::Filesystem(io::Error::new(io::ErrorKind::NotFound, "Project not found")))
+                .ok_or(ProjectRepoError::Filesystem(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::NotFound, "Project not found"))))
         }
     }
 

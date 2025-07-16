@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -7,7 +6,7 @@ use dashmap::DashMap;
 use tokio::sync::RwLock;
 use crate::data::domain::project::{Project, ProjectID};
 use crate::RUNTIME;
-use crate::services::filesystem_service::{FilesystemProvider, FilesystemService};
+use crate::services::filesystem_service::{FilesystemProvider, FilesystemProviderError, FilesystemService};
 
 static PROJECT_EXTENSION: &str = "json";
 
@@ -139,7 +138,7 @@ pub type Result<T> = std::result::Result<T, ProjectRepoError>;
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectRepoError {
     #[error(transparent)]
-    Filesystem(#[from] io::Error),
+    Filesystem(#[from] FilesystemProviderError),
     #[error(transparent)]
     Create(#[from] ProjectCreationError),
     #[error(transparent)]
