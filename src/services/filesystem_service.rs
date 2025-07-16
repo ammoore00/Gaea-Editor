@@ -200,11 +200,13 @@ impl FilesystemProvider for FilesystemService {
     }
 
     async fn copy_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()> {
-        todo!()
+        tokio::fs::copy(source.as_ref(), destination.as_ref()).await?;
+        Ok(())
     }
 
     async fn move_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()> {
-        todo!()
+        tokio::fs::rename(source.as_ref(), destination.as_ref()).await?;
+        Ok(())
     }
 
     async fn create_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
@@ -603,6 +605,149 @@ mod tests {
             let path = ctx.path("test.txt");
             let content = b"Hello World";
             tokio::fs::write(&path, content).await.unwrap();
+            
+            // When I delete it
+            ctx.service.delete_file(&path, FileDeleteOptions::AllowNonexistent).await.unwrap();
+            
+            // Then it should be deleted
+            assert!(!path.exists());
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_delete_file_required(#[future] test_context: TestContext) {
+            // Given a basic text file
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            let content = b"Hello World";
+            tokio::fs::write(&path, content).await.unwrap();
+
+            // When I delete it, requiring it to be there
+            ctx.service.delete_file(&path, FileDeleteOptions::ErrorIfNotExists).await.unwrap();
+
+            // Then it should be deleted
+            assert!(!path.exists());
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_delete_nonexistent_file(#[future] test_context: TestContext) {
+            // Given a file that does not exist
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            assert!(!path.exists());
+
+            // When I try to delete it
+            let result = ctx.service.delete_file(&path, FileDeleteOptions::AllowNonexistent).await;
+
+            // Then it should not throw an error
+            assert!(result.is_ok());
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_delete_file_nonexistent_required(#[future] test_context: TestContext) {
+            // Given a file that does not exist
+            let ctx = test_context.await;
+            let path = ctx.path("test.txt");
+            assert!(!path.exists());
+
+            // When I try to delete it
+            let result = ctx.service.delete_file(&path, FileDeleteOptions::ErrorIfNotExists).await;
+
+            // Then it should throw an error
+            assert!(result.is_err());
+            assert!(match result.unwrap_err() {
+                FilesystemProviderError::IO(err) => err.kind() == io::ErrorKind::NotFound,
+                _ => false,
+            });
+        }
+
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_move_file(#[future] test_context: TestContext) {
+            // Given a basic text file
+            let ctx = test_context.await;
+            let src_path = ctx.path("src.txt");
+            let dest_path = ctx.path("dest.txt");
+            let content = b"Hello World";
+            tokio::fs::write(&src_path, content).await.unwrap();
+
+            // When I move the file
+            ctx.service.move_file(&src_path, &dest_path).await.unwrap();
+
+            // Then the source file should no longer exist
+            assert!(!src_path.exists());
+
+            // And the destination file should contain the expected content
+            let result = tokio::fs::read(dest_path).await.unwrap();
+            assert_eq!(result.as_slice(), content);
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_copy_file(#[future] test_context: TestContext) {
+            // Given a basic text file
+            let ctx = test_context.await;
+            let src_path = ctx.path("src.txt");
+            let dest_path = ctx.path("dest.txt");
+            let content = b"Hello World";
+            tokio::fs::write(&src_path, content).await.unwrap();
+
+            // When I copy the file
+            ctx.service.copy_file(&src_path, &dest_path).await.unwrap();
+
+            // Then both the source and destination files should exist
+            assert!(src_path.exists());
+            assert!(dest_path.exists());
+
+            // And the destination file should contain the expected content
+            let result = tokio::fs::read(dest_path).await.unwrap();
+            assert_eq!(result.as_slice(), content);
+
+            // The source file content should remain unchanged
+            let original = tokio::fs::read(src_path).await.unwrap();
+            assert_eq!(original.as_slice(), content);
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_move_nonexistent_file(#[future] test_context: TestContext) {
+            // Given a source path that does not exist
+            let ctx = test_context.await;
+            let src_path = ctx.path("nonexistent.txt");
+            let dest_path = ctx.path("dest.txt");
+            assert!(!src_path.exists());
+
+            // When I try to move the file
+            let result = ctx.service.move_file(&src_path, &dest_path).await;
+
+            // Then it should return an error
+            assert!(result.is_err());
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        #[serial(filesystem)]
+        async fn test_copy_nonexistent_file(#[future] test_context: TestContext) {
+            // Given a source path that does not exist
+            let ctx = test_context.await;
+            let src_path = ctx.path("nonexistent.txt");
+            let dest_path = ctx.path("dest.txt");
+            assert!(!src_path.exists());
+
+            // When I try to copy the file
+            let result = ctx.service.copy_file(&src_path, &dest_path).await;
+
+            // Then it should return an error
+            assert!(result.is_err());
         }
     }
 }
