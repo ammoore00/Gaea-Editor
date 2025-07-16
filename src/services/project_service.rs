@@ -574,11 +574,11 @@ mod test {
             self.call_tracker.write().unwrap().extract_calls += 1;
             
             if self.settings.read().unwrap().fail_extract {
-                return Err(zip_service::ZipError::IOError(io::Error::new(io::ErrorKind::Other, "Mock error!")))
+                return Err(zip_service::ZipError::IOError(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::Other, "Mock error!"))))
             }
             
             self.serialized_project.clone()
-                .ok_or(zip_service::ZipError::IOError(io::Error::new(io::ErrorKind::NotFound, "Project not found")))
+                .ok_or(zip_service::ZipError::IOError(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::NotFound, "Project not found"))))
                 .map_err(Into::into)
         }
 
@@ -586,11 +586,11 @@ mod test {
             self.call_tracker.write().unwrap().zip_calls += 1;
 
             if self.settings.read().unwrap().fail_zip {
-                return Err(zip_service::ZipError::IOError(io::Error::new(io::ErrorKind::Other, "Mock error!")))
+                return Err(zip_service::ZipError::IOError(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::Other, "Mock error!"))))
             }
             
             if self.settings.read().unwrap().project_already_exists && !overwrite_existing {
-                return Err(zip_service::ZipError::IOError(io::Error::new(io::ErrorKind::AlreadyExists, "Project already exists")))
+                return Err(zip_service::ZipError::IOError(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::AlreadyExists, "Project already exists"))))
             }
             
             Ok(())
@@ -600,7 +600,7 @@ mod test {
             self.call_tracker.write().unwrap().cleanup_calls += 1;
 
             if self.settings.read().unwrap().fail_cleanup {
-                return Err(zip_service::ZipError::IOError(io::Error::new(io::ErrorKind::Other, "Mock error!")))
+                return Err(zip_service::ZipError::IOError(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::Other, "Mock error!"))))
             }
 
             Ok(())

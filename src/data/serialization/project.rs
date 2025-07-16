@@ -9,7 +9,7 @@ use crate::data::serialization::pack_info::PackInfo;
 
 pub trait ZippableProject {
     fn zip(&self) -> Result<Vec<u8>, ZipError>;
-    fn extract(zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, io::Error> where Self: Sized;
+    fn extract(zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, ZipError> where Self: Sized;
 }
 
 #[derive(Debug, Clone, derive_new::new, getset::Getters)]
@@ -33,7 +33,7 @@ impl ZippableProject for Project {
         Ok(zip_data.into_inner())
     }
     
-    fn extract(mut zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, io::Error> {
+    fn extract(mut zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, ZipError> {
         let mut files = HashMap::new();
 
         // TODO: implement real file handling

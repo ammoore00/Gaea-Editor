@@ -32,6 +32,7 @@ impl FilesystemService {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum FileWriteOptions {
     /// Overwrite any existing file, or create a new file
     Overwrite,
@@ -43,6 +44,7 @@ pub enum FileWriteOptions {
     AppendDontCreate,
 }
 
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum FileDeleteOptions {
     /// Allow deleting a file that doesn't exist
     AllowNonexistent,
@@ -60,12 +62,13 @@ pub trait FilesystemProvider: Send + Sync {
     /// Callback
     async fn read_file_chunked<
         T: AsRef<Path> + Send,
-        E: Error + Send
+        F: FnMut(Vec<u8>) -> ChunkedFileReadResult<E> + Send,
+        E: Error + Send,
     >(
         &self,
         path: T,
         chunk_size: usize,
-        callback: impl FnMut(Vec<u8>) -> ChunkedFileReadResult<E> + Send,
+        callback: F,
     ) -> Result<()>;
     async fn delete_file<T: AsRef<Path> + Send>(&self, path: T, options: FileDeleteOptions) -> Result<()>;
     async fn copy_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()>;
@@ -122,12 +125,13 @@ impl FilesystemProvider for FilesystemService {
 
     async fn read_file_chunked<
         T: AsRef<Path> + Send,
-        E: Error + Send
+        F: FnMut(Vec<u8>) -> ChunkedFileReadResult<E> + Send,
+        E: Error + Send,
     >(
         &self,
         path: T,
         chunk_size: usize,
-        mut callback: impl FnMut(Vec<u8>) -> ChunkedFileReadResult<E> + Send,
+        mut callback: F,
     ) -> Result<()> {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(5);
         let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
