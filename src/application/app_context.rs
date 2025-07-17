@@ -2,23 +2,29 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::data::serialization::project::Project as SerializedProject;
 use crate::repositories::{adapter_repo, project_repo};
-use crate::services::project_service::{ProjectService, ProjectServiceProvider};
-use crate::services::{project_service, undo_service, zip_service};
+use crate::services::filesystem_service::{DefaultFilesystemProvider, FilesystemProvider};
+use crate::services::project_service::{self, ProjectService, ProjectServiceProvider};
+use crate::services::zip_service;
+use crate::services::translation_service::{TranslationProvider, TranslationService};
 use crate::services::undo_service::{UndoProvider, UndoService};
 
 pub struct Uninitialized;
+pub struct FilesystemInitialized;
 pub struct ProjectServiceInitialized;
 pub struct Finalized;
 
 pub struct AppContextBuilder<State> {
     _phantom: std::marker::PhantomData<State>,
     
+    filesystem_service: Option<FilesystemServiceContext>,
     project_service: Option<ProjectServiceContext>,
     undo_service_context: Option<UndoServiceContext>,
 }
 
 impl Default for AppContextBuilder<Finalized> {
     fn default() -> Self {
+        let filesystem_service = FilesystemServiceContext(Arc::new(RwLock::new(DefaultFilesystemProvider::new())));
+        
         let project_service = ProjectService::new(
             project_service::DefaultProjectProvider::default(),
             project_service::DefaultZipService::default(),
@@ -28,6 +34,7 @@ impl Default for AppContextBuilder<Finalized> {
         let undo_service = UndoService::new();
         
         let self_ = AppContextBuilder::new()
+            .with_filesystem(filesystem_service)
             .with_project_service(project_service)
             .with_undo_service(undo_service);
         
@@ -40,11 +47,25 @@ impl AppContextBuilder<Uninitialized> {
         Self {
             _phantom: std::marker::PhantomData,
             
+            filesystem_service: None,
             project_service: None,
             undo_service_context: None,
         }
     }
     
+    pub fn with_filesystem(self, filesystem: impl FilesystemProvider + Send + Sync + 'static) -> AppContextBuilder<FilesystemInitialized> {
+        AppContextBuilder::<FilesystemInitialized> {
+            filesystem_service: Some(FilesystemServiceContext(Arc::new(RwLock::new(filesystem)))),
+
+            _phantom: std::marker::PhantomData,
+            project_service: None,
+            undo_service_context: None,
+        }
+    }
+}
+
+impl AppContextBuilder<FilesystemInitialized> {
+
     pub fn with_project_service<ProjectProvider, ZipProvider, AdapterProvider>(self, project_service: ProjectService<ProjectProvider, ZipProvider, AdapterProvider>) -> AppContextBuilder<ProjectServiceInitialized>
     where
         ProjectProvider: project_repo::ProjectProvider + Send + Sync + 'static,
@@ -83,6 +104,8 @@ impl AppContextBuilder<Finalized> {
         AppContext {
             project_service_context,
             undo_service_context,
+            
+            translation_service: Arc::new(RwLock::new(TranslationService::try_default().expect("Failed to initialize translation service"))),
         }
     }
 }
@@ -90,7 +113,11 @@ impl AppContextBuilder<Finalized> {
 pub struct AppContext {
     project_service_context: ProjectServiceContext,
     undo_service_context: UndoServiceContext,
+    
+    translation_service: Arc<RwLock<TranslationService>>,
 }
+
+pub struct FilesystemServiceContext(Arc<RwLock<dyn FilesystemProvider>>);
 
 pub struct ProjectServiceContext(Arc<RwLock<dyn ProjectServiceProvider>>);
 
@@ -107,3 +134,5 @@ impl ProjectServiceContext {
 }
 
 pub struct UndoServiceContext(Arc<RwLock<dyn UndoProvider>>);
+
+pub struct TranslationServiceContext(Arc<RwLock<dyn TranslationProvider>>);

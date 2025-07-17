@@ -38,20 +38,20 @@ pub fn derive_translation_key(input: TokenStream) -> TokenStream {
     let variant_names = variants.iter().map(|variant| &variant.ident);
 
     let expanded = quote! {
-        impl #enum_name {
-            pub fn key(&self) -> &'static str {
+        impl TranslationKey for #enum_name {
+            fn key(&self) -> &'static str {
                 match self {
                     #(#variant_matches)*
                 }
             }
 
-            pub fn english_text(&self) -> &'static str {
+            fn english_text(&self) -> &'static str {
                 match self {
                     #(#english_matches)*
                 }
             }
 
-            pub fn all_variants() -> Vec<Self> {
+            fn all_variants() -> Vec<Self> {
                 vec![
                     #(Self::#variant_names,)*
                 ]
@@ -72,7 +72,7 @@ fn extract_english_text(attrs: &[Attribute]) -> Option<String> {
                     // If we have a name-value pair inside
                     if let Meta::NameValue(name_value) = nested {
                         // Check if the name is "en"
-                        if name_value.path.is_ident("en") {
+                        if name_value.path.is_ident("en_us") {
                             // Extract the string value
                             if let Expr::Lit(expr_lit) = name_value.value {
                                 if let Lit::Str(lit_str) = expr_lit.lit {

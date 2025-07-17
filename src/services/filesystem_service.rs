@@ -24,6 +24,8 @@ pub enum ChunkedFileReadResult<E: Error + Send = Infallible> {
     Err(E),
 }
 
+pub type DefaultFilesystemProvider = FilesystemService;
+
 pub struct FilesystemService;
 
 impl FilesystemService {
@@ -53,7 +55,7 @@ pub enum FileDeleteOptions {
 }
 
 #[async_trait::async_trait]
-pub trait FilesystemProvider: Send + Sync {
+pub trait FilesystemProvider: Send + Sync + Sized {
     /// Write contents to a file
     async fn write_file<T: AsRef<Path> + Send>(&self, path: T, content: &[u8], options: FileWriteOptions) -> Result<()>;
     async fn read_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<Vec<u8>>;
@@ -277,6 +279,7 @@ impl FilesystemProvider for FilesystemService {
     }
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum PathValidationStatus {
     /// Path is fully valid
     Valid {

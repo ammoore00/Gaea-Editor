@@ -1,3 +1,4 @@
+use crate::services::translation_service::TranslationKey;
 use std::fmt::{Display, Formatter};
 use crate::data::domain::resource::resource::ResourceLocation;
 use crate::data::serialization::text_component::TextComponent;
@@ -12,9 +13,9 @@ pub struct PackInfo {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, translation_macro::TranslationKey)]
 pub enum PackInfoTranslationKeys {
-    #[translation(en = "A Resource Pack for Minecraft")]
+    #[translation(en_us = "A Resource Pack for Minecraft")]
     DefaultResourceDescription,
-    #[translation(en = "A Data Pack for Minecraft")]
+    #[translation(en_us = "A Data Pack for Minecraft")]
     DefaultDataDescription,
 }
 

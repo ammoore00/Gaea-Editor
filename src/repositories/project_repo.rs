@@ -6,7 +6,7 @@ use dashmap::DashMap;
 use tokio::sync::RwLock;
 use crate::data::domain::project::{Project, ProjectID};
 use crate::RUNTIME;
-use crate::services::filesystem_service::{FilesystemProvider, FilesystemProviderError, FilesystemService};
+use crate::services::filesystem_service::{DefaultFilesystemProvider, FilesystemProvider, FilesystemProviderError, FilesystemService};
 
 static PROJECT_EXTENSION: &str = "json";
 
@@ -33,8 +33,6 @@ pub trait ProjectProvider {
         PROJECT_EXTENSION
     }
 }
-
-pub type DefaultFilesystemProvider = FilesystemService;
 
 pub struct ProjectRepository<Filesystem: FilesystemProvider = DefaultFilesystemProvider> {
     filesystem_provider: Filesystem,
