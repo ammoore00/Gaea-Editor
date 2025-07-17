@@ -282,4 +282,14 @@ mod tests {
         TranslationService::try_new("en_us", Path::new("./resources/assets/localization"), Arc::new(RwLock::new(mock_filesystem)))
             .expect("Failed to create test translation service")
     }
+    
+    /// Tests handling the construction of the translation service and loading of the translation files
+    mod file_tests {
+        use super::*;
+    }
+    
+    /// Tests handling the implementation of the public API for the translation service
+    mod api_tests {
+        use super::*;
+    }
 }
