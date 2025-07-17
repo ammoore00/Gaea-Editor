@@ -18,10 +18,10 @@ pub enum FilesystemProviderError {
 }
 
 #[derive(Debug)]
-pub enum ChunkedFileReadResult<E: Error + Send = Infallible> {
+pub enum ChunkedFileReadResult {
     Continue,
     Done,
-    Err(E),
+    Err(anyhow::Error),
 }
 
 pub type DefaultFilesystemProvider = FilesystemService;
@@ -55,34 +55,30 @@ pub enum FileDeleteOptions {
 }
 
 #[async_trait::async_trait]
-pub trait FilesystemProvider: Send + Sync + Sized {
+pub trait FilesystemProvider: Send + Sync {
     /// Write contents to a file
-    async fn write_file<T: AsRef<Path> + Send>(&self, path: T, content: &[u8], options: FileWriteOptions) -> Result<()>;
-    async fn read_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<Vec<u8>>;
+    async fn write_file(&self, path: &Path, content: &[u8], options: FileWriteOptions) -> Result<()>;
+    async fn read_file(&self, path: &Path) -> Result<Vec<u8>>;
 
     /// Read file in chunks
     /// Callback
-    async fn read_file_chunked<
-        T: AsRef<Path> + Send,
-        F: FnMut(Vec<u8>) -> ChunkedFileReadResult<E> + Send,
-        E: Error + Send,
-    >(
+    async fn read_file_chunked(
         &self,
-        path: T,
+        path: &Path,
         chunk_size: usize,
-        callback: F,
+        callback: Box<dyn FnMut(Vec<u8>) -> ChunkedFileReadResult + Send>,
     ) -> Result<()>;
-    async fn delete_file<T: AsRef<Path> + Send>(&self, path: T, options: FileDeleteOptions) -> Result<()>;
-    async fn copy_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()>;
-    async fn move_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()>;
-    async fn create_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<()>;
-    async fn create_directory_recursive<T: AsRef<Path> + Send>(&self, path: T) -> Result<()>;
-    async fn delete_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<()>;
-    async fn list_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<Vec<PathBuf>>;
-    async fn validate_path<T: AsRef<Path> + Send>(&self, path: T) -> Result<PathValidationStatus>;
-    async fn file_exists<T: AsRef<Path> + Send>(&self, path: T) -> Result<bool>;
-    async fn is_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<bool>;
-    async fn get_metadata<T: AsRef<Path> + Send>(&self, path: T) -> Result<Metadata>;
+    async fn delete_file(&self, path: &Path, options: FileDeleteOptions) -> Result<()>;
+    async fn copy_file(&self, source: &Path, destination: &Path) -> Result<()>;
+    async fn move_file(&self, source: &Path, destination: &Path) -> Result<()>;
+    async fn create_directory(&self, path: &Path) -> Result<()>;
+    async fn create_directory_recursive(&self, path: &Path) -> Result<()>;
+    async fn delete_directory(&self, path: &Path) -> Result<()>;
+    async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>>;
+    async fn validate_path(&self, path: &Path) -> Result<PathValidationStatus>;
+    async fn file_exists(&self, path: &Path) -> Result<bool>;
+    async fn is_directory(&self, path: &Path) -> Result<bool>;
+    async fn get_metadata(&self, path: &Path) -> Result<Metadata>;
     
     // TODO: Symlink support (needs OS-specific handling)
     // TODO: FileReader for more complex read operations
@@ -90,7 +86,7 @@ pub trait FilesystemProvider: Send + Sync + Sized {
 
 #[async_trait::async_trait]
 impl FilesystemProvider for FilesystemService {
-    async fn write_file<T: AsRef<Path> + Send>(&self, path: T, content: &[u8], options: FileWriteOptions) -> Result<()> {
+    async fn write_file(&self, path: &Path, content: &[u8], options: FileWriteOptions) -> Result<()> {
         let mut file = OpenOptions::new();
         file.write(true);
         
@@ -118,27 +114,23 @@ impl FilesystemProvider for FilesystemService {
         Ok(())
     }
 
-    async fn read_file<T: AsRef<Path> + Send>(&self, path: T) -> Result<Vec<u8>> {
+    async fn read_file(&self, path: &Path) -> Result<Vec<u8>> {
         let mut file = tokio::fs::File::open(path).await?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer).await?;
         Ok(buffer)
     }
 
-    async fn read_file_chunked<
-        T: AsRef<Path> + Send,
-        F: FnMut(Vec<u8>) -> ChunkedFileReadResult<E> + Send,
-        E: Error + Send,
-    >(
+    async fn read_file_chunked(
         &self,
-        path: T,
+        path: &Path,
         chunk_size: usize,
-        mut callback: F,
+        mut callback: Box<dyn FnMut(Vec<u8>) -> ChunkedFileReadResult + Send>,
     ) -> Result<()> {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(5);
         let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
 
-        let file_path = path.as_ref().to_path_buf();
+        let file_path = path.to_path_buf();
 
         // Spawn a task to read the file and send chunks
         let read_task = tokio::spawn(async move {
@@ -186,7 +178,7 @@ impl FilesystemProvider for FilesystemService {
         read_task.await?
     }
 
-    async fn delete_file<T: AsRef<Path> + Send>(&self, path: T, options: FileDeleteOptions) -> Result<()> {
+    async fn delete_file(&self, path: &Path, options: FileDeleteOptions) -> Result<()> {
         let result = tokio::fs::remove_file(path).await;
 
         match options {
@@ -205,32 +197,32 @@ impl FilesystemProvider for FilesystemService {
         }
     }
 
-    async fn copy_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()> {
-        tokio::fs::copy(source.as_ref(), destination.as_ref()).await?;
+    async fn copy_file(&self, source: &Path, destination: &Path) -> Result<()> {
+        tokio::fs::copy(source, destination).await?;
         Ok(())
     }
 
-    async fn move_file<T: AsRef<Path> + Send>(&self, source: T, destination: T) -> Result<()> {
-        tokio::fs::rename(source.as_ref(), destination.as_ref()).await?;
+    async fn move_file(&self, source: &Path, destination: &Path) -> Result<()> {
+        tokio::fs::rename(source, destination).await?;
         Ok(())
     }
 
-    async fn create_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
+    async fn create_directory(&self, path: &Path) -> Result<()> {
         tokio::fs::create_dir(path).await?;
         Ok(())
     }
 
-    async fn create_directory_recursive<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
+    async fn create_directory_recursive(&self, path: &Path) -> Result<()> {
         tokio::fs::create_dir_all(path).await?;
         Ok(())
     }
 
-    async fn delete_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<()> {
+    async fn delete_directory(&self, path: &Path) -> Result<()> {
         tokio::fs::remove_dir(path).await?;
         Ok(())
     }
 
-    async fn list_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<Vec<PathBuf>> {
+    async fn list_directory(&self, path: &Path) -> Result<Vec<PathBuf>> {
         let mut entries = tokio::fs::read_dir(path).await?;
         let mut result = Vec::new();
 
@@ -241,15 +233,14 @@ impl FilesystemProvider for FilesystemService {
         Ok(result)
     }
 
-    async fn validate_path<T: AsRef<Path> + Send>(&self, path: T) -> Result<PathValidationStatus> {
-        let path_ref = path.as_ref();
-        if path_ref.exists() {
+    async fn validate_path(&self, path: &Path) -> Result<PathValidationStatus> {
+        if path.exists() {
             Ok(PathValidationStatus::Valid {
-                is_file: path_ref.is_file(),
+                is_file: path.is_file(),
             })
         } else {
             let mut count = 0;
-            for parent in path_ref.ancestors() {
+            for parent in path.ancestors() {
                 if parent.exists() {
                     break;
                 }
@@ -261,11 +252,11 @@ impl FilesystemProvider for FilesystemService {
         }
     }
 
-    async fn file_exists<T: AsRef<Path> + Send>(&self, path: T) -> Result<bool> {
+    async fn file_exists(&self, path: &Path) -> Result<bool> {
         Ok(tokio::fs::metadata(path).await.is_ok())
     }
 
-    async fn is_directory<T: AsRef<Path> + Send>(&self, path: T) -> Result<bool> {
+    async fn is_directory(&self, path: &Path) -> Result<bool> {
         let result = tokio::fs::metadata(path).await
             .map(|metadata| metadata.is_dir())
             .unwrap_or(false);
@@ -273,7 +264,7 @@ impl FilesystemProvider for FilesystemService {
         Ok(result)
     }
 
-    async fn get_metadata<T: AsRef<Path> + Send>(&self, path: T) -> Result<Metadata> {
+    async fn get_metadata(&self, path: &Path) -> Result<Metadata> {
         let metadata = tokio::fs::metadata(path).await?;
         Ok(metadata)
     }
@@ -513,6 +504,9 @@ mod tests {
     }
     
     mod read {
+        use std::cell::RefCell;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
         use super::*;
 
         #[rstest::rstest]
@@ -561,19 +555,20 @@ mod tests {
             tokio::fs::write(&path, content.clone()).await.unwrap();
             
             // When I read that file in chunks
-            let calls = &mut 0;
+            let calls = Arc::new(AtomicUsize::new(0));
+            let calls_cloned = calls.clone();
             
-            ctx.service.read_file_chunked(&path, 1024, |chunk| {
+            ctx.service.read_file_chunked(&path, 1024, Box::new(move |chunk| {
                 // Then each chunk should match the expected value
                 let expected_content = content.chunks(1024).next().unwrap();
                 assert_eq!(expected_content, chunk);
-                
-                *calls += 1;
-                ChunkedFileReadResult::<Infallible>::Continue
-            }).await.unwrap();
+
+                calls_cloned.fetch_add(1, Ordering::SeqCst);
+                ChunkedFileReadResult::Continue
+            })).await.unwrap();
             
             // Sanity check that the correct number of chunks were read
-            assert_eq!(*calls, filesize_kb);
+            assert_eq!(calls.load(Ordering::SeqCst), filesize_kb);
         }
 
         #[rstest::rstest]
@@ -589,21 +584,22 @@ mod tests {
             tokio::fs::write(&path, content.clone()).await.unwrap();
 
             // When I read that file in chunks, then abort half way
-            let calls = &mut 0;
+            let calls = Arc::new(AtomicUsize::new(0));
+            let calls_cloned = calls.clone();
 
-            ctx.service.read_file_chunked(&path, 1024, |chunk| {
-                *calls += 1;
+            ctx.service.read_file_chunked(&path, 1024, Box::new(move |chunk| {
+                calls_cloned.fetch_add(1, Ordering::SeqCst);
                 
-                if *calls < filesize_kb / 2 {
-                    ChunkedFileReadResult::<Infallible>::Continue
+                if calls_cloned.load(Ordering::SeqCst) < filesize_kb / 2 {
+                    ChunkedFileReadResult::Continue
                 }
                 else {
-                    ChunkedFileReadResult::<Infallible>::Done
+                    ChunkedFileReadResult::Done
                 }
-            }).await.unwrap();
+            })).await.unwrap();
 
             // Then only part of the file should be read
-            assert_eq!(*calls, filesize_kb / 2);
+            assert_eq!(calls.load(Ordering::SeqCst), filesize_kb / 2);
         }
         
         #[derive(Debug, thiserror::Error)]
@@ -623,9 +619,9 @@ mod tests {
             tokio::fs::write(&path, content.clone()).await.unwrap();
 
             // When I read that file in chunks, but an error is thrown by the callback
-            let result = ctx.service.read_file_chunked(&path, 1024, |chunk| {
-                ChunkedFileReadResult::Err(TestError)
-            }).await;
+            let result = ctx.service.read_file_chunked(&path, 1024, Box::new(|chunk| {
+                ChunkedFileReadResult::Err(TestError.into())
+            })).await;
             
             // Then the error should be passed through
             assert!(result.is_err());

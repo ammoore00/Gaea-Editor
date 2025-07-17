@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::{fs, io};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use serde::de::Error;
+use tokio::sync::RwLock;
 use crate::RUNTIME;
-use crate::services::filesystem_service::{DefaultFilesystemProvider, FilesystemProvider, FilesystemProviderError, FilesystemService, PathValidationStatus};
+use crate::services::filesystem_service::{DefaultFilesystemProvider, FilesystemProvider, FilesystemProviderError, PathValidationStatus};
 
 pub type DefaultTranslationProvider = TranslationService;
 
@@ -23,22 +25,20 @@ pub struct TranslationService<Filesystem: FilesystemProvider + Send + Sync + 'st
     
     languages: HashMap<String, Language>,
     
-    filesystem: Filesystem,
-}
-
-impl TranslationService {
-    pub fn try_default() -> Result<Self, TranslationError> {
-        Self::try_new("en_us", Path::new("./resources/assets/localization"), FilesystemService::new())
-    }
+    filesystem: Arc<RwLock<Filesystem>>,
 }
 
 impl<Filesystem> TranslationService<Filesystem>
 where
     Filesystem: FilesystemProvider + Send + Sync + 'static,
 {
-    pub fn try_new(language_code: &str, language_path: impl AsRef<Path> + Send, filesystem: Filesystem) -> Result<Self, TranslationError> {
+    pub fn try_with_default_language(filesystem: Arc<RwLock<Filesystem>>) -> Result<Self, TranslationError> {
+        Self::try_new("en_us", Path::new("./resources/assets/localization"), filesystem)
+    }
+    
+    pub fn try_new(language_code: &str, language_path: impl AsRef<Path> + Send, filesystem: Arc<RwLock<Filesystem>>) -> Result<Self, TranslationError> {
         let languages = RUNTIME.block_on(
-            Self::read_languages(&filesystem, language_path)
+            Self::read_languages(filesystem.clone(), language_path)
         )?;
 
         let mut self_ = Self {
@@ -53,12 +53,12 @@ where
         };
 
         RUNTIME.block_on(async {
-            self_.default_translation_map = Self::load_translations(&self_.filesystem, "en_us").await?;
+            self_.default_translation_map = Self::load_translations(self_.filesystem.clone(), "en_us").await?;
 
             if language_code == "en_us" {
                 self_.translation_map = self_.default_translation_map.clone();
             } else {
-                self_.translation_map = Self::load_translations(&self_.filesystem, self_.current_language_code.as_str()).await?;
+                self_.translation_map = Self::load_translations(self_.filesystem.clone(), self_.current_language_code.as_str()).await?;
             }
             
             Ok::<(), TranslationError>(())
@@ -67,20 +67,20 @@ where
         Ok(self_)
     }
     
-    async fn load_translations(filesystem: &Filesystem, language_code: &str) -> Result<HashMap<String, String>, TranslationError> {
+    async fn load_translations(filesystem: Arc<RwLock<Filesystem>>, language_code: &str) -> Result<HashMap<String, String>, TranslationError> {
         todo!()
     }
     
-    async fn read_languages(filesystem: &Filesystem, path: impl AsRef<Path> + Send) -> Result<HashMap<String, Language>, TranslationError> {
+    async fn read_languages(filesystem: Arc<RwLock<Filesystem>>, path: impl AsRef<Path> + Send) -> Result<HashMap<String, Language>, TranslationError> {
         let path = path.as_ref();
         let mut languages = HashMap::new();
         
-        if !matches!(filesystem.validate_path(path).await?, PathValidationStatus::Valid { is_file: false }) {
+        if !matches!(filesystem.read().await.validate_path(path).await?, PathValidationStatus::Valid { is_file: false }) {
             return Err(TranslationError::InvalidFilepath(path.to_path_buf()));
         }
         
-        for filepath in filesystem.list_directory(path).await? {
-            if !filesystem.is_directory(filepath.as_path()).await? {
+        for filepath in filesystem.read().await.list_directory(path).await? {
+            if !filesystem.read().await.is_directory(filepath.as_path()).await? {
                 continue;
             }
             
@@ -93,7 +93,7 @@ where
 
                 use serde_json::Value;
 
-                let file_contents = filesystem.read_file(filepath.as_path()).await?;
+                let file_contents = filesystem.read().await.read_file(filepath.as_path()).await?;
                 let file = io::Cursor::new(file_contents);
                 let reader = io::BufReader::new(file);
                 let json: Value = serde_json::from_reader(reader)?;
@@ -134,7 +134,7 @@ where
         
         self.current_language_code = language.code.clone();
         self.translation_map = RUNTIME.block_on(
-            Self::load_translations(&self.filesystem, self.current_language_code.as_str())
+            Self::load_translations(self.filesystem.clone(), self.current_language_code.as_str())
         )?;
         
         Ok(())
@@ -150,7 +150,7 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-enum TranslationError {
+pub enum TranslationError {
     #[error(transparent)]
     IO(#[from] FilesystemProviderError),
     #[error(transparent)]
@@ -198,31 +198,31 @@ mod tests {
 
     #[async_trait]
     impl<T: TestFilesystemProvider + Send + Sync> FilesystemProvider for FilesystemProviderAdapter<T> {
-        async fn write_file<P: AsRef<Path> + Send>(&self, _path: P, _content: &[u8], _options: FileWriteOptions) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn write_file(&self, path: &Path, _content: &[u8], _options: FileWriteOptions) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
 
-        async fn read_file<P: AsRef<Path> + Send>(&self, path: P) -> filesystem_service::Result<Vec<u8>> {
+        async fn read_file(&self, path: &Path) -> filesystem_service::Result<Vec<u8>> {
             self.0.read_file(path.as_ref()).await
         }
 
-        async fn read_file_chunked<P: AsRef<Path> + Send, F: FnMut(Vec<u8>) -> ChunkedFileReadResult<E> + Send, E: std::error::Error + Send>(&self, _path: P, _chunk_size: usize, _callback: F) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn delete_file<P: AsRef<Path> + Send>(&self, _path: P, _options: FileDeleteOptions) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn copy_file<P: AsRef<Path> + Send>(&self, _source: P, _destination: P) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn move_file<P: AsRef<Path> + Send>(&self, _source: P, _destination: P) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn create_directory<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn create_directory_recursive<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn delete_directory<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn list_directory<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<Vec<PathBuf>> { unimplemented!("Not needed for these tests") }
-        async fn validate_path<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<PathValidationStatus> { unimplemented!("Not needed for these tests") }
+        async fn read_file_chunked(&self, path: &Path, chunk_size: usize, callback: Box<dyn FnMut(Vec<u8>) -> ChunkedFileReadResult + Send>,) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn delete_file(&self, path: &Path, _options: FileDeleteOptions) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn copy_file(&self, _source: &Path, _destination: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn move_file(&self, _source: &Path, _destination: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn create_directory(&self, path: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn create_directory_recursive(&self, path: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn delete_directory(&self, path: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn list_directory(&self, path: &Path) -> filesystem_service::Result<Vec<PathBuf>> { unimplemented!("Not needed for these tests") }
+        async fn validate_path(&self, path: &Path) -> filesystem_service::Result<PathValidationStatus> { unimplemented!("Not needed for these tests") }
 
-        async fn file_exists<P: AsRef<Path> + Send>(&self, path: P) -> filesystem_service::Result<bool> {
+        async fn file_exists(&self, path: &Path) -> filesystem_service::Result<bool> {
             self.0.file_exists(path.as_ref()).await
         }
 
-        async fn is_directory<P: AsRef<Path> + Send>(&self, path: P) -> filesystem_service::Result<bool> {
+        async fn is_directory(&self, path: &Path) -> filesystem_service::Result<bool> {
             self.0.is_directory(path.as_ref()).await
         }
 
-        async fn get_metadata<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<Metadata> { unimplemented!("Not needed for these tests") }
+        async fn get_metadata(&self, path: &Path) -> filesystem_service::Result<Metadata> { unimplemented!("Not needed for these tests") }
     }
 
     mock! {
@@ -240,7 +240,7 @@ mod tests {
     fn translation_service() -> TranslationService<FilesystemProviderAdapter<MockFilesystemProviderMock>> {
         let mock_filesystem = MockFilesystemProviderMock::new();
         let mock_filesystem = FilesystemProviderAdapter(mock_filesystem);
-        TranslationService::try_new("en_us", Path::new("./resources/assets/localization"), mock_filesystem)
+        TranslationService::try_new("en_us", Path::new("./resources/assets/localization"), Arc::new(RwLock::new(mock_filesystem)))
             .expect("Failed to create test translation service")
     }
 }

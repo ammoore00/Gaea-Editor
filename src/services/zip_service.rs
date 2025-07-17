@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use zip::ZipArchive;
 use crate::data::serialization::project::ZippableProject;
 use crate::services::filesystem_service::{FileDeleteOptions, FileWriteOptions, FilesystemProvider, FilesystemProviderError, FilesystemService};
@@ -32,17 +34,18 @@ where
     Filesystem: FilesystemProvider,
 {
     _phantom: PhantomData<(T)>,
-    filesystem_provider: Filesystem,
+    filesystem_provider: Arc<RwLock<Filesystem>>,
 }
 
-impl<T> Default for ZipService<T>
+impl<T, Filesystem> ZipService<T, Filesystem>
 where
     T: Send + Sync + Sized + ZippableProject,
+    Filesystem: FilesystemProvider,
 {
-    fn default() -> Self {
+    pub fn new(filesystem_provider: Arc<RwLock<Filesystem>>) -> Self {
         Self {
             _phantom: PhantomData,
-            filesystem_provider: FilesystemService::new(),
+            filesystem_provider,
         }
     }
 }
@@ -54,7 +57,7 @@ where
     Filesystem: FilesystemProvider,
 {
     async fn extract(&self, path: &Path) -> Result<T> {
-        let zip_file = self.filesystem_provider.read_file(path).await?;
+        let zip_file = self.filesystem_provider.read().await.read_file(path).await?;
         let zip_file = std::io::Cursor::new(zip_file);
         let zip_archive = ZipArchive::new(zip_file)?;
         T::extract(zip_archive).map_err(ZipError::ZipArchiveError)
@@ -63,12 +66,12 @@ where
     async fn zip(&self, path: &Path, data: &T, overwrite_existing: bool) -> Result<()> {
         let zip_contents = data.zip()?;
         let settings = if overwrite_existing { FileWriteOptions::Overwrite } else { FileWriteOptions::CreateNew };
-        self.filesystem_provider.write_file(path, zip_contents.as_slice(), settings).await.map_err(ZipError::IOError)
+        self.filesystem_provider.read().await.write_file(path, zip_contents.as_slice(), settings).await.map_err(ZipError::IOError)
     }
 
     async fn cleanup_file(&self, path: &Path) -> Result<()> {
-        if self.filesystem_provider.file_exists(path).await? {
-            self.filesystem_provider.delete_file(path, FileDeleteOptions::ErrorIfNotExists).await?;
+        if self.filesystem_provider.read().await.file_exists(path).await? {
+            self.filesystem_provider.read().await.delete_file(path, FileDeleteOptions::ErrorIfNotExists).await?;
         }
         Ok(())
     }
@@ -101,34 +104,34 @@ mod test {
 
     #[async_trait]
     impl<T: TestFilesystemProvider + Send + Sync> FilesystemProvider for FilesystemProviderAdapter<T> {
-        async fn write_file<P: AsRef<Path> + Send>(&self, path: P, content: &[u8], options: FileWriteOptions) -> filesystem_service::Result<()> {
+        async fn write_file(&self, path: &Path, content: &[u8], options: FileWriteOptions) -> filesystem_service::Result<()> {
             self.0.write_file(path.as_ref(), content, options).await
         }
 
-        async fn read_file<P: AsRef<Path> + Send>(&self, path: P) -> filesystem_service::Result<Vec<u8>> {
+        async fn read_file(&self, path: &Path) -> filesystem_service::Result<Vec<u8>> {
             self.0.read_file(path.as_ref()).await
         }
 
-        async fn read_file_chunked<P: AsRef<Path> + Send, F: FnMut(Vec<u8>) -> ChunkedFileReadResult<E> + Send, E: Error + Send>(&self, _path: P, _chunk_size: usize, _callback: F) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn read_file_chunked(&self, path: &Path, chunk_size: usize, callback: Box<dyn FnMut(Vec<u8>) -> ChunkedFileReadResult + Send>,) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
 
-        async fn delete_file<P: AsRef<Path> + Send>(&self, path: P, options: FileDeleteOptions) -> filesystem_service::Result<()> {
+        async fn delete_file(&self, path: &Path, options: FileDeleteOptions) -> filesystem_service::Result<()> {
             self.0.delete_file(path.as_ref(), options).await
         }
 
-        async fn copy_file<P: AsRef<Path> + Send>(&self, _source: P, _destination: P) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn move_file<P: AsRef<Path> + Send>(&self, _source: P, _destination: P) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn create_directory<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn create_directory_recursive<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn delete_directory<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn list_directory<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<Vec<PathBuf>> { unimplemented!("Not needed for these tests") }
-        async fn validate_path<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<PathValidationStatus> { unimplemented!("Not needed for these tests") }
+        async fn copy_file(&self, _source: &Path, _destination: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn move_file(&self, _source: &Path, _destination: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn create_directory(&self, path: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn create_directory_recursive(&self, path: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn delete_directory(&self, path: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
+        async fn list_directory(&self, path: &Path) -> filesystem_service::Result<Vec<PathBuf>> { unimplemented!("Not needed for these tests") }
+        async fn validate_path(&self, path: &Path) -> filesystem_service::Result<PathValidationStatus> { unimplemented!("Not needed for these tests") }
 
-        async fn file_exists<P: AsRef<Path> + Send>(&self, path: P) -> filesystem_service::Result<bool> {
+        async fn file_exists(&self, path: &Path) -> filesystem_service::Result<bool> {
             self.0.file_exists(path.as_ref()).await
         }
 
-        async fn is_directory<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<bool> { unimplemented!("Not needed for these tests") }
-        async fn get_metadata<P: AsRef<Path> + Send>(&self, _path: P) -> filesystem_service::Result<Metadata> { unimplemented!("Not needed for these tests") }
+        async fn is_directory(&self, path: &Path) -> filesystem_service::Result<bool> { unimplemented!("Not needed for these tests") }
+        async fn get_metadata(&self, path: &Path) -> filesystem_service::Result<Metadata> { unimplemented!("Not needed for these tests") }
     }
 
     // Now create a mock for the simpler trait
@@ -184,7 +187,7 @@ mod test {
 
         let service = ZipService::<TestProject, FilesystemProviderAdapter<MockFilesystemProviderMock>> {
             _phantom: PhantomData,
-            filesystem_provider: FilesystemProviderAdapter(mock),
+            filesystem_provider: Arc::new(RwLock::new(FilesystemProviderAdapter(mock))),
         };
 
         // When I extract the file
@@ -205,7 +208,7 @@ mod test {
 
         let service = ZipService::<TestProject, FilesystemProviderAdapter<MockFilesystemProviderMock>> {
             _phantom: PhantomData,
-            filesystem_provider: FilesystemProviderAdapter(mock),
+            filesystem_provider: Arc::new(RwLock::new(FilesystemProviderAdapter(mock))),
         };
 
         // When I try to extract it
@@ -233,7 +236,7 @@ mod test {
 
         let service = ZipService::<TestProject, FilesystemProviderAdapter<MockFilesystemProviderMock>> {
             _phantom: PhantomData,
-            filesystem_provider: FilesystemProviderAdapter(mock),
+            filesystem_provider: Arc::new(RwLock::new(FilesystemProviderAdapter(mock))),
         };
 
         // When I try to zip it
@@ -259,7 +262,7 @@ mod test {
 
         let service = ZipService::<TestProject, FilesystemProviderAdapter<MockFilesystemProviderMock>> {
             _phantom: PhantomData,
-            filesystem_provider: FilesystemProviderAdapter(mock),
+            filesystem_provider: Arc::new(RwLock::new(FilesystemProviderAdapter(mock))),
         };
 
         // When I try to overwrite it
@@ -285,7 +288,7 @@ mod test {
 
         let service = ZipService::<TestProject, FilesystemProviderAdapter<MockFilesystemProviderMock>> {
             _phantom: PhantomData,
-            filesystem_provider: FilesystemProviderAdapter(mock),
+            filesystem_provider: Arc::new(RwLock::new(FilesystemProviderAdapter(mock))),
         };
 
         // When I try to overwrite it
@@ -308,7 +311,7 @@ mod test {
 
         let service = ZipService::<TestProject, FilesystemProviderAdapter<MockFilesystemProviderMock>> {
             _phantom: PhantomData,
-            filesystem_provider: FilesystemProviderAdapter(mock),
+            filesystem_provider: Arc::new(RwLock::new(FilesystemProviderAdapter(mock))),
         };
 
         // When I try to zip a project
@@ -334,7 +337,7 @@ mod test {
 
         let service = ZipService::<TestProject, FilesystemProviderAdapter<MockFilesystemProviderMock>> {
             _phantom: PhantomData,
-            filesystem_provider: FilesystemProviderAdapter(mock),
+            filesystem_provider: Arc::new(RwLock::new(FilesystemProviderAdapter(mock))),
         };
 
         let path = Path::new("existing.zip");
@@ -361,7 +364,7 @@ mod test {
 
         let service = ZipService::<TestProject, FilesystemProviderAdapter<MockFilesystemProviderMock>> {
             _phantom: PhantomData,
-            filesystem_provider: FilesystemProviderAdapter(mock),
+            filesystem_provider: Arc::new(RwLock::new(FilesystemProviderAdapter(mock))),
         };
 
         let path = PathBuf::from("nonexistent.zip");
@@ -387,7 +390,7 @@ mod test {
 
         let service = ZipService::<TestProject, FilesystemProviderAdapter<MockFilesystemProviderMock>> {
             _phantom: PhantomData,
-            filesystem_provider: FilesystemProviderAdapter(mock),
+            filesystem_provider: Arc::new(RwLock::new(FilesystemProviderAdapter(mock))),
         };
 
         let path = Path::new("existing.zip");

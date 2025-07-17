@@ -8,11 +8,11 @@ use crate::data::domain::pack_info::PackInfo;
 pub struct Project {
     settings: ProjectSettings,
     id: ProjectID,
-    
+
     // TODO: make this more comprehensive
     unsaved_changes: bool,
-    
-    pack_info: PackInfo,
+
+    //pack_info: PackInfo,
 }
 
 impl Project {
