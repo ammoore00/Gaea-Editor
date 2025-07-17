@@ -28,12 +28,15 @@ pub struct TranslationService<Filesystem: FilesystemProvider + Send + Sync + 'st
     filesystem: Arc<RwLock<Filesystem>>,
 }
 
+const DEFAULT_LANGUAGE_CODE: &str = "en_us";
+const DEFAULT_LANGUAGE_PATH: &str = "./resources/assets/localization";
+
 impl<Filesystem> TranslationService<Filesystem>
 where
     Filesystem: FilesystemProvider + Send + Sync + 'static,
 {
     pub fn try_with_default_language(filesystem: Arc<RwLock<Filesystem>>) -> Result<Self, TranslationError> {
-        Self::try_new("en_us", Path::new("./resources/assets/localization"), filesystem)
+        Self::try_new(DEFAULT_LANGUAGE_CODE, Path::new(DEFAULT_LANGUAGE_PATH), filesystem)
     }
     
     pub fn try_new(language_code: &str, language_path: impl AsRef<Path> + Send, filesystem: Arc<RwLock<Filesystem>>) -> Result<Self, TranslationError> {
@@ -53,9 +56,9 @@ where
                 filesystem,
             };
 
-            self_.default_translation_map = Self::load_translations(self_.language_path.as_path(), "en_us", self_.filesystem.clone()).await?;
+            self_.default_translation_map = Self::load_translations(self_.language_path.as_path(), DEFAULT_LANGUAGE_CODE, self_.filesystem.clone()).await?;
 
-            if language_code == "en_us" {
+            if language_code == DEFAULT_LANGUAGE_CODE {
                 self_.translation_map = self_.default_translation_map.clone();
             } else {
                 self_.translation_map = Self::load_translations(self_.language_path.as_path(), self_.current_language_code.as_str(), self_.filesystem.clone()).await?;
@@ -65,6 +68,7 @@ where
         })
     }
     
+    // TODO: improve file loading so that there are fewer file reads
     async fn load_translations(
         path: impl AsRef<Path> + Send,
         language_code: &str,
@@ -88,8 +92,16 @@ where
         let translations = json.get("translations").ok_or(serde_json::Error::custom(format!("Invalid language file {} - Missing parameter \"translations\"", language_code)))?;
         
         let mut translation_map = HashMap::new();
-        for (key, value) in translations.as_object().unwrap() {
-            translation_map.insert(key.to_string(), value.as_str().unwrap().to_string());
+        for (key, value) in translations.as_object()
+            .ok_or(serde_json::Error::custom(format!("Invalid language file {} - \"translations\" must be an object", language_code)))?
+        {
+            translation_map.insert(key.to_string(), value.as_str()
+                .ok_or(serde_json::Error::custom(
+                    format!("Invalid language file {} - The value for \"{}\" must be a string",
+                            language_code,
+                            key))
+                )?
+                .to_string());
         }
         
         Ok(translation_map)
