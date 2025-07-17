@@ -1,13 +1,11 @@
 use std::collections::HashMap;
-use std::{fs, io};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use serde::de::Error;
 use tokio::sync::RwLock;
 use crate::RUNTIME;
 use crate::services::filesystem_service::{DefaultFilesystemProvider, FilesystemProvider, FilesystemProviderError, PathValidationStatus};
-
-pub type DefaultTranslationProvider = TranslationService;
 
 pub trait TranslationProvider {
     fn translate(&self, key: &dyn TranslationKey) -> Result<String, TranslationError>;
@@ -18,6 +16,8 @@ pub trait TranslationProvider {
 
 #[derive(Debug)]
 pub struct TranslationService<Filesystem: FilesystemProvider + Send + Sync + 'static = DefaultFilesystemProvider> {
+    language_path: PathBuf,
+    
     current_language_code: String,
     
     translation_map: HashMap<String, String>,
@@ -37,41 +37,68 @@ where
     }
     
     pub fn try_new(language_code: &str, language_path: impl AsRef<Path> + Send, filesystem: Arc<RwLock<Filesystem>>) -> Result<Self, TranslationError> {
-        let languages = RUNTIME.block_on(
-            Self::read_languages(filesystem.clone(), language_path)
-        )?;
-
-        let mut self_ = Self {
-            current_language_code: language_code.to_string(),
-            
-            translation_map: HashMap::new(),
-            default_translation_map: HashMap::new(),
-
-            languages,
-
-            filesystem,
-        };
-
         RUNTIME.block_on(async {
-            self_.default_translation_map = Self::load_translations(self_.filesystem.clone(), "en_us").await?;
+            let languages = Self::read_languages(language_path.as_ref(), filesystem.clone()).await?;
+
+            let mut self_ = Self {
+                language_path: language_path.as_ref().to_path_buf(),
+                
+                current_language_code: language_code.to_string(),
+
+                translation_map: HashMap::new(),
+                default_translation_map: HashMap::new(),
+
+                languages,
+
+                filesystem,
+            };
+
+            self_.default_translation_map = Self::load_translations(self_.language_path.as_path(), "en_us", self_.filesystem.clone()).await?;
 
             if language_code == "en_us" {
                 self_.translation_map = self_.default_translation_map.clone();
             } else {
-                self_.translation_map = Self::load_translations(self_.filesystem.clone(), self_.current_language_code.as_str()).await?;
+                self_.translation_map = Self::load_translations(self_.language_path.as_path(), self_.current_language_code.as_str(), self_.filesystem.clone()).await?;
             }
-            
-            Ok::<(), TranslationError>(())
-        })?;
+
+            Ok(self_)
+        })
+    }
+    
+    async fn load_translations(
+        path: impl AsRef<Path> + Send,
+        language_code: &str,
+        filesystem: Arc<RwLock<Filesystem>>
+    ) -> Result<HashMap<String, String>, TranslationError> {
+        let path = path.as_ref();
+        let filepath = path
+            .join(language_code)
+            .join(".json");
         
-        Ok(self_)
+        if !matches!(filesystem.read().await.validate_path(filepath.as_path()).await?, PathValidationStatus::Valid { is_file: false }) {
+            return Err(TranslationError::InvalidFilepath(filepath.to_path_buf()));
+        }
+        
+        let file_contents = filesystem.read().await.read_file(filepath.as_path()).await?;
+        let file = io::Cursor::new(file_contents);
+        let reader = io::BufReader::new(file);
+        let json: serde_json::Value = serde_json::from_reader(reader)?;
+        
+        let json = json.as_object().ok_or(serde_json::Error::custom(format!("Invalid language file {} - Must have object as root", language_code)))?;
+        let translations = json.get("translations").ok_or(serde_json::Error::custom(format!("Invalid language file {} - Missing parameter \"translations\"", language_code)))?;
+        
+        let mut translation_map = HashMap::new();
+        for (key, value) in translations.as_object().unwrap() {
+            translation_map.insert(key.to_string(), value.as_str().unwrap().to_string());
+        }
+        
+        Ok(translation_map)
     }
     
-    async fn load_translations(filesystem: Arc<RwLock<Filesystem>>, language_code: &str) -> Result<HashMap<String, String>, TranslationError> {
-        todo!()
-    }
-    
-    async fn read_languages(filesystem: Arc<RwLock<Filesystem>>, path: impl AsRef<Path> + Send) -> Result<HashMap<String, Language>, TranslationError> {
+    async fn read_languages(
+        path: impl AsRef<Path> + Send,
+        filesystem: Arc<RwLock<Filesystem>>
+    ) -> Result<HashMap<String, Language>, TranslationError> {
         let path = path.as_ref();
         let mut languages = HashMap::new();
         
@@ -134,7 +161,7 @@ where
         
         self.current_language_code = language.code.clone();
         self.translation_map = RUNTIME.block_on(
-            Self::load_translations(self.filesystem.clone(), self.current_language_code.as_str())
+            Self::load_translations(self.language_path.as_path(), self.current_language_code.as_str(), self.filesystem.clone())
         )?;
         
         Ok(())
