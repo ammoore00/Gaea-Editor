@@ -4,6 +4,10 @@
 use iced::{Font, Task};
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
+use tracing_subscriber::{EnvFilter, Registry};
+use tracing_subscriber::fmt::layer;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 use crate::application::gui::window::ApplicationWindow;
 use crate::application::app_context::AppContextBuilder;
 use crate::application::gui::window;
@@ -19,6 +23,8 @@ pub static RUNTIME: Lazy<Runtime> = Lazy::new(|| {
 });
 
 pub fn main() -> iced::Result {
+    setup_logging();
+    
     iced::application("Gaea - Minecraft Resource and Datapack Editor", ApplicationWindow::update, ApplicationWindow::view)
         .theme(ApplicationWindow::theme)
         .font(include_bytes!("../resources/assets/fonts/icons.ttf").as_slice())
@@ -29,4 +35,23 @@ pub fn main() -> iced::Result {
 fn create_application() -> (ApplicationWindow, Task<window::Message>) {
     let app_context = AppContextBuilder::default().build();
     ApplicationWindow::new(app_context)
+}
+
+fn setup_logging() {
+    #[cfg(debug_assertions)]
+    let default_level = "debug";
+    #[cfg(not(debug_assertions))]
+    let default_level = "info";
+    
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(default_level));
+
+    let fmt_layer = layer()
+        .with_target(true)
+        .compact();
+    
+    Registry::default()
+        .with(env_filter)
+        .with(fmt_layer)
+        .init();
 }

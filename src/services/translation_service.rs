@@ -8,7 +8,7 @@ use crate::RUNTIME;
 use crate::services::filesystem_service::{DefaultFilesystemProvider, FilesystemProvider, FilesystemProviderError, PathValidationStatus};
 
 pub trait TranslationProvider {
-    fn translate(&self, key: &dyn TranslationKey) -> Result<String, TranslationError>;
+    fn translate(&self, key: &dyn TranslationKey) -> String;
     fn set_language(&mut self, language: &Language) -> Result<(), TranslationError>;
     fn get_languages(&self) -> Vec<&Language>;
     fn get_current_language(&self) -> &Language;
@@ -119,7 +119,16 @@ where
         }
         
         for filepath in filesystem.read().await.list_directory(path).await? {
-            if !filesystem.read().await.is_directory(filepath.as_path()).await? {
+            let is_directory = filesystem.read().await.is_directory(filepath.as_path()).await;
+            let is_directory = if let Err(error) = is_directory {
+                tracing::error!("Filesystem error when checking for directories at {} - {}", filepath.display(), error);
+                continue;
+            }
+            else {
+                is_directory?
+            };
+            
+            if is_directory {
                 continue;
             }
             
@@ -127,18 +136,41 @@ where
                 if extension != "json" {
                     continue;
                 }
-                
+
                 let filename = filepath.file_name().unwrap().to_str().unwrap().to_string();
 
                 use serde_json::Value;
 
-                let file_contents = filesystem.read().await.read_file(filepath.as_path()).await?;
-                let file = io::Cursor::new(file_contents);
-                let reader = io::BufReader::new(file);
-                let json: Value = serde_json::from_reader(reader)?;
+                let json: serde_json::error::Result<Value> = {
+                    let file_contents = filesystem.read().await.read_file(filepath.as_path()).await?;
+                    let file = io::Cursor::new(file_contents);
+                    let reader = io::BufReader::new(file);
+                    serde_json::from_reader(reader)
+                };
+                
+                let json = if let Err(error) = json {
+                    tracing::error!("Failed to read file {} - {}", filename, error);
+                    continue;
+                }
+                else {
+                    json?
+                };
 
-                let json = json.as_object().ok_or(serde_json::Error::custom(format!("Invalid language file {} - Must have object as root", filename)))?;
-                let name = json.get("name").ok_or(serde_json::Error::custom(format!("Invalid language file {} - Missing parameter \"name\"", filename)))?;
+                let json = match json.as_object() {
+                    Some(json) => json,
+                    None => {
+                        tracing::warn!("Invalid json file {} - Must have object as root", filename);
+                        continue;
+                    }
+                };
+                
+                let name = match json.get("name") {
+                    Some(name) => name,
+                    None => {
+                        tracing::warn!("Invalid json file {} - Missing parameter \"name\"", filename);
+                        continue;
+                    }
+                };
 
                 let language = Language {
                     code: filename.clone(),
@@ -157,13 +189,21 @@ impl<Filesystem> TranslationProvider for TranslationService<Filesystem>
 where
     Filesystem: FilesystemProvider + Send + Sync + 'static,
 {
-    fn translate(&self, key: &dyn TranslationKey) -> Result<String, TranslationError> {
+    fn translate(&self, key: &dyn TranslationKey) -> String {
         let key_string = key.key();
         self.translation_map
             .get(key_string)
-            .or_else(|| self.default_translation_map.get(key_string))
+            .or_else(|| {
+                // TODO: Move this to log when languages initially loaded - move to info level when doing so
+                tracing::debug!("Translation for key {} not found in language {}!", key_string, self.current_language_code);
+                self.default_translation_map.get(key_string)
+            })
             .cloned()
-            .ok_or(TranslationError::TranslationError(format!("Translation for key {} not found", key_string)))
+            .or_else(|| {
+                tracing::error!("Default translation for key {} not found!", key_string);
+                Some(key_string.to_string())
+            })
+            .unwrap()
     }
 
     fn set_language(&mut self, language: &Language) -> Result<(), TranslationError> {
@@ -196,8 +236,6 @@ pub enum TranslationError {
     Parse(#[from] serde_json::Error),
     #[error("Language {} not found!", .0)]
     LanguageNotFound(String),
-    #[error("Error while translating!: {}", .0)]
-    TranslationError(String),
     #[error("Invalid localization file path!: {:?}", .0)]
     InvalidFilepath(PathBuf),
 }

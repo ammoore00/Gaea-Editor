@@ -45,6 +45,9 @@ sanitize-filename = "0.6"
 derive-new = "0.7"
 getset = "0.1"
 
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+
 mc_version = { path = "./mc_version" }
 mc_version_macro = { path = "./mc_version_macro" }
 translation_macro = { path = "./translation_macro" }
