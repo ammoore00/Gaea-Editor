@@ -3,7 +3,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use once_cell::sync::Lazy;
-use sea_orm::Iden;
 use serde::de::Error;
 use serde_json::Value;
 use tokio::sync::RwLock;
@@ -48,8 +47,8 @@ where
         Ok(Self {
             language_path: language_path.as_ref().to_path_buf(),
 
-            current_language_code: language_code,
-            default_language_code: DEFAULT_LANGUAGE_CODE.clone(),
+            current_language_code: language_code.clone(),
+            default_language_code: language_code,
 
             languages,
 
@@ -87,7 +86,7 @@ where
                     continue;
                 }
 
-                let filename = filepath.file_name().unwrap().to_str().unwrap().to_string();
+                let filename = filepath.with_extension("").file_name().unwrap().to_str().unwrap().to_string();
 
                 use serde_json::Value;
 
@@ -251,71 +250,244 @@ mod tests {
     use crate::services::filesystem_service::{ChunkedFileReadResult, FileDeleteOptions, FileWriteOptions, PathValidationStatus};
     use super::*;
 
-    #[async_trait]
-    trait TestFilesystemProvider {
-        async fn read_file(&self, path: &Path) -> filesystem_service::Result<Vec<u8>>;
-        async fn write_file(&self, path: &Path, content: &[u8], options: FileWriteOptions) -> filesystem_service::Result<()>;
-        async fn file_exists(&self, path: &Path) -> filesystem_service::Result<bool>;
-        async fn is_directory(&self, path: &Path) -> filesystem_service::Result<bool>;
-    }
-
-    struct FilesystemProviderAdapter<T: TestFilesystemProvider>(T);
-
-    #[async_trait]
-    impl<T: TestFilesystemProvider + Send + Sync> FilesystemProvider for FilesystemProviderAdapter<T> {
-        async fn write_file(&self, path: &Path, _content: &[u8], _options: FileWriteOptions) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-
-        async fn read_file(&self, path: &Path) -> filesystem_service::Result<Vec<u8>> {
-            self.0.read_file(path.as_ref()).await
-        }
-
-        async fn read_file_chunked(&self, path: &Path, chunk_size: usize, callback: Box<dyn FnMut(Vec<u8>) -> ChunkedFileReadResult + Send>,) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn delete_file(&self, path: &Path, _options: FileDeleteOptions) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn copy_file(&self, _source: &Path, _destination: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn move_file(&self, _source: &Path, _destination: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn create_directory(&self, path: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn create_directory_recursive(&self, path: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn delete_directory(&self, path: &Path) -> filesystem_service::Result<()> { unimplemented!("Not needed for these tests") }
-        async fn list_directory(&self, path: &Path) -> filesystem_service::Result<Vec<PathBuf>> { unimplemented!("Not needed for these tests") }
-        async fn validate_path(&self, path: &Path) -> filesystem_service::Result<PathValidationStatus> { unimplemented!("Not needed for these tests") }
-
-        async fn file_exists(&self, path: &Path) -> filesystem_service::Result<bool> {
-            self.0.file_exists(path.as_ref()).await
-        }
-
-        async fn is_directory(&self, path: &Path) -> filesystem_service::Result<bool> {
-            self.0.is_directory(path.as_ref()).await
-        }
-
-        async fn get_metadata(&self, path: &Path) -> filesystem_service::Result<Metadata> { unimplemented!("Not needed for these tests") }
-    }
-
     mock! {
-        FilesystemProviderMock {}
+        FilesystemService {}
         #[async_trait]
-        impl TestFilesystemProvider for FilesystemProviderMock {
-            async fn read_file(&self, path: &Path) -> filesystem_service::Result<Vec<u8>>;
+        impl FilesystemProvider for FilesystemService {
             async fn write_file(&self, path: &Path, content: &[u8], options: FileWriteOptions) -> filesystem_service::Result<()>;
+            async fn read_file(&self, path: &Path) -> filesystem_service::Result<Vec<u8>>;
+            async fn read_file_chunked(&self, path: &Path, chunk_size: usize, callback: Box<dyn FnMut(Vec<u8>) -> ChunkedFileReadResult + Send>) -> filesystem_service::Result<()>;
+            async fn delete_file(&self, path: &Path, options: FileDeleteOptions) -> filesystem_service::Result<()>;
+            async fn copy_file(&self, source: &Path, destination: &Path) -> filesystem_service::Result<()>;
+            async fn move_file(&self, source: &Path, destination: &Path) -> filesystem_service::Result<()>;
+            async fn create_directory(&self, path: &Path) -> filesystem_service::Result<()>;
+            async fn create_directory_recursive(&self, path: &Path) -> filesystem_service::Result<()>;
+            async fn delete_directory(&self, path: &Path) -> filesystem_service::Result<()>;
+            async fn list_directory(&self, path: &Path) -> filesystem_service::Result<Vec<PathBuf>>;
+            async fn validate_path(&self, path: &Path) -> filesystem_service::Result<PathValidationStatus>;
             async fn file_exists(&self, path: &Path) -> filesystem_service::Result<bool>;
             async fn is_directory(&self, path: &Path) -> filesystem_service::Result<bool>;
+            async fn get_metadata(&self, path: &Path) -> filesystem_service::Result<Metadata>;
         }
-    }
-
-    #[fixture]
-    fn translation_service() -> TranslationService<FilesystemProviderAdapter<MockFilesystemProviderMock>> {
-        let mock_filesystem = MockFilesystemProviderMock::new();
-        let mock_filesystem = FilesystemProviderAdapter(mock_filesystem);
-        TranslationService::try_new(DEFAULT_LANGUAGE_CODE.clone(), Path::new("./resources/assets/localization"), Arc::new(RwLock::new(mock_filesystem)))
-            .expect("Failed to create test translation service")
     }
     
     /// Tests handling the construction of the translation service and loading of the translation files
+    /// Tests handling the construction of the translation service and loading of the translation files
     mod file_tests {
         use super::*;
+        use mockall::predicate::*;
+        use std::sync::Arc;
+        use sea_orm::Iden;
+        use tokio::runtime::Runtime;
+        use serde_json::json;
+
+        fn create_test_language_content(code: &str, name: &str, translations: Vec<(&str, &str)>) -> Vec<u8> {
+            let mut translation_obj = serde_json::Map::new();
+            for (key, value) in translations {
+                translation_obj.insert(key.to_string(), json!(value));
+            }
+
+            let language_json = json!({
+            "code": code,
+            "name": name,
+            "translations": translation_obj
+        });
+
+            serde_json::to_vec(&language_json).unwrap()
+        }
+
+        #[test]
+        fn test_try_with_default_language_success() {
+            let mut mock_fs = MockFilesystemService::new();
+
+            // Given a valid default language file
+            mock_fs.expect_read_file()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH).join("en_us.json")))
+                .returning(|_| {
+                    Ok(create_test_language_content("en_us", "English", vec![
+                        ("hello", "Hello"),
+                        ("goodbye", "Goodbye")
+                    ]))
+                });
+
+            mock_fs.expect_list_directory()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH)))
+                .returning(|_| Ok(vec![PathBuf::from(DEFAULT_LANGUAGE_PATH).join("en_us.json")]));
+            
+            mock_fs.expect_is_directory()
+                .with(eq(PathBuf::from(DEFAULT_LANGUAGE_PATH).join("en_us.json")))
+                .returning(|_| Ok(false));
+            
+            mock_fs.expect_validate_path()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH)))
+                .returning(|_| Ok(PathValidationStatus::Valid { is_file: false }));
+
+            // When I try to load it 
+            let result = TranslationService::try_with_default_language(Arc::new(RwLock::new(mock_fs)));
+
+            // Then it should load correctly
+            assert!(result.is_ok());
+
+            let service = result.unwrap();
+            assert_eq!(service.default_language_code, *DEFAULT_LANGUAGE_CODE);
+            assert_eq!(service.current_language_code, *DEFAULT_LANGUAGE_CODE);
+            assert_eq!(service.language_path, PathBuf::from(DEFAULT_LANGUAGE_PATH));
+            
+            assert!(service.languages.contains_key(&DEFAULT_LANGUAGE_CODE));
+        }
+
+        #[test]
+        fn test_try_new_with_custom_language() {
+            let mut mock_fs = MockFilesystemService::new();
+            
+            // Given a valid language file with a custom resource directory and
+            // non-english language file
+            let test_path = PathBuf::from("./test/localization");
+            let language_code = LanguageCode("fr_fr".to_string());
+
+            mock_fs.expect_read_file()
+                .with(eq(test_path.join("fr_fr.json")))
+                .returning(|_| {
+                    Ok(create_test_language_content("fr_fr", "French", vec![
+                        ("hello", "Bonjour"),
+                        ("goodbye", "Au revoir")
+                    ]))
+                });
+
+            let test_path_clone = test_path.clone();
+            mock_fs.expect_list_directory()
+                .with(eq(test_path.clone()))
+                .returning(move |_| Ok(vec![test_path_clone.join("fr_fr.json")]));
+
+            mock_fs.expect_is_directory()
+                .with(eq(test_path.join("fr_fr.json")))
+                .returning(|_| Ok(false));
+
+            mock_fs.expect_validate_path()
+                .with(eq(test_path.clone()))
+                .returning(|_| Ok(PathValidationStatus::Valid { is_file: false }));
+
+            // When I try to load it
+            let result = TranslationService::try_new(
+                language_code.clone(),
+                test_path.clone(),
+                Arc::new(RwLock::new(mock_fs)));
+            
+            // Then it should load correctly
+            assert!(result.is_ok());
+
+            let service = result.unwrap();
+            assert_eq!(service.current_language_code, language_code);
+            assert_eq!(service.default_language_code, language_code);
+            assert_eq!(service.language_path, test_path);
+            assert!(service.languages.contains_key(&language_code));
+        }
+
+        #[test]
+        fn test_try_new_language_not_found() {
+            let mut mock_fs = MockFilesystemService::new();
+            
+            // Given a default language file which does not exist
+            let language_code = LanguageCode("invalid".to_string());
+
+            mock_fs.expect_read_file()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH).join("invalid.json")))
+                .returning(|_| {
+                    Err(FilesystemProviderError::IO(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "File not found"
+                    )))
+                });
+
+            mock_fs.expect_list_directory()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH)))
+                .returning(|_| Ok(vec![PathBuf::from(DEFAULT_LANGUAGE_PATH).join("invalid.json")]));
+
+            mock_fs.expect_is_directory()
+                .with(eq(PathBuf::from(DEFAULT_LANGUAGE_PATH).join("invalid.json")))
+                .returning(|_| Ok(false));
+
+            mock_fs.expect_validate_path()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH)))
+                .returning(|_| Ok(PathValidationStatus::Valid { is_file: false }));
+
+            let result = TranslationService::try_new(
+                language_code.clone(),
+                Path::new(DEFAULT_LANGUAGE_PATH),
+                Arc::new(RwLock::new(mock_fs)));
+
+            assert!(result.is_err());
+            assert!(matches!(result, Err(TranslationError::IO(_))));
+        }
+
+        #[test]
+        fn test_read_languages_multiple_files() {
+            let mut mock_fs = MockFilesystemService::new();
+
+            // Given multiple translation files
+            mock_fs.expect_read_file()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH).join("en_us.json")))
+                .returning(|_| {
+                    Ok(create_test_language_content("en_us", "English", vec![
+                        ("hello", "Hello"),
+                        ("goodbye", "Goodbye")
+                    ]))
+                });
+
+            mock_fs.expect_read_file()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH).join("fr_fr.json")))
+                .returning(|_| {
+                    Ok(create_test_language_content("fr_fr", "French", vec![
+                        ("hello", "Bonjour"),
+                        ("goodbye", "Au revoir")
+                    ]))
+                });
+
+            mock_fs.expect_list_directory()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH)))
+                .returning(|_| Ok(vec![
+                    PathBuf::from(DEFAULT_LANGUAGE_PATH).join("en_us.json"),
+                    PathBuf::from(DEFAULT_LANGUAGE_PATH).join("fr_fr.json"),
+                ]));
+
+            mock_fs.expect_is_directory()
+                .with(eq(PathBuf::from(DEFAULT_LANGUAGE_PATH).join("en_us.json")))
+                .returning(|_| Ok(false));
+
+            mock_fs.expect_is_directory()
+                .with(eq(PathBuf::from(DEFAULT_LANGUAGE_PATH).join("fr_fr.json")))
+                .returning(|_| Ok(false));
+
+            mock_fs.expect_validate_path()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH)))
+                .returning(|_| Ok(PathValidationStatus::Valid { is_file: false }));
+
+            // When I try to load them
+            let result =  TranslationService::try_with_default_language(Arc::new(RwLock::new(mock_fs)));
+
+            // Then they should all be loaded correctly
+            assert!(result.is_ok());
+            
+            let service = result.unwrap();
+            assert_eq!(service.default_language_code, *DEFAULT_LANGUAGE_CODE);
+            assert_eq!(service.current_language_code, *DEFAULT_LANGUAGE_CODE);
+            
+            let languages = service.languages;
+            assert_eq!(languages.len(), 2);
+            assert!(languages.contains_key(&LanguageCode("en_us".to_string())));
+            assert!(languages.contains_key(&LanguageCode("fr_fr".to_string())));
+        }
     }
     
     /// Tests handling the implementation of the public API for the translation service
     mod api_tests {
         use super::*;
+
+        #[fixture]
+        fn translation_service() -> TranslationService<MockFilesystemService> {
+            let mock_filesystem = MockFilesystemService::new();
+            TranslationService::try_new(DEFAULT_LANGUAGE_CODE.clone(), Path::new("./resources/assets/localization"), Arc::new(RwLock::new(mock_filesystem)))
+                .expect("Failed to create test translation service")
+        }
     }
 }
