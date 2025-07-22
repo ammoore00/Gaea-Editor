@@ -14,6 +14,7 @@ pub trait TranslationProvider {
     fn set_language(&mut self, language: &Language) -> Result<(), TranslationError>;
     fn get_languages(&self) -> Vec<&Language>;
     fn get_current_language(&self) -> &Language;
+    fn reload_languages(&mut self) -> Result<(), TranslationError>;
 }
 
 #[derive(Debug)]
@@ -208,6 +209,20 @@ where
 
     fn get_current_language(&self) -> &Language {
         self.languages.get(&self.current_language_code).unwrap()
+    }
+
+    fn reload_languages(&mut self) -> Result<(), TranslationError> {
+        let languages = RUNTIME.block_on(
+            Self::read_languages(&self.language_path, self.filesystem.clone())
+        )?;
+
+        if !languages.contains_key(&self.current_language_code) {
+            self.current_language_code = self.default_language_code.clone();
+        }
+
+        self.languages = languages;
+
+        Ok(())
     }
 }
 
