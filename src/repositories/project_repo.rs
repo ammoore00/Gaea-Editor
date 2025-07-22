@@ -6,7 +6,7 @@ use dashmap::DashMap;
 use tokio::sync::RwLock;
 use crate::data::domain::project::{Project, ProjectID};
 use crate::RUNTIME;
-use crate::services::filesystem_service::{DefaultFilesystemProvider, FilesystemProvider, FilesystemProviderError, FilesystemService};
+use crate::services::filesystem_service::{DefaultFilesystemProvider, FilesystemProvider, FilesystemProviderError};
 
 static PROJECT_EXTENSION: &str = "json";
 
@@ -57,8 +57,8 @@ impl Default for ProjectRepository {
 #[async_trait::async_trait]
 impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Filesystem> {
     fn add_project(&self, project: Project, overwrite_existing: bool) -> Result<ProjectID> {
-        let project_id = project.get_id();
-        let path = project.get_settings().path.clone();
+        let project_id = *project.id();
+        let path = project.path().clone();
 
         if let Some(path) = path {
             let file_exists = RUNTIME.block_on(self.filesystem_provider.file_exists(path.as_path()))?;

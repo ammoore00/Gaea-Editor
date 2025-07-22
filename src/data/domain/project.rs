@@ -2,46 +2,46 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use mc_version::MinecraftVersion;
 use uuid::{NoContext, Timestamp, Uuid};
-use crate::data::domain::pack_info::PackInfo;
+use crate::data::domain::pack_info::{PackDescription, PackInfo};
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, getset::Getters)]
+#[getset(get = "pub")]
 pub struct Project {
-    settings: ProjectSettings,
+    name: String,
     id: ProjectID,
+    
+    path: Option<PathBuf>,
+    project_version: ProjectVersion,
+    project_type: ProjectType,
 
+    pack_info: PackInfo,
+    
     // TODO: make this more comprehensive
-    unsaved_changes: bool,
-
-    //pack_info: PackInfo,
+    has_unsaved_changes: bool,
 }
 
 impl Project {
     pub fn new(settings: ProjectSettings) -> Self {
         Self {
-            settings,
+            name: settings.name,
             id: Self::generate_id(),
-            unsaved_changes: false,
+            
+            path: settings.path,
+            project_version: settings.project_version,
+            project_type: settings.project_type,
+            
+            pack_info: PackInfo::new(settings.description, None),
+            
+            has_unsaved_changes: false,
         }
-    }
-    
-    pub fn get_settings(&self) -> &ProjectSettings {
-        &self.settings
-    }
-    
-    pub fn get_id(&self) -> ProjectID {
-        self.id.clone()
-    }
-
-    pub fn has_unsaved_changes(&self) -> bool {
-        self.unsaved_changes
     }
 
     pub fn flag_unsaved_changes(&mut self) {
-        self.unsaved_changes = true;
+        self.has_unsaved_changes = true;
     }
 
     pub fn clear_unsaved_changes(&mut self) {
-        self.unsaved_changes = false;
+        self.has_unsaved_changes = false;
     }
 
     fn generate_id() -> ProjectID {
@@ -54,16 +54,10 @@ impl Project {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ProjectSettings {
     pub name: String,
-    pub description: String,
+    pub description: PackDescription,
     pub path: Option<PathBuf>,
     pub project_version: ProjectVersion,
     pub project_type: ProjectType,
-}
-
-impl ProjectSettings {
-    fn get_project_version(&self) -> ProjectVersion {
-        self.project_version.clone()
-    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -85,7 +79,7 @@ pub enum ProjectType {
 impl Project {
     pub fn with_unsaved_changes(settings: ProjectSettings) -> Self {
         Self {
-            unsaved_changes: true,
+            has_unsaved_changes: true,
             ..Self::new(settings)
         }
     }
@@ -96,5 +90,15 @@ impl Project {
 
     pub fn set_id(&mut self, id: ProjectID) {
         self.id = id;
+    }
+    
+    pub fn recreate_settings(&self) -> ProjectSettings {
+        ProjectSettings {
+            name: self.name.clone(),
+            description: self.pack_info.description().clone(),
+            path: self.path.clone(),
+            project_version: self.project_version.clone(),
+            project_type: self.project_type.clone(),
+        }
     }
 }

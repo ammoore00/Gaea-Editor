@@ -155,7 +155,7 @@ where
         let project_provider = self.project_provider.read().await;
         
         project_provider.with_project(project_id, |project| {
-            if project.has_unsaved_changes() {
+            if *project.has_unsaved_changes() {
                 return Err(ProjectServiceError::CannotCloseUnsavedChanges);
             }
             Ok(())
@@ -193,7 +193,7 @@ where
         let serialize_input = AdapterInput::new(serialize_input.read().await);
         
         let project: Project = self.adapter_provider.read().await.deserialize(serialize_input, adapter_context).await.map_err(ZipError::Deserialization)?;
-        let project_id = project.get_id();
+        let project_id = *project.id();
 
         // TODO: Maybe prevent accidental duplicate importing somehow?
         let project_provider = self.project_provider.write().await;
@@ -206,7 +206,7 @@ where
         zip_data: ProjectZipData,
         overwrite_existing: bool,
     ) -> Result<()> {
-        let (serialized_project, project_settings) = {
+        let (serialized_project, project_type) = {
             let project_provider = self.project_provider.read().await;
 
             let adapter_provider = self.adapter_provider.read().await;
@@ -214,14 +214,14 @@ where
             
             project_provider.with_project_async(zip_data.project_id, |project: Arc<RwLock<Project>>| {
                 Box::pin(async move {
-                    let project_settings = project.read().await.get_settings().clone();
+                    let project_type = project.read().await.project_type().clone();
                     
                     let project_input: AdapterInput<Project> = AdapterInput::new(project.read().await);
 
                     // TODO: Assumed to be infallible for now - add proper error handling in the future
                     let serialized_project = adapter_provider.serialize(project_input, adapter_context).await.unwrap();
 
-                    (serialized_project, project_settings)
+                    (serialized_project, project_type)
                 })
             }).await.ok_or(ProjectServiceError::ProjectDoesNotExist)?
         };
@@ -276,7 +276,7 @@ where
                 Ok(())
             }
             _ => {
-                Err(ZipError::MismatchedPaths(project_settings.project_type, zip_data.path))?
+                Err(ZipError::MismatchedPaths(project_type, zip_data.path))?
             }
         }
     }
@@ -350,6 +350,7 @@ mod test {
     use tokio::sync::RwLock;
     use crate::data::adapters::{Adapter, AdapterInput};
     use crate::data::adapters::project::{ProjectConversionError, SerializedProjectData};
+    use crate::data::domain::pack_info::PackDescription;
     use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
     use crate::data::domain::versions;
     use crate::data::serialization::pack_info::{PackData, PackInfo};
@@ -413,7 +414,7 @@ mod test {
             self.call_tracker.write().unwrap().add_project_calls += 1;
 
             if let Some(existing_project) = self.project.read().unwrap().as_ref() {
-                if !overwrite_existing && existing_project.get_settings().path == project.get_settings().path {
+                if !overwrite_existing && existing_project.path() == project.path() {
                     return Err(ProjectRepoError::Create(ProjectCreationError::FileAlreadyExists))
                 }
             }
@@ -422,7 +423,7 @@ mod test {
                 return Err(ProjectRepoError::Filesystem(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::Other, "Mock error!"))));
             }
 
-            let id = project.get_id();
+            let id = *project.id();
 
             let mut stored_project = self.project.write().unwrap();
             *stored_project = Some(project);
@@ -490,7 +491,7 @@ mod test {
                 Some(project) => {
                     let mut is_project_open = self.is_project_open.write().unwrap();
                     *is_project_open = true;
-                    Ok(project.get_id())
+                    Ok(*project.id())
                 },
                 None => Err(ProjectRepoError::Filesystem(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::Other, "Mock error!")))),
             }
@@ -524,7 +525,7 @@ mod test {
             }
 
             self.project.read().unwrap().clone()
-                .map(|project| project.get_settings().path.clone())
+                .map(|project| project.path().clone())
                 .flatten()
                 .ok_or(ProjectRepoError::Filesystem(FilesystemProviderError::IO(io::Error::new(io::ErrorKind::NotFound, "Project not found"))))
         }
@@ -664,7 +665,7 @@ mod test {
         }
 
         async fn serialize<AdpProvider: AdapterProvider + ?Sized>(domain: AdapterInput<'_, Project>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<SerializedProjectData, Self::SerializedConversionError> {
-            match domain.get_settings().project_type {
+            match domain.project_type() {
                 ProjectType::Combined => {
                     let serialized_project = PROJECT_ADAPTER_CONFIG.read().unwrap().serialized_project.clone().unwrap();
                     Ok(SerializedProjectData::Combined {
@@ -720,7 +721,7 @@ mod test {
     fn default_test_project_settings() -> ProjectSettings {
         ProjectSettings {
             name: "Test Project".to_string(),
-            description: "Test Description".to_string(),
+            description: PackDescription::String("Test Description".to_string()),
             path: Some("test/file/path".into()),
             project_version: ProjectVersion { version: *versions::V1_20_4 },
             project_type: ProjectType::DataPack,
@@ -769,7 +770,7 @@ mod test {
 
                 assert_eq!(*project, comparison_project);
 
-                project.get_settings().clone()
+                project.recreate_settings()
             }).unwrap();
             
             // Verify individual settings
@@ -796,7 +797,7 @@ mod test {
             let project_settings = ProjectSettings {
                 // 测试项目 means "Test Project" in simplified chinese
                 name: "测试项目".to_string(),
-                description: "Test Description".to_string(),
+                description: PackDescription::String("Test Description".to_string()),
                 path: Some("test/file/测试项目".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
@@ -817,7 +818,7 @@ mod test {
 
                 assert_eq!(*project, comparison_project);
 
-                project.get_settings().clone()
+                project.recreate_settings()
             }).unwrap();
 
             // Verify individual settings
@@ -836,7 +837,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                description: "Test Description".to_string(),
+                description: PackDescription::String("Test Description".to_string()),
                 path: Some("test?/invalid</path>".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
@@ -854,7 +855,7 @@ mod test {
             #[cfg(not(target_os = "windows"))]
             let expected_path = "test_/invalid_/path_";
 
-            let created_settings = project_provider.with_project(project_id, |project| project.get_settings().clone()).unwrap();
+            let created_settings = project_provider.with_project(project_id, |project| project.recreate_settings()).unwrap();
             assert_eq!(created_settings.path.as_ref().unwrap().to_string_lossy(), expected_path);
         }
         
@@ -865,7 +866,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
-                description: "Test Description".to_string(),
+                description: PackDescription::String("Test Description".to_string()),
                 path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
@@ -966,7 +967,7 @@ mod test {
 
                 assert_eq!(*project, comparison_project);
 
-                project.get_settings().clone()
+                project.recreate_settings()
             });
 
             assert!(*project_provider.is_project_open.read().unwrap());
@@ -1077,7 +1078,7 @@ mod test {
             
             // When I close it
 
-            let result = project_service.close_project(existing_project.get_id()).await;
+            let result = project_service.close_project(*existing_project.id()).await;
 
             // It should be closed properly
 
@@ -1102,7 +1103,7 @@ mod test {
             
             // When I try to close it
 
-            let result = project_service.close_project(existing_project.get_id()).await;
+            let result = project_service.close_project(*existing_project.id()).await;
             
             // It should return an appropriate error
 
@@ -1121,7 +1122,7 @@ mod test {
             
             // When I try to close it
 
-            let result = project_service.close_project(existing_project.get_id()).await;
+            let result = project_service.close_project(*existing_project.id()).await;
 
             // It should return an appropriate error
 
@@ -1178,7 +1179,7 @@ mod test {
 
             // When I try to close a project
 
-            let result = project_service.close_project(project.get_id()).await;
+            let result = project_service.close_project(*project.id()).await;
 
             // It should return an appropriate error
 
@@ -1197,7 +1198,7 @@ mod test {
 
             let project_settings = default_test_project_settings();
             let project = Project::with_unsaved_changes(project_settings.clone());
-            let project_id = project.get_id();
+            let project_id = *project.id();
             let project_service = test_service_with_project_provider(MockProjectProvider::with_open_project(project));
             
             // When I save it
@@ -1234,7 +1235,7 @@ mod test {
 
             let project_settings = default_test_project_settings();
             let project = Project::with_unsaved_changes(project_settings.clone());
-            let project_id = project.get_id();
+            let project_id = *project.id();
 
             let mut project_provider = MockProjectProvider::with_open_project(project.clone());
             project_provider.settings = MockProjectProviderSettings {
@@ -1406,7 +1407,7 @@ mod test {
             );
             
             let project_zip_data = ProjectZipData {
-                project_id: project.get_id(),
+                project_id: *project.id(),
                 path,
             };
 
@@ -1432,7 +1433,7 @@ mod test {
             let serialized_project = default_serialized_project();
             let project = Project::new(ProjectSettings {
                 name: "Test Project".to_string(),
-                description: "Test Description".to_string(),
+                description: PackDescription::String("Test Description".to_string()),
                 path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::Combined,
@@ -1456,7 +1457,7 @@ mod test {
             );
 
             let project_zip_data = ProjectZipData {
-                project_id: project.get_id(),
+                project_id: *project.id(),
                 path,
             };
 
@@ -1482,7 +1483,7 @@ mod test {
             let serialized_project = default_serialized_project();
             let project = Project::new(ProjectSettings {
                 name: "Test Project".to_string(),
-                description: "Test Description".to_string(),
+                description: PackDescription::String("Test Description".to_string()),
                 path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::Combined,
@@ -1503,7 +1504,7 @@ mod test {
             );
 
             let project_zip_data = ProjectZipData {
-                project_id: project.get_id(),
+                project_id: *project.id(),
                 path,
             };
 
@@ -1544,7 +1545,7 @@ mod test {
             );
 
             let project_zip_data = ProjectZipData {
-                project_id: project.get_id(),
+                project_id: *project.id(),
                 path,
             };
 
@@ -1587,7 +1588,7 @@ mod test {
             );
 
             let project_zip_data = ProjectZipData {
-                project_id: project.get_id(),
+                project_id: *project.id(),
                 path,
             };
 
@@ -1631,7 +1632,7 @@ mod test {
             );
 
             let project_zip_data = ProjectZipData {
-                project_id: project.get_id(),
+                project_id: *project.id(),
                 path,
             };
 
@@ -1673,7 +1674,7 @@ mod test {
             );
 
             let project_zip_data = ProjectZipData {
-                project_id: project.get_id(),
+                project_id: *project.id(),
                 path,
             };
 
