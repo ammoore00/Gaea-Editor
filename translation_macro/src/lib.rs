@@ -16,7 +16,7 @@ pub fn derive_translation_key(input: TokenStream) -> TokenStream {
     let variant_matches = variants.iter().map(|variant| {
         let variant_name = &variant.ident;
         let key_string = format!("{}.{}", 
-                                 enum_name.to_string().replace("TranslationKey", "").to_case(Case::Snake),
+                                 enum_name.to_string().replace("TranslationKeys", "").to_case(Case::Snake),
                                  variant_name.to_string().to_case(Case::Snake)
         );
 

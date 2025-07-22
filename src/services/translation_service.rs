@@ -12,8 +12,11 @@ use crate::services::filesystem_service::{DefaultFilesystemProvider, FilesystemP
 pub trait TranslationProvider {
     fn translate(&self, key: &dyn TranslationKey) -> String;
     fn set_language(&mut self, language: &Language) -> Result<(), TranslationError>;
-    fn get_languages(&self) -> Vec<&Language>;
-    fn get_current_language(&self) -> &Language;
+    fn set_language_to_default(&mut self) -> Result<(), TranslationError>;
+    fn get_languages(&self) -> Vec<Language>;
+    fn get_language(&self, code: LanguageCode) -> Option<Language>;
+    fn get_current_language(&self) -> Language;
+    fn get_default_language(&self) -> Language;
     fn reload_languages(&mut self) -> Result<(), TranslationError>;
 }
 
@@ -147,7 +150,7 @@ where
                 let language = Language {
                     code: code.clone(),
                     name: name.as_str().unwrap().to_string(),
-                    translation_map,
+                    translation_map: Arc::new(std::sync::RwLock::new(translation_map)),
                 };
 
                 languages.insert(code, language);
@@ -176,17 +179,18 @@ where
     fn translate(&self, key: &dyn TranslationKey) -> String {
         let key_string = key.key();
         let current_language = self.get_current_language();
+        let default_language = self.get_default_language();
         
-        current_language.translation_map
+        let translation_map = current_language.translation_map.read().unwrap();
+        let default_translation_map = default_language.translation_map.read().unwrap();
+        
+        translation_map
             .get(key_string)
-            .or_else(|| {
-                tracing::debug!("Translation for key {} not found in language {}!", key_string, self.current_language_code.0);
-                self.languages
-                    .get(&self.default_language_code)
-                    .unwrap()
-                    .translation_map.get(key_string)
-            })
             .cloned()
+            .or_else(move || {
+                tracing::debug!("Translation for key {} not found in language {}!", key_string, self.current_language_code.0);
+                default_translation_map.get(key_string).cloned()
+            })
             .or_else(|| {
                 tracing::error!("Default translation for key {} not found!", key_string);
                 Some(key_string.to_string())
@@ -203,12 +207,24 @@ where
         Ok(())
     }
 
-    fn get_languages(&self) -> Vec<&Language> {
-        self.languages.values().collect()
+    fn set_language_to_default(&mut self) -> Result<(), TranslationError> {
+        self.set_language(&self.get_default_language().clone())
     }
 
-    fn get_current_language(&self) -> &Language {
-        self.languages.get(&self.current_language_code).unwrap()
+    fn get_languages(&self) -> Vec<Language> {
+        self.languages.values().cloned().collect()
+    }
+    
+    fn get_language(&self, code: LanguageCode) -> Option<Language> {
+        self.languages.get(&code).cloned()
+    }
+
+    fn get_current_language(&self) -> Language {
+        self.languages.get(&self.current_language_code).cloned().unwrap()
+    }
+
+    fn get_default_language(&self) -> Language {
+        self.languages.get(&self.default_language_code).cloned().unwrap()
     }
 
     fn reload_languages(&mut self) -> Result<(), TranslationError> {
@@ -221,7 +237,6 @@ where
         }
 
         self.languages = languages;
-
         Ok(())
     }
 }
@@ -241,11 +256,11 @@ pub enum TranslationError {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct LanguageCode(String);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Language {
     code: LanguageCode,
     name: String,
-    translation_map: HashMap<String, String>
+    translation_map: Arc<std::sync::RwLock<HashMap<String, String>>>
 }
 
 pub trait TranslationKey {
@@ -261,6 +276,7 @@ mod tests {
     use async_trait::async_trait;
     use mockall::mock;
     use rstest::fixture;
+    use serde_json::json;
     use crate::services::filesystem_service;
     use crate::services::filesystem_service::{ChunkedFileReadResult, FileDeleteOptions, FileWriteOptions, PathValidationStatus};
     use super::*;
@@ -285,6 +301,21 @@ mod tests {
             async fn get_metadata(&self, path: &Path) -> filesystem_service::Result<Metadata>;
         }
     }
+
+    fn create_test_language_content(code: &str, name: &str, translations: Vec<(&str, &str)>) -> Vec<u8> {
+        let mut translation_obj = serde_json::Map::new();
+        for (key, value) in translations {
+            translation_obj.insert(key.to_string(), json!(value));
+        }
+
+        let language_json = json!({
+                "code": code,
+                "name": name,
+                "translations": translation_obj
+            });
+
+        serde_json::to_vec(&language_json).unwrap()
+    }
     
     /// Tests handling the construction of the translation service and loading of the translation files
     /// Tests handling the construction of the translation service and loading of the translation files
@@ -292,24 +323,6 @@ mod tests {
         use super::*;
         use mockall::predicate::*;
         use std::sync::Arc;
-        use sea_orm::Iden;
-        use tokio::runtime::Runtime;
-        use serde_json::json;
-
-        fn create_test_language_content(code: &str, name: &str, translations: Vec<(&str, &str)>) -> Vec<u8> {
-            let mut translation_obj = serde_json::Map::new();
-            for (key, value) in translations {
-                translation_obj.insert(key.to_string(), json!(value));
-            }
-
-            let language_json = json!({
-            "code": code,
-            "name": name,
-            "translations": translation_obj
-        });
-
-            serde_json::to_vec(&language_json).unwrap()
-        }
 
         #[test]
         fn test_try_with_default_language_success() {
@@ -349,6 +362,18 @@ mod tests {
             assert_eq!(service.language_path, PathBuf::from(DEFAULT_LANGUAGE_PATH));
             
             assert!(service.languages.contains_key(&DEFAULT_LANGUAGE_CODE));
+            
+            let language = service.languages.get(&DEFAULT_LANGUAGE_CODE).unwrap();
+            
+            assert_eq!(language.code, *DEFAULT_LANGUAGE_CODE);
+            assert_eq!(language.name, "English");
+            assert_eq!(language.translation_map.read().unwrap().len(), 2);
+            
+            assert!(language.translation_map.read().unwrap().contains_key("hello"));
+            assert!(language.translation_map.read().unwrap().contains_key("goodbye"));
+            
+            assert_eq!(language.translation_map.read().unwrap().get("hello").unwrap(), "Hello");
+            assert_eq!(language.translation_map.read().unwrap().get("goodbye").unwrap(), "Goodbye");
         }
 
         #[test]
@@ -496,13 +521,223 @@ mod tests {
     
     /// Tests handling the implementation of the public API for the translation service
     mod api_tests {
+        use mockall::predicate::eq;
+        use rstest::rstest;
+        use translation_macro::TranslationKey;
         use super::*;
 
         #[fixture]
         fn translation_service() -> TranslationService<MockFilesystemService> {
-            let mock_filesystem = MockFilesystemService::new();
-            TranslationService::try_new(DEFAULT_LANGUAGE_CODE.clone(), Path::new("./resources/assets/localization"), Arc::new(RwLock::new(mock_filesystem)))
+            let mut mock_fs = MockFilesystemService::new();
+
+            mock_fs.expect_read_file()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH).join("en_us.json")))
+                .returning(|_| {
+                    Ok(create_test_language_content("en_us", "English", vec![
+                        ("test.hello", "Hello"),
+                        ("test.hello_default_only", "Hello Default")
+                    ]))
+                });
+
+            mock_fs.expect_read_file()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH).join("fr_fr.json")))
+                .returning(|_| {
+                    Ok(create_test_language_content("fr_fr", "French", vec![
+                        ("test.hello", "Bonjour"),
+                    ]))
+                });
+
+            mock_fs.expect_list_directory()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH)))
+                .returning(|_| Ok(vec![
+                    PathBuf::from(DEFAULT_LANGUAGE_PATH).join("en_us.json"),
+                    PathBuf::from(DEFAULT_LANGUAGE_PATH).join("fr_fr.json"),
+                ]));
+
+            mock_fs.expect_is_directory()
+                .with(eq(PathBuf::from(DEFAULT_LANGUAGE_PATH).join("en_us.json")))
+                .returning(|_| Ok(false));
+
+            mock_fs.expect_is_directory()
+                .with(eq(PathBuf::from(DEFAULT_LANGUAGE_PATH).join("fr_fr.json")))
+                .returning(|_| Ok(false));
+
+            mock_fs.expect_validate_path()
+                .with(eq(Path::new(DEFAULT_LANGUAGE_PATH)))
+                .returning(|_| Ok(PathValidationStatus::Valid { is_file: false }));
+            
+            TranslationService::try_new(
+                    DEFAULT_LANGUAGE_CODE.clone(),
+                    Path::new(DEFAULT_LANGUAGE_PATH),
+                    Arc::new(RwLock::new(mock_fs))
+                )
                 .expect("Failed to create test translation service")
+        }
+
+        #[derive(TranslationKey)]
+        enum TestTranslationKeys {
+            #[translation(en_us = "Hello")]
+            Hello,
+            #[translation(en_us = "Hello Default")]
+            HelloDefaultOnly,
+            Invalid,
+        }
+        
+        #[rstest]
+        #[test]
+        fn test_translate_key(translation_service: TranslationService<MockFilesystemService>) {
+            // Given a valid translation key
+            let key = TestTranslationKeys::Hello;
+
+            // When I translate it
+            let translation = translation_service.translate(&key);
+
+            // Then it should return the correct translation
+            assert_eq!(translation, "Hello");
+        }
+
+        #[rstest]
+        #[test]
+        fn test_translate_key_non_default_language(mut translation_service: TranslationService<MockFilesystemService>) {
+            // Given a valid translation key with the language set to something other than the default
+            let language = translation_service
+                .get_language(LanguageCode("fr_fr".to_string()))
+                .expect("Failed to get language definition");
+            
+            translation_service
+                .set_language(&language)
+                .expect("Failed to set language");
+            
+            let key = TestTranslationKeys::Hello;
+
+            // When I translate it
+            let translation = translation_service.translate(&key);
+
+            // Then it should return the correct translation
+            assert_eq!(translation, "Bonjour");
+        }
+
+        #[rstest]
+        #[test]
+        fn test_translate_key_default_fallback(mut translation_service: TranslationService<MockFilesystemService>) {
+            // Given a valid translation key, but which is only present in the default language
+            let language = translation_service
+                .get_language(LanguageCode("fr_fr".to_string()))
+                .expect("Failed to get language definition");
+
+            translation_service
+                .set_language(&language)
+                .expect("Failed to set language");
+            
+            let key = TestTranslationKeys::HelloDefaultOnly;
+
+            // When I translate it
+            let translation = translation_service.translate(&key);
+
+            // Then it should fall back to the default language
+            assert_eq!(translation, "Hello Default");
+        }
+
+        #[rstest]
+        #[test]
+        fn test_translate_key_missing(translation_service: TranslationService<MockFilesystemService>) {
+            // Given a missing translation key
+            let key = TestTranslationKeys::Invalid;
+
+            // When I translate it
+            let translation = translation_service.translate(&key);
+
+            // Then it should return back the key name
+            assert_eq!(translation, "test.invalid");
+        }
+
+        #[rstest]
+        #[test]
+        fn test_set_language(mut translation_service: TranslationService<MockFilesystemService>) {
+            // Given a language which exists
+            let language = translation_service
+                .get_language(LanguageCode("fr_fr".to_string()))
+                .expect("Failed to get language definition");
+            
+            // When I set the language to it
+            let result = translation_service.set_language(&language);
+            
+            // Then it should switch correctly\
+            assert!(result.is_ok());
+            assert_eq!(translation_service.current_language_code, language.code);
+        }
+
+        #[rstest]
+        #[test]
+        fn test_set_language_to_current(mut translation_service: TranslationService<MockFilesystemService>) {
+            // Given a language which is set as the current language
+            let language = translation_service
+                .get_language(LanguageCode("fr_fr".to_string()))
+                .expect("Failed to get language definition");
+
+            translation_service
+                .set_language(&language)
+                .expect("Failed to set language");
+            
+            // When I set the language to it
+            let result = translation_service.set_language(&language);
+
+            // Then the language should stay the same, and no error should be returned
+            assert!(result.is_ok());
+            assert_eq!(translation_service.current_language_code, language.code);
+        }
+
+        #[rstest]
+        #[test]
+        fn test_set_language_to_default(mut translation_service: TranslationService<MockFilesystemService>) {
+            // Given a service set to another language
+            let language = translation_service
+                .get_language(LanguageCode("fr_fr".to_string()))
+                .expect("Failed to get language definition");
+
+            translation_service
+                .set_language(&language)
+                .expect("Failed to set language");
+
+            // When I set the language to default
+            let result = translation_service.set_language_to_default();
+
+            // Then it should switch correctly
+            assert!(result.is_ok());
+            assert_eq!(translation_service.current_language_code, translation_service.default_language_code);
+        }
+
+        #[rstest]
+        #[test]
+        fn test_set_language_to_default_current(mut translation_service: TranslationService<MockFilesystemService>) {
+            // Given a service set to the default language
+            assert_eq!(translation_service.get_current_language().code, translation_service.default_language_code);
+            
+            // When I set the language to default
+            let result = translation_service.set_language_to_default();
+
+            // Then the language should stay the same, and no error should be returned
+            assert!(result.is_ok());
+            assert_eq!(translation_service.current_language_code, translation_service.default_language_code);
+
+        }
+
+        #[rstest]
+        #[test]
+        fn test_set_language_nonexistent(mut translation_service: TranslationService<MockFilesystemService>) {
+            // Given a language which does not exist
+            let invalid_language = Language {
+                code: LanguageCode("invalid".to_string()),
+                name: "Invalid".to_string(),
+                translation_map: Arc::new(Default::default()),
+            };
+            
+            // When I set the language to it
+            let result = translation_service.set_language(&invalid_language);
+            
+            // Then it should return an appropriate error
+            assert!(result.is_err());
+            assert!(matches!(result, Err(TranslationError::LanguageNotFound(_))));
         }
     }
 }
