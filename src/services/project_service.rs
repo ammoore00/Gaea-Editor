@@ -720,6 +720,7 @@ mod test {
     fn default_test_project_settings() -> ProjectSettings {
         ProjectSettings {
             name: "Test Project".to_string(),
+            description: "Test Description".to_string(),
             path: Some("test/file/path".into()),
             project_version: ProjectVersion { version: *versions::V1_20_4 },
             project_type: ProjectType::DataPack,
@@ -795,6 +796,7 @@ mod test {
             let project_settings = ProjectSettings {
                 // 测试项目 means "Test Project" in simplified chinese
                 name: "测试项目".to_string(),
+                description: "Test Description".to_string(),
                 path: Some("test/file/测试项目".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
@@ -834,6 +836,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
+                description: "Test Description".to_string(),
                 path: Some("test?/invalid</path>".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
@@ -862,6 +865,7 @@ mod test {
 
             let project_settings = ProjectSettings {
                 name: "Test Project".to_string(),
+                description: "Test Description".to_string(),
                 path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::DataPack,
@@ -1428,6 +1432,7 @@ mod test {
             let serialized_project = default_serialized_project();
             let project = Project::new(ProjectSettings {
                 name: "Test Project".to_string(),
+                description: "Test Description".to_string(),
                 path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::Combined,
@@ -1477,6 +1482,7 @@ mod test {
             let serialized_project = default_serialized_project();
             let project = Project::new(ProjectSettings {
                 name: "Test Project".to_string(),
+                description: "Test Description".to_string(),
                 path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
                 project_type: ProjectType::Combined,
