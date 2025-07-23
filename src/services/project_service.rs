@@ -734,7 +734,7 @@ mod test {
             PackInfo::new(
                 PackData::new(
                     "test_pack".into(),
-                    versions::get_datapack_format_for_version(&versions::latest()).get_format_id() as u32,
+                    versions::get_datapack_format_for_version(versions::latest()).get_format_id() as u32,
                     None
                 ),
                 None, None, None, None

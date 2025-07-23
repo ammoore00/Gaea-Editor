@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
-use serde::{Deserialize, Serialize};
 use zip::result::ZipError;
 use zip::write::{ExtendedFileOptions, FileOptions};
 use zip::ZipArchive;

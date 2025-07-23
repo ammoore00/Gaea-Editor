@@ -6,7 +6,7 @@ use crate::data::serialization::pack_info::{PackData, PackFormat, PackInfo as Se
 use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext};
 
 pub type SerializedType = SerializedPackInfo;
-pub type DomainType = PackInfoDomainData;
+pub type DomainType = PackInfoSerializationInput;
 
 pub struct PackInfoAdapter;
 
@@ -73,7 +73,7 @@ impl Adapter<SerializedType, DomainType> for PackInfoAdapter {
             }
         };
         
-        Ok (PackInfoDomainData {
+        Ok (PackInfoSerializationInput {
             description: description.into(),
             version
         })
@@ -84,7 +84,7 @@ impl Adapter<SerializedType, DomainType> for PackInfoAdapter {
         _context: AdapterProviderContext<'_, AdpProvider>
     ) -> Result<SerializedType, Self::SerializedConversionError> {
         let description = &domain.description;
-        let version = &domain.version;
+        let version = domain.version;
 
         let format = match version {
             PackVersionType::Data(version) => versions::get_datapack_format_for_version(version),
@@ -105,17 +105,10 @@ impl Adapter<SerializedType, DomainType> for PackInfoAdapter {
     }
 }
 
-#[derive(Debug, Clone, derive_new::new, getset::Getters)]
-#[getset(get = "pub")]
-pub struct PackInfoDomainData {
-    description: PackDescription,
-    version: PackVersionType,
-}
-
-impl Into<PackInfo> for PackInfoDomainData {
-    fn into(self) -> PackInfo {
-        PackInfo::new(self.description, None)
-    }
+#[derive(Debug, Clone, derive_new::new)]
+pub struct PackInfoSerializationInput {
+    pub description: PackDescription,
+    pub version: PackVersionType,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -181,7 +174,7 @@ mod tests {
             let pack_data = PackInfoAdapter::deserialize(pack_info, context).await.unwrap();
             
             // It should deserialize properly
-            let PackInfoDomainData {
+            let PackInfoSerializationInput {
                 description,
                 version
             } = pack_data;
@@ -219,7 +212,7 @@ mod tests {
             let pack_data = PackInfoAdapter::deserialize(pack_info, context).await.unwrap();
 
             // It should deserialize properly
-            let PackInfoDomainData {
+            let PackInfoSerializationInput {
                 description,
                 version
             } = pack_data;
@@ -259,7 +252,7 @@ mod tests {
             let pack_data = PackInfoAdapter::deserialize(pack_info, context).await.unwrap();
 
             // It should give options for the primary MC version for both
-            let PackInfoDomainData {
+            let PackInfoSerializationInput {
                 description,
                 version
             } = pack_data;
@@ -413,7 +406,7 @@ mod tests {
             // Given a valid pack info for a datapack
             let version = *versions::V1_20_5;
             
-            let pack_info = Arc::new(RwLock::new(PackInfoDomainData::new(
+            let pack_info = Arc::new(RwLock::new(PackInfoSerializationInput::new(
                 PackDescription::String("Test description".to_string()),
                 PackVersionType::Data(version)
             )));
@@ -426,7 +419,7 @@ mod tests {
             let serialized = PackInfoAdapter::serialize(pack_info, context).await.unwrap();
             
             // It should work correctly
-            let expected_format = versions::get_datapack_format_for_version(&version);
+            let expected_format = versions::get_datapack_format_for_version(version);
             
             assert_eq!(*serialized.pack().pack_format(), expected_format.get_format_id() as u32);
             assert!(matches!(serialized.pack().description(), TextComponent::String(text) if text == "Test description"));
@@ -437,7 +430,7 @@ mod tests {
             // Given a valid pack info for a resourcepack
             let version = *versions::V1_20_5;
 
-            let pack_info = Arc::new(RwLock::new(PackInfoDomainData::new(
+            let pack_info = Arc::new(RwLock::new(PackInfoSerializationInput::new(
                 PackDescription::String("Test description".to_string()),
                 PackVersionType::Resource(version)
             )));
@@ -450,7 +443,7 @@ mod tests {
             let serialized = PackInfoAdapter::serialize(pack_info, context).await.unwrap();
 
             // It should work correctly
-            let expected_format = versions::get_resourcepack_format_for_version(&version);
+            let expected_format = versions::get_resourcepack_format_for_version(version);
             
             assert_eq!(*serialized.pack().pack_format(), expected_format.get_format_id() as u32);
             assert!(matches!(serialized.pack().description(), TextComponent::String(text) if text == "Test description"));
@@ -461,7 +454,7 @@ mod tests {
             // Given a pack info with unknown version type
             let version = *versions::V1_20_5;
 
-            let pack_info = Arc::new(RwLock::new(PackInfoDomainData::new(
+            let pack_info = Arc::new(RwLock::new(PackInfoSerializationInput::new(
                 PackDescription::String("Test description".to_string()),
                 PackVersionType::Unknown {
                     version_if_data: version,
@@ -480,10 +473,5 @@ mod tests {
             assert!(result.is_err());
             assert!(matches!(result, Err(PackInfoSerializationError::UnknownVersionTypeInSerialization)));
         }
-    }
-
-    mod misc {
-        use super::*;
-        // TODO: test conversion from pack info data to proper domain pack info
     }
 }

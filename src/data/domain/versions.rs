@@ -49,24 +49,24 @@ pub fn latest() -> MinecraftVersion {
 #[macro_export]
 macro_rules! latest_data_format {
     () => {
-        crate::data::domain::versions::get_datapack_format_for_version(&crate::data::domain::versions::latest())
+        crate::data::domain::versions::get_datapack_format_for_version(crate::data::domain::versions::latest())
     };
 }
 
 #[macro_export]
 macro_rules! latest_resource_format {
     () => {
-        crate::data::domain::versions::get_resourcepack_format_for_version(&crate::data::domain::versions::latest())
+        crate::data::domain::versions::get_resourcepack_format_for_version(crate::data::domain::versions::latest())
     };
 }
 
 // TODO: cache this as part of the macro for better performance
 
-pub fn get_datapack_format_for_version(version: &MinecraftVersion) -> &PackFormat {
+pub fn get_datapack_format_for_version(version: MinecraftVersion) -> &'static PackFormat {
     for format in &*DATA_FORMAT_MAP {
         let format = *format.value();
 
-        if format.get_versions().read().unwrap().contains(version) {
+        if format.get_versions().read().unwrap().contains(&version) {
             return format
         }
     }
@@ -75,11 +75,11 @@ pub fn get_datapack_format_for_version(version: &MinecraftVersion) -> &PackForma
     panic!("No datapack format found for version {}", version)
 }
 
-pub fn get_resourcepack_format_for_version(version: &MinecraftVersion) -> &PackFormat {
+pub fn get_resourcepack_format_for_version(version: MinecraftVersion) -> &'static PackFormat {
     for format in &*RESOURCE_FORMAT_MAP {
         let format = *format.value();
         
-        if format.get_versions().read().unwrap().contains(version) {
+        if format.get_versions().read().unwrap().contains(&version) {
             return format
         }
     }

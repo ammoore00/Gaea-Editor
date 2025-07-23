@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-use mc_version::MinecraftVersion;
+use mc_version::{MinecraftVersion, PackFormat};
 use uuid::{NoContext, Timestamp, Uuid};
 use crate::data::domain::pack_info::{PackDescription, PackInfo};
+use crate::data::domain::versions;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, getset::Getters)]
 #[getset(get = "pub")]
@@ -13,7 +14,7 @@ pub struct Project {
     path: Option<PathBuf>,
     project_version: ProjectVersion,
 
-    pack_info: PackInfoData,
+    pack_info: PackInfoProjectData,
 
     // TODO: make this more comprehensive
     has_unsaved_changes: bool,
@@ -27,14 +28,14 @@ impl Project {
             ProjectSettings::DataPack { name, description, path, project_version } => {
                 Self {
                     name, id, path, project_version,
-                    pack_info: PackInfoData::DataPack(PackInfo::new(description, None)),
+                    pack_info: PackInfoProjectData::DataPack(PackInfo::new(description, None)),
                     has_unsaved_changes: false,
                 }
             }
             ProjectSettings::ResourcePack { name, description, path, project_version } => {
                 Self {
                     name, id, path, project_version,
-                    pack_info: PackInfoData::ResourcePack(PackInfo::new(description, None)),
+                    pack_info: PackInfoProjectData::ResourcePack(PackInfo::new(description, None)),
                     has_unsaved_changes: false,
                 }
             }
@@ -42,7 +43,7 @@ impl Project {
                 Self {
                     name, id, path, project_version,
 
-                    pack_info: PackInfoData::Combined {
+                    pack_info: PackInfoProjectData::Combined {
                         data_info: PackInfo::new(data_description, None),
                         resource_info: PackInfo::new(resource_description, None),
                     },
@@ -63,9 +64,9 @@ impl Project {
     
     pub fn project_type(&self) -> ProjectType {
         match &self.pack_info {
-            PackInfoData::DataPack(_) => ProjectType::DataPack,
-            PackInfoData::ResourcePack(_) => ProjectType::ResourcePack,
-            PackInfoData::Combined { .. } => ProjectType::Combined,
+            PackInfoProjectData::DataPack(_) => ProjectType::DataPack,
+            PackInfoProjectData::ResourcePack(_) => ProjectType::ResourcePack,
+            PackInfoProjectData::Combined { .. } => ProjectType::Combined,
         }
     }
 
@@ -138,6 +139,26 @@ pub struct ProjectVersion {
     pub version: MinecraftVersion,
 }
 
+impl ProjectVersion {
+    pub fn get_data_format(&self) -> &'static PackFormat {
+        let format = versions::get_datapack_format_for_version(self.version);
+        format
+    }
+    
+    pub fn get_resource_format(&self) -> &'static PackFormat {
+        let format = versions::get_resourcepack_format_for_version(self.version);
+        format
+    }
+    
+    pub fn get_base_data_mc_version(&self) -> MinecraftVersion {
+        self.version
+    }
+    
+    pub fn get_base_resource_mc_version(&self) -> MinecraftVersion {
+        self.version
+    }
+}
+
 pub type ProjectID = Uuid;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -157,7 +178,7 @@ pub enum ProjectDescription {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum PackInfoData {
+pub enum PackInfoProjectData {
     DataPack(PackInfo),
     ResourcePack(PackInfo),
     Combined {
@@ -185,7 +206,7 @@ impl Project {
 
     pub fn recreate_settings(&self) -> ProjectSettings {
         match &self.pack_info {
-            PackInfoData::DataPack(info) => {
+            PackInfoProjectData::DataPack(info) => {
                 ProjectSettings::DataPack {
                     name: self.name.clone(),
                     description: info.description().clone(),
@@ -193,7 +214,7 @@ impl Project {
                     project_version: self.project_version.clone(),
                 }
             },
-            PackInfoData::ResourcePack(info) => { 
+            PackInfoProjectData::ResourcePack(info) => { 
                 ProjectSettings::ResourcePack {
                     name: self.name.clone(),
                     description: info.description().clone(),
@@ -201,7 +222,7 @@ impl Project {
                     project_version: self.project_version.clone(),
                 }
             },
-            PackInfoData::Combined { data_info, resource_info } => {
+            PackInfoProjectData::Combined { data_info, resource_info } => {
                 ProjectSettings::Combined {
                     name: self.name.clone(),
                     data_description: data_info.description().clone(),

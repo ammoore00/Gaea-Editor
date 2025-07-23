@@ -1,9 +1,8 @@
-use std::convert::Infallible;
-use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::data::adapters;
 use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
-use crate::data::domain::project::{Project as DomainProject, ProjectType};
+use crate::data::adapters::pack_info::{PackInfoSerializationInput, PackVersionType};
+use crate::data::domain::project::{PackInfoProjectData, Project as DomainProject};
 use crate::data::serialization::project::Project as SerializedProject;
 use crate::repositories::adapter_repo::{AdapterProvider, AdapterRepoError};
 use crate::repositories::adapter_repo::AdapterProviderContext;
@@ -29,14 +28,42 @@ impl Adapter<SerializedType, DomainType> for ProjectAdapter {
         domain: AdapterInput<'_, DomainType>,
         context: AdapterProviderContext<'_, AdpProvider>,
     ) -> Result<SerializedType, ProjectSerializeConversionError> {
-        let project_type = domain.project_type();
+        let project_version= domain.0.project_version();
         
-        match project_type {
-            ProjectType::DataPack | ProjectType::ResourcePack => {}
-            ProjectType::Combined => {}
+        match domain.0.pack_info() {
+            PackInfoProjectData::DataPack(pack_info) => {
+                let pack_version = PackVersionType::Data(project_version.get_base_data_mc_version());
+                let pack_info_domain_data = PackInfoSerializationInput::new(pack_info.description().clone(), pack_version);
+
+                let serialized_pack_info = serialize_pack_info(pack_info_domain_data, context.clone()).await?;
+                
+                Ok(SerializedProjectData::Single(SerializedProject::new(serialized_pack_info)))
+            }
+            PackInfoProjectData::ResourcePack(pack_info) => {
+                let pack_version = PackVersionType::Resource(project_version.get_base_resource_mc_version());
+                let pack_info_domain_data = PackInfoSerializationInput::new(pack_info.description().clone(), pack_version);
+
+                let serialized_pack_info = serialize_pack_info(pack_info_domain_data, context.clone()).await?;
+
+                Ok(SerializedProjectData::Single(SerializedProject::new(serialized_pack_info)))
+            }
+            PackInfoProjectData::Combined { data_info, resource_info } => {
+                let pack_data_version = PackVersionType::Data(project_version.get_base_data_mc_version());
+                let pack_info_domain_data = PackInfoSerializationInput::new(data_info.description().clone(), pack_data_version);
+
+                let serialized_data_pack_info = serialize_pack_info(pack_info_domain_data, context.clone()).await?;
+
+                let pack_resource_version = PackVersionType::Resource(project_version.get_base_resource_mc_version());
+                let pack_info_domain_data = PackInfoSerializationInput::new(resource_info.description().clone(), pack_resource_version);
+
+                let serialized_resource_pack_info = serialize_pack_info(pack_info_domain_data, context.clone()).await?;
+                
+                Ok(SerializedProjectData::Combined {
+                    data_project: SerializedProject::new(serialized_data_pack_info),
+                    resource_project: SerializedProject::new(serialized_resource_pack_info),
+                })
+            }
         }
-        
-        todo!()
     }
 }
 
@@ -77,4 +104,12 @@ pub enum SerializedProjectData {
 #[cfg(test)]
 mod test {
     use super::*;
+    
+    mod deserialize {
+        use super::*;
+    }
+    
+    mod serialize {
+        use super::*;
+    }
 }
