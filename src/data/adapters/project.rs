@@ -18,19 +18,37 @@ impl Adapter<SerializedType, DomainType> for ProjectAdapter {
     type SerializedConversionError = ProjectSerializeConversionError;
 
     async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(
-        serialized: AdapterInput<'_, SerializedType>,
+        serialized: AdapterInput<SerializedType>,
         context: AdapterProviderContext<'_, AdpProvider>,
     ) -> Result<DomainType, Self::ConversionError> {
+        let serialized_project = &*serialized;
+        
+        match serialized_project {
+            SerializedProjectData::Single(project) => {
+                let pack_info = project.pack_info().clone();
+                let pack_info_input = AdapterInput::new(pack_info);
+                let domain_pack_info: PackInfoSerializationInput = context.deserialize(pack_info_input).await
+                    .map_err(|e| ProjectDeserializeConversionError::PackInfoDeserialization(e))?;
+            }
+            SerializedProjectData::Combined {
+                data_project,
+                resource_project,
+            } => {
+                
+            }
+        }
+        
         todo!()
     }
 
     async fn serialize<AdpProvider: AdapterProvider + ?Sized>(
-        domain: AdapterInput<'_, DomainType>,
+        domain: AdapterInput<DomainType>,
         context: AdapterProviderContext<'_, AdpProvider>,
     ) -> Result<SerializedType, ProjectSerializeConversionError> {
-        let project_version= domain.0.project_version();
+        let project = domain.0;
+        let project_version= project.project_version();
         
-        match domain.0.pack_info() {
+        match project.pack_info() {
             PackInfoProjectData::DataPack(pack_info) => {
                 let pack_version = PackVersionType::Data(project_version.get_base_data_mc_version());
                 let pack_info_domain_data = PackInfoSerializationInput::new(pack_info.description().clone(), pack_version);
@@ -71,8 +89,7 @@ async fn serialize_pack_info<AdpProvider: AdapterProvider + ?Sized>(
     pack_info: adapters::pack_info::DomainType,
     context: AdapterProviderContext<'_, AdpProvider>,
 ) -> Result<adapters::pack_info::SerializedType, ProjectSerializeConversionError> {
-    let input_lock = RwLock::new(pack_info);
-    let input = AdapterInput::new(input_lock.read().await);
+    let input = AdapterInput::new(pack_info);
 
     context.serialize(input).await.map_err(|e| {
         ProjectSerializeConversionError::PackInfoSerialization(e)
@@ -81,8 +98,8 @@ async fn serialize_pack_info<AdpProvider: AdapterProvider + ?Sized>(
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectDeserializeConversionError {
-    #[error("Invalid Project!")]
-    InvalidProject,
+    #[error("Error deserializing pack info! {}", .0)]
+    PackInfoDeserialization(AdapterRepoError),
 }
 impl AdapterError for ProjectDeserializeConversionError {}
 

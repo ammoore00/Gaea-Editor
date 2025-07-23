@@ -16,7 +16,7 @@ impl Adapter<SerializedType, DomainType> for PackInfoAdapter {
     type SerializedConversionError = PackInfoSerializationError;
 
     async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(
-        serialized: AdapterInput<'_, SerializedType>,
+        serialized: AdapterInput<SerializedType>,
         _context: AdapterProviderContext<'_, AdpProvider>
     ) -> Result<DomainType, Self::ConversionError> {
         let pack_info = &*serialized;
@@ -80,7 +80,7 @@ impl Adapter<SerializedType, DomainType> for PackInfoAdapter {
     }
 
     async fn serialize<AdpProvider: AdapterProvider + ?Sized>(
-        domain: AdapterInput<'_, DomainType>,
+        domain: AdapterInput<DomainType>,
         _context: AdapterProviderContext<'_, AdpProvider>
     ) -> Result<SerializedType, Self::SerializedConversionError> {
         let description = &domain.description;
@@ -161,11 +161,11 @@ mod tests {
                 None
             );
             
-            let pack_info = Arc::new(RwLock::new(SerializedPackInfo::new(
+            let pack_info = SerializedPackInfo::new(
                 pack,
                 None, None, None, None,
-            )));
-            let pack_info = AdapterInput::new(pack_info.read().await);
+            );
+            let pack_info = AdapterInput::new(pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -199,11 +199,11 @@ mod tests {
                 None
             );
 
-            let pack_info = Arc::new(RwLock::new(SerializedPackInfo::new(
+            let pack_info = SerializedPackInfo::new(
                 pack,
                 None, None, None, None,
-            )));
-            let pack_info = AdapterInput::new(pack_info.read().await);
+            );
+            let pack_info = AdapterInput::new(pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -239,11 +239,11 @@ mod tests {
                 None
             );
 
-            let pack_info = Arc::new(RwLock::new(SerializedPackInfo::new(
+            let pack_info = SerializedPackInfo::new(
                 pack,
                 None, None, None, None,
-            )));
-            let pack_info = AdapterInput::new(pack_info.read().await);
+            );
+            let pack_info = AdapterInput::new(pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -278,11 +278,11 @@ mod tests {
                 None
             );
 
-            let pack_info = Arc::new(RwLock::new(SerializedPackInfo::new(
+            let pack_info = SerializedPackInfo::new(
                 pack,
                 None, None, None, None,
-            )));
-            let pack_info = AdapterInput::new(pack_info.read().await);
+            );
+            let pack_info = AdapterInput::new(pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -308,11 +308,11 @@ mod tests {
                 Some(PackFormat::Single(supported_format.get_format_id() as u32))
             );
 
-            let pack_info = Arc::new(RwLock::new(SerializedPackInfo::new(
+            let pack_info = SerializedPackInfo::new(
                 pack,
                 None, None, None, None,
-            )));
-            let pack_info = AdapterInput::new(pack_info.read().await);
+            );
+            let pack_info = AdapterInput::new(pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -342,11 +342,11 @@ mod tests {
                 ))
             );
 
-            let pack_info = Arc::new(RwLock::new(SerializedPackInfo::new(
+            let pack_info = SerializedPackInfo::new(
                 pack,
                 None, None, None, None,
-            )));
-            let pack_info = AdapterInput::new(pack_info.read().await);
+            );
+            let pack_info = AdapterInput::new(pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -376,11 +376,11 @@ mod tests {
                 })
             );
 
-            let pack_info = Arc::new(RwLock::new(SerializedPackInfo::new(
+            let pack_info = SerializedPackInfo::new(
                 pack,
                 None, None, None, None,
-            )));
-            let pack_info = AdapterInput::new(pack_info.read().await);
+            );
+            let pack_info = AdapterInput::new(pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -395,8 +395,6 @@ mod tests {
     }
     
     mod serialize {
-        use std::sync::Arc;
-        use tokio::sync::RwLock;
         use crate::data::serialization::text_component::TextComponent;
         use crate::repositories::adapter_repo::AdapterRepository;
         use super::*;
@@ -406,11 +404,11 @@ mod tests {
             // Given a valid pack info for a datapack
             let version = *versions::V1_20_5;
             
-            let pack_info = Arc::new(RwLock::new(PackInfoSerializationInput::new(
+            let pack_info = PackInfoSerializationInput::new(
                 PackDescription::String("Test description".to_string()),
                 PackVersionType::Data(version)
-            )));
-            let pack_info = AdapterInput::new(pack_info.read().await);
+            );
+            let pack_info = AdapterInput::new(pack_info);
             
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -430,11 +428,11 @@ mod tests {
             // Given a valid pack info for a resourcepack
             let version = *versions::V1_20_5;
 
-            let pack_info = Arc::new(RwLock::new(PackInfoSerializationInput::new(
+            let pack_info = PackInfoSerializationInput::new(
                 PackDescription::String("Test description".to_string()),
                 PackVersionType::Resource(version)
-            )));
-            let pack_info = AdapterInput::new(pack_info.read().await);
+            );
+            let pack_info = AdapterInput::new(pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -454,14 +452,14 @@ mod tests {
             // Given a pack info with unknown version type
             let version = *versions::V1_20_5;
 
-            let pack_info = Arc::new(RwLock::new(PackInfoSerializationInput::new(
+            let pack_info = PackInfoSerializationInput::new(
                 PackDescription::String("Test description".to_string()),
                 PackVersionType::Unknown {
                     version_if_data: version,
                     version_if_resource: version,
                 }
-            )));
-            let pack_info = AdapterInput::new(pack_info.read().await);
+            );
+            let pack_info = AdapterInput::new(pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;

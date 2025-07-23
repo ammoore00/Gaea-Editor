@@ -15,10 +15,12 @@ pub trait ProjectProvider {
     fn add_project(&self, project: Project, overwrite_existing: bool) -> Result<ProjectID>;
 
     fn with_project<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
-    where F: FnOnce(&Project) -> R;
+    where
+        F: FnOnce(&Project) -> R;
 
     fn with_project_mut<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
-    where F: FnOnce(&mut Project) -> R;
+    where
+        F: FnOnce(&mut Project) -> R;
 
     async fn with_project_async<'a, F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where
@@ -74,7 +76,7 @@ impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Files
 
     fn with_project<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where
-        F: FnOnce(&Project) -> R
+        F: FnOnce(&Project) -> R,
     {
         let project = self.projects.get(&project_id);
         
@@ -89,7 +91,7 @@ impl<Filesystem: FilesystemProvider> ProjectProvider for ProjectRepository<Files
 
     fn with_project_mut<F, R>(&self, project_id: ProjectID, callback: F) -> Option<R>
     where
-        F: FnOnce(&mut Project) -> R
+        F: FnOnce(&mut Project) -> R,
     {
         let project = self.projects.get(&project_id);
         

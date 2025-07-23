@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
+use std::sync::{Arc, RwLock};
 use zip::result::ZipError;
 use zip::write::{ExtendedFileOptions, FileOptions};
 use zip::ZipArchive;
@@ -10,11 +11,19 @@ pub trait ZippableProject {
     fn extract(zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, ZipError> where Self: Sized;
 }
 
-#[derive(Debug, Clone, derive_new::new, getset::Getters)]
+#[derive(Debug, Clone, getset::Getters)]
 #[getset(get = "pub")]
 pub struct Project {
     // This should represent the internal file layout of the project
-    pack_info: PackInfo
+    pack_info: Arc<RwLock<PackInfo>>
+}
+
+impl Project {
+    pub fn new(pack_info: PackInfo) -> Self {
+        Self {
+            pack_info: Arc::new(RwLock::new(pack_info))
+        }
+    }
 }
 
 impl ZippableProject for Project {
@@ -61,7 +70,7 @@ mod tests {
         #[test]
         fn test_zip_pack_info() {
             // Given a simple project with only a pack info
-            let pack_info = PackInfo::default_data();
+            let pack_info = Arc::new(RwLock::new(PackInfo::default_data()));
             let project = Project {
                 pack_info: pack_info.clone()
             };
@@ -104,7 +113,7 @@ mod tests {
             let project = Project::extract(zip_archive).unwrap();
 
             // It should be loaded correctly into the project
-            assert_eq!(project.pack_info, pack_info);
+            assert_eq!(*project.pack_info.read().unwrap(), pack_info);
         }
     }
 }
