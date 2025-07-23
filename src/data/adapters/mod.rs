@@ -39,7 +39,6 @@ impl AdapterError for Infallible {}
 
 pub struct AdapterInput<'a, T>(Arc<RwLockReadGuard<'a, T>>);
 
-
 impl<'a, T> AdapterInput<'a, T> {
     pub fn new(inner: RwLockReadGuard<'a, T>) -> Self {
         Self(Arc::new(inner))

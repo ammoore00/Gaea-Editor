@@ -43,7 +43,7 @@ mod tests {
     static ADAPTER_PROVIDER: Lazy<RwLock<DefaultAdapterProvider>> = Lazy::new(|| RwLock::new(DefaultAdapterProvider::new()));
     
     async fn adapter_context<'a>() -> AdapterProviderContext<'a, AdapterRepository> {
-        AdapterProviderContext(ADAPTER_PROVIDER.read().await)
+        AdapterProviderContext::new(ADAPTER_PROVIDER.read().await)
     }
     
     #[tokio::test]

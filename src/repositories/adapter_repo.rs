@@ -6,13 +6,35 @@ use dashmap::DashMap;
 use tokio::sync::{RwLock, RwLockReadGuard};
 use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
 
-pub struct AdapterProviderContext<'a, AdpProvider: AdapterProvider + ?Sized>(pub RwLockReadGuard<'a, AdpProvider>);
+pub struct AdapterProviderContext<'a, AdpProvider: AdapterProvider + ?Sized>(pub Arc<RwLockReadGuard<'a, AdpProvider>>);
 
-impl<'a, AdpProvider: AdapterProvider> std::ops::Deref for AdapterProviderContext<'a, AdpProvider> {
-    type Target = AdpProvider;
+impl<'a, AdpProvider: AdapterProvider + ?Sized> Clone for AdapterProviderContext<'a, AdpProvider> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
-    fn deref(&self) -> &Self::Target {
-        &*self.0
+impl<'a, AdpProvider: AdapterProvider + ?Sized> AdapterProviderContext<'a, AdpProvider> {
+    pub fn new(lock: RwLockReadGuard<'a, AdpProvider>) -> Self {
+        Self(Arc::new(lock))
+    }
+
+    pub async fn serialize<Domain, Serialized>(&self, domain: AdapterInput<'_, Domain>) -> Result<Serialized, AdapterRepoError>
+    where
+        Domain: Send + Sync + 'static,
+        Serialized: Send + Sync + 'static
+    {
+        let adapter_repo = &*self.0;
+        adapter_repo.serialize(domain, self.clone()).await
+    }
+
+    pub async fn deserialize<Serialized, Domain>(&self, serialized: AdapterInput<'_, Serialized>) -> Result<Domain, AdapterRepoError>
+    where
+        Domain: Send + Sync + 'static,
+        Serialized: Send + Sync + 'static
+    {
+        let adapter_repo = &*self.0;
+        adapter_repo.deserialize(serialized, self.clone()).await
     }
 }
 
@@ -77,7 +99,7 @@ impl AdapterRepository {
     
     #[cfg(test)]
     pub async fn context_from_repo<'a>(repo: &'a Arc<RwLock<Self>>) -> AdapterProviderContext<'a, Self> {
-        AdapterProviderContext(repo.read().await)
+        AdapterProviderContext(Arc::new(repo.read().await))
     }
 }
 
@@ -346,7 +368,7 @@ mod test {
         // Given a repo with an adapter
 
         let repo = Arc::new(RwLock::new(AdapterRepository::new()));
-        let read_context = AdapterProviderContext(repo.read().await);
+        let read_context = AdapterProviderContext::new(repo.read().await);
         let repo = repo.read().await;
         
         repo.register::<TestAdapter, Serialized, Domain>();
@@ -368,7 +390,7 @@ mod test {
         // Given an adapter which fails calls
 
         let repo = Arc::new(RwLock::new(AdapterRepository::new()));
-        let read_context = AdapterProviderContext(repo.read().await);
+        let read_context = AdapterProviderContext::new(repo.read().await);
         let repo = repo.read().await;
 
         repo.register::<TestFailAdapter, Serialized, Domain>();
@@ -390,7 +412,7 @@ mod test {
         // Given an adapter that does not exist
 
         let repo = Arc::new(RwLock::new(AdapterRepository::new()));
-        let read_context = AdapterProviderContext(repo.read().await);
+        let read_context = AdapterProviderContext::new(repo.read().await);
         let repo = repo.read().await;
 
         // When I try to serialize with that adapter
@@ -410,7 +432,7 @@ mod test {
         // Given a repo with an adapter
 
         let repo = Arc::new(RwLock::new(AdapterRepository::new()));
-        let read_context = AdapterProviderContext(repo.read().await);
+        let read_context = AdapterProviderContext::new(repo.read().await);
         let repo = repo.read().await;
 
         repo.register::<TestAdapter, Serialized, Domain>();
@@ -432,7 +454,7 @@ mod test {
         // Given an adapter which fails calls
 
         let repo = Arc::new(RwLock::new(AdapterRepository::new()));
-        let read_context = AdapterProviderContext(repo.read().await);
+        let read_context = AdapterProviderContext::new(repo.read().await);
         let repo = repo.read().await;
 
         repo.register::<TestFailAdapter, Serialized, Domain>();
@@ -454,7 +476,7 @@ mod test {
         // Given an adapter that does not exist
 
         let repo = Arc::new(RwLock::new(AdapterRepository::new()));
-        let read_context = AdapterProviderContext(repo.read().await);
+        let read_context = AdapterProviderContext::new(repo.read().await);
         let repo = repo.read().await;
 
         // When I try to deserialize with that adapter

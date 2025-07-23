@@ -9,30 +9,47 @@ use crate::data::domain::pack_info::{PackDescription, PackInfo};
 pub struct Project {
     name: String,
     id: ProjectID,
-    
+
     path: Option<PathBuf>,
     project_version: ProjectVersion,
-    project_type: ProjectType,
 
-    pack_info: PackInfo,
-    
+    pack_info: PackInfoData,
+
     // TODO: make this more comprehensive
     has_unsaved_changes: bool,
 }
 
 impl Project {
     pub fn new(settings: ProjectSettings) -> Self {
-        Self {
-            name: settings.name,
-            id: Self::generate_id(),
-            
-            path: settings.path,
-            project_version: settings.project_version,
-            project_type: settings.project_type,
-            
-            pack_info: PackInfo::new(settings.description, None),
-            
-            has_unsaved_changes: false,
+        let id = Self::generate_id();
+        
+        match settings {
+            ProjectSettings::DataPack { name, description, path, project_version } => {
+                Self {
+                    name, id, path, project_version,
+                    pack_info: PackInfoData::DataPack(PackInfo::new(description, None)),
+                    has_unsaved_changes: false,
+                }
+            }
+            ProjectSettings::ResourcePack { name, description, path, project_version } => {
+                Self {
+                    name, id, path, project_version,
+                    pack_info: PackInfoData::ResourcePack(PackInfo::new(description, None)),
+                    has_unsaved_changes: false,
+                }
+            }
+            ProjectSettings::Combined { name, data_description, resource_description, path, project_version } => {
+                Self {
+                    name, id, path, project_version,
+
+                    pack_info: PackInfoData::Combined {
+                        data_info: PackInfo::new(data_description, None),
+                        resource_info: PackInfo::new(resource_description, None),
+                    },
+
+                    has_unsaved_changes: false,
+                }
+            }
         }
     }
 
@@ -43,6 +60,14 @@ impl Project {
     pub fn clear_unsaved_changes(&mut self) {
         self.has_unsaved_changes = false;
     }
+    
+    pub fn project_type(&self) -> ProjectType {
+        match &self.pack_info {
+            PackInfoData::DataPack(_) => ProjectType::DataPack,
+            PackInfoData::ResourcePack(_) => ProjectType::ResourcePack,
+            PackInfoData::Combined { .. } => ProjectType::Combined,
+        }
+    }
 
     fn generate_id() -> ProjectID {
         let timestamp = Timestamp::from_unix(NoContext, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(), 0);
@@ -52,12 +77,59 @@ impl Project {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct ProjectSettings {
-    pub name: String,
-    pub description: PackDescription,
-    pub path: Option<PathBuf>,
-    pub project_version: ProjectVersion,
-    pub project_type: ProjectType,
+pub enum ProjectSettings {
+    DataPack {
+        name: String,
+        description: PackDescription,
+        path: Option<PathBuf>,
+        project_version: ProjectVersion,
+    },
+    ResourcePack {
+        name: String,
+        description: PackDescription,
+        path: Option<PathBuf>,
+        project_version: ProjectVersion,
+    },
+    Combined {
+        name: String,
+        data_description: PackDescription,
+        resource_description: PackDescription,
+        path: Option<PathBuf>,
+        project_version: ProjectVersion,
+    },
+}
+
+impl ProjectSettings {
+    pub fn with_path(self, new_path: Option<PathBuf>) -> Self {
+        match self {
+            Self::DataPack { name, description, path: _, project_version } => {
+                Self::DataPack { name, description, path: new_path, project_version }
+            },
+            Self::ResourcePack { name, description, path: _, project_version } => {
+                Self::ResourcePack { name, description, path: new_path, project_version }
+            },
+            Self::Combined { name, data_description, resource_description, path: _, project_version } => {
+                Self::Combined { name, data_description, resource_description, path: new_path, project_version }
+            },
+
+        }
+    }
+    
+    pub fn name(&self) -> &str {
+        match self {
+            Self::DataPack { name, .. } => name,
+            Self::ResourcePack { name, .. } => name,
+            Self::Combined { name, .. } => name,
+        }
+    }
+    
+    pub fn path(&self) -> Option<&PathBuf> {
+        match self {
+            Self::DataPack { path, .. } => path,
+            Self::ResourcePack { path, .. } => path,
+            Self::Combined { path, .. } => path,
+        }.as_ref()
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -73,6 +145,25 @@ pub enum ProjectType {
     DataPack,
     ResourcePack,
     Combined,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum ProjectDescription {
+    Single(PackDescription),
+    Combined {
+        data_description: PackDescription,
+        resource_description: PackDescription,
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum PackInfoData {
+    DataPack(PackInfo),
+    ResourcePack(PackInfo),
+    Combined {
+        data_info: PackInfo,
+        resource_info: PackInfo,
+    }
 }
 
 #[cfg(test)]
@@ -91,14 +182,34 @@ impl Project {
     pub fn set_id(&mut self, id: ProjectID) {
         self.id = id;
     }
-    
+
     pub fn recreate_settings(&self) -> ProjectSettings {
-        ProjectSettings {
-            name: self.name.clone(),
-            description: self.pack_info.description().clone(),
-            path: self.path.clone(),
-            project_version: self.project_version.clone(),
-            project_type: self.project_type.clone(),
+        match &self.pack_info {
+            PackInfoData::DataPack(info) => {
+                ProjectSettings::DataPack {
+                    name: self.name.clone(),
+                    description: info.description().clone(),
+                    path: self.path.clone(),
+                    project_version: self.project_version.clone(),
+                }
+            },
+            PackInfoData::ResourcePack(info) => { 
+                ProjectSettings::ResourcePack {
+                    name: self.name.clone(),
+                    description: info.description().clone(),
+                    path: self.path.clone(),
+                    project_version: self.project_version.clone(),
+                }
+            },
+            PackInfoData::Combined { data_info, resource_info } => {
+                ProjectSettings::Combined {
+                    name: self.name.clone(),
+                    data_description: data_info.description().clone(),
+                    resource_description: resource_info.description().clone(),
+                    path: self.path.clone(),
+                    project_version: self.project_version.clone(),
+                }
+            }
         }
     }
 }

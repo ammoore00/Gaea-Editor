@@ -101,11 +101,13 @@ where
 
     /// Consumes project settings, then returns a sanitized version of it,
     /// or an error if it is unrecoverable
-    fn sanitize_project_settings(mut settings: ProjectSettings) -> Result<ProjectSettings> {
-        if let Some(path) = &settings.path {
-            settings.path = Some(Self::sanitize_path(path)?);
+    fn sanitize_project_settings(settings: ProjectSettings) -> Result<ProjectSettings> {
+        let path = settings.path().cloned();
+        
+        if let Some(path) = path {
+            return Ok(settings.with_path(Some(Self::sanitize_path(path.as_path())?)))
         }
-
+        
         Ok(settings)
     }
 
@@ -188,7 +190,7 @@ where
             }
         };
 
-        let adapter_context = AdapterProviderContext(self.adapter_provider.read().await);
+        let adapter_context = AdapterProviderContext::new(self.adapter_provider.read().await);
         let serialize_input = Arc::new(RwLock::new(serialized_project));
         let serialize_input = AdapterInput::new(serialize_input.read().await);
         
@@ -210,7 +212,7 @@ where
             let project_provider = self.project_provider.read().await;
 
             let adapter_provider = self.adapter_provider.read().await;
-            let adapter_context = AdapterProviderContext(self.adapter_provider.read().await);
+            let adapter_context = AdapterProviderContext::new(self.adapter_provider.read().await);
             
             project_provider.with_project_async(zip_data.project_id, |project: Arc<RwLock<Project>>| {
                 Box::pin(async move {
@@ -349,9 +351,9 @@ mod test {
     use once_cell::sync::Lazy;
     use tokio::sync::RwLock;
     use crate::data::adapters::{Adapter, AdapterInput};
-    use crate::data::adapters::project::{ProjectConversionError, SerializedProjectData};
+    use crate::data::adapters::project::{ProjectDeserializeConversionError, SerializedProjectData};
     use crate::data::domain::pack_info::PackDescription;
-    use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
+    use crate::data::domain::project::{Project, ProjectDescription, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
     use crate::data::domain::versions;
     use crate::data::serialization::pack_info::{PackData, PackInfo};
     use crate::data::serialization::project::Project as SerializedProject;
@@ -651,7 +653,7 @@ mod test {
 
     #[async_trait::async_trait]
     impl Adapter<SerializedProjectData, Project> for MockProjectAdapter {
-        type ConversionError = ProjectConversionError;
+        type ConversionError = ProjectDeserializeConversionError;
         type SerializedConversionError = Infallible;
 
         async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(_serialized: AdapterInput<'_, SerializedProjectData>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Project, Self::ConversionError> {
@@ -719,12 +721,11 @@ mod test {
     }
 
     fn default_test_project_settings() -> ProjectSettings {
-        ProjectSettings {
+        ProjectSettings::DataPack {
             name: "Test Project".to_string(),
             description: PackDescription::String("Test Description".to_string()),
             path: Some("test/file/path".into()),
             project_version: ProjectVersion { version: *versions::V1_20_4 },
-            project_type: ProjectType::DataPack,
         }
     }
     
@@ -774,10 +775,8 @@ mod test {
             }).unwrap();
             
             // Verify individual settings
-            assert_eq!(created_settings.name, project_settings.name);
-            assert_eq!(created_settings.path, project_settings.path);
-            assert_eq!(created_settings.project_version, project_settings.project_version);
-            assert_eq!(created_settings.project_type, project_settings.project_type);
+            assert_eq!(created_settings.name(), project_settings.name());
+            assert_eq!(created_settings.path(), project_settings.path());
             
             // Validate that a valid UUID was supplied
             assert_ne!(project_id, ProjectID::nil());
@@ -794,13 +793,12 @@ mod test {
 
             // Given valid project settings
 
-            let project_settings = ProjectSettings {
+            let project_settings = ProjectSettings::DataPack {
                 // 测试项目 means "Test Project" in simplified chinese
                 name: "测试项目".to_string(),
                 description: PackDescription::String("Test Description".to_string()),
                 path: Some("test/file/测试项目".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
             };
 
             // When I create a project
@@ -822,10 +820,8 @@ mod test {
             }).unwrap();
 
             // Verify individual settings
-            assert_eq!(created_settings.name, project_settings.name);
-            assert_eq!(created_settings.path, project_settings.path);
-            assert_eq!(created_settings.project_version, project_settings.project_version);
-            assert_eq!(created_settings.project_type, project_settings.project_type);
+            assert_eq!(created_settings.name(), project_settings.name());
+            assert_eq!(created_settings.path(), project_settings.path());
         }
 
         /// Test attempting to create a project with an invalid path
@@ -835,12 +831,11 @@ mod test {
 
             // Given valid project settings
 
-            let project_settings = ProjectSettings {
+            let project_settings = ProjectSettings::DataPack {
                 name: "Test Project".to_string(),
                 description: PackDescription::String("Test Description".to_string()),
                 path: Some("test?/invalid</path>".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
             };
 
             // When I create a project
@@ -856,7 +851,7 @@ mod test {
             let expected_path = "test_/invalid_/path_";
 
             let created_settings = project_provider.with_project(project_id, |project| project.recreate_settings()).unwrap();
-            assert_eq!(created_settings.path.as_ref().unwrap().to_string_lossy(), expected_path);
+            assert_eq!(created_settings.path().as_ref().unwrap().to_string_lossy(), expected_path);
         }
         
         /// Test attempting to create a project while one already exists with the same name
@@ -864,12 +859,11 @@ mod test {
         async fn test_create_duplicate_project() {
             // Given a project that already exists
 
-            let project_settings = ProjectSettings {
+            let project_settings = ProjectSettings::DataPack {
                 name: "Test Project".to_string(),
                 description: PackDescription::String("Test Description".to_string()),
                 path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
-                project_type: ProjectType::DataPack,
             };
 
             let existing_project = Project::new(project_settings.clone());
@@ -955,7 +949,7 @@ mod test {
             
             // When I open it
 
-            let project_id = project_service.open_project(project_settings.path.as_ref().unwrap().as_path()).await.unwrap();
+            let project_id = project_service.open_project(project_settings.path().as_ref().unwrap().as_path()).await.unwrap();
             
             // It should be opened properly
 
@@ -1019,7 +1013,7 @@ mod test {
             
             // When I try to open it again
 
-            let result = project_service.open_project(project_settings.path.as_ref().unwrap().as_path()).await;
+            let result = project_service.open_project(project_settings.path().as_ref().unwrap().as_path()).await;
 
             // It should return an appropriate error
 
@@ -1055,7 +1049,7 @@ mod test {
 
             // When I try to open a project
 
-            let result = project_service.open_project(project_settings.path.as_ref().unwrap().as_path()).await;
+            let result = project_service.open_project(project_settings.path().as_ref().unwrap().as_path()).await;
 
             // It should return an appropriate error
 
@@ -1431,12 +1425,12 @@ mod test {
             // Given a project with both resource and data components
 
             let serialized_project = default_serialized_project();
-            let project = Project::new(ProjectSettings {
+            let project = Project::new(ProjectSettings::Combined {
                 name: "Test Project".to_string(),
-                description: PackDescription::String("Test Description".to_string()),
+                data_description: PackDescription::String("Test Description".to_string()),
+                resource_description: PackDescription::String("Test Description".to_string()),
                 path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
-                project_type: ProjectType::Combined,
             });
 
             MockProjectAdapter::reset_config();
@@ -1481,12 +1475,12 @@ mod test {
             // Given a project with combined type and a single path
 
             let serialized_project = default_serialized_project();
-            let project = Project::new(ProjectSettings {
+            let project = Project::new(ProjectSettings::Combined {
                 name: "Test Project".to_string(),
-                description: PackDescription::String("Test Description".to_string()),
+                data_description: PackDescription::String("Test Description".to_string()),
+                resource_description: PackDescription::String("Test Description".to_string()),
                 path: Some("test/file/path".into()),
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
-                project_type: ProjectType::Combined,
             });
 
             MockProjectAdapter::reset_config();
