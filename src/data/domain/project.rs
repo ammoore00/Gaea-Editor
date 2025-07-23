@@ -21,7 +21,19 @@ pub struct Project {
 }
 
 impl Project {
-    pub fn new(settings: ProjectSettings) -> Self {
+    pub fn new(name: String, project_version: ProjectVersion, pack_info: PackInfoProjectData) -> Self {
+        let id = Self::generate_id();
+        
+        Self {
+            name, id,
+            path: None,
+            project_version,
+            pack_info,
+            has_unsaved_changes: false,
+        }
+    }
+    
+    pub fn from_settings(settings: ProjectSettings) -> Self {
         let id = Self::generate_id();
         
         match settings {
@@ -159,6 +171,14 @@ impl ProjectVersion {
     }
 }
 
+impl From<MinecraftVersion> for ProjectVersion {
+    fn from(version: MinecraftVersion) -> Self {
+        Self {
+            version,
+        }
+    }
+}
+
 pub type ProjectID = Uuid;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -192,7 +212,7 @@ impl Project {
     pub fn with_unsaved_changes(settings: ProjectSettings) -> Self {
         Self {
             has_unsaved_changes: true,
-            ..Self::new(settings)
+            ..Self::from_settings(settings)
         }
     }
 

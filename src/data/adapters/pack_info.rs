@@ -111,6 +111,12 @@ pub struct PackInfoSerializationInput {
     pub version: PackVersionType,
 }
 
+impl Into<PackInfo> for PackInfoSerializationInput {
+    fn into(self) -> PackInfo {
+        PackInfo::new(self.description, None)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum PackVersionType {
     Data(MinecraftVersion),
@@ -142,8 +148,6 @@ mod tests {
     use super::*;
     
     mod deserialize {
-        use std::sync::Arc;
-        use tokio::sync::RwLock;
         use crate::data::domain::pack_info::PackDescription;
         use crate::data::serialization::pack_info::PackData;
         use crate::data::serialization::text_component::TextComponent;
@@ -403,7 +407,7 @@ mod tests {
         async fn test_pack_info_adapter_ser_data() {
             // Given a valid pack info for a datapack
             let version = *versions::V1_20_5;
-            
+
             let pack_info = PackInfoSerializationInput::new(
                 PackDescription::String("Test description".to_string()),
                 PackVersionType::Data(version)

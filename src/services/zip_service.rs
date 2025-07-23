@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use zip::ZipArchive;
-use crate::data::serialization::project::ZippableProject;
+use crate::data::serialization::project::{SerializedProjectError, ZippableProject};
 use crate::services::filesystem_service::{FileDeleteOptions, FileWriteOptions, FilesystemProvider, FilesystemProviderError, FilesystemService};
 
 #[async_trait::async_trait]
@@ -26,6 +26,8 @@ pub enum ZipError {
     IOError(#[from] FilesystemProviderError),
     #[error(transparent)]
     ZipArchiveError(#[from] zip::result::ZipError),
+    #[error(transparent)]
+    SerializedProjectError(#[from] SerializedProjectError),
 }
 
 pub struct ZipService<T, Filesystem = FilesystemService>
@@ -60,7 +62,11 @@ where
         let zip_file = self.filesystem_provider.read().await.read_file(path).await?;
         let zip_file = std::io::Cursor::new(zip_file);
         let zip_archive = ZipArchive::new(zip_file)?;
-        T::extract(zip_archive).await.map_err(ZipError::ZipArchiveError)
+        
+        let name = path.with_extension("");
+        let name = name.file_name().unwrap().to_string_lossy();
+        
+        T::extract(name.as_ref(), zip_archive).await.map_err(Into::into)
     }
 
     async fn zip(&self, path: &Path, data: &T, overwrite_existing: bool) -> Result<()> {
@@ -154,7 +160,7 @@ mod test {
 
     #[async_trait]
     impl ZippableProject for TestProject {
-        async fn zip(&self) -> std::result::Result<Vec<u8>, zip::result::ZipError> {
+        async fn zip(&self) -> std::result::Result<Vec<u8>, SerializedProjectError> {
             let buffer = Cursor::new(Vec::new());
             let mut zip = ZipWriter::new(buffer);
 
@@ -165,7 +171,7 @@ mod test {
             Ok(zip_data.into_inner())
         }
 
-        async fn extract(mut zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> std::result::Result<Self, zip::result::ZipError> {
+        async fn extract(name: &str, mut zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> std::result::Result<Self, SerializedProjectError> {
             let mut file = zip_archive.by_index(0)?;
             let mut content = String::new();
             file.read_to_string(&mut content)?;

@@ -9,7 +9,6 @@ use crate::data::serialization::project::Project as SerializedProject;
 use crate::repositories::adapter_repo;
 use crate::repositories::adapter_repo::{AdapterRepoError, AdapterRepository, AdapterProviderContext};
 use crate::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
-use crate::RUNTIME;
 use crate::services::zip_service;
 use crate::services::zip_service::ZipService;
 
@@ -143,7 +142,7 @@ where
     ) -> Result<ProjectID> {
         let sanitized_settings = Self::sanitize_project_settings(settings)?;
 
-        let project = Project::new(sanitized_settings);
+        let project = Project::from_settings(sanitized_settings);
 
         let project_id = self.project_provider.read().await.add_project(project, overwrite_existing)?;
         Ok(project_id)
@@ -219,13 +218,12 @@ where
                     let project_lock = &*project.read().await;
                     let project_input = AdapterInput::new(project_lock);
 
-                    // TODO: Assumed to be infallible for now - add proper error handling in the future
-                    let serialized_project = adapter_provider.serialize(project_input, adapter_context).await.unwrap();
+                    let serialized_project = adapter_provider.serialize(project_input, adapter_context).await.map_err(ZipError::Serialization)?;
 
-                    (serialized_project, project.read().await.project_type().clone())
+                    Ok::<_, ProjectServiceError>((serialized_project, project.read().await.project_type().clone()))
                 })
             }).await.ok_or(ProjectServiceError::ProjectDoesNotExist)?
-        };
+        }?;
 
         // TODO: Look into verifying this at compile time somehow?
         match (&zip_data.path, &serialized_project) {
@@ -309,7 +307,7 @@ pub enum SaveError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ZipError {
-    #[error("Mismatched zip export data and project type! Project type was {1:?}, zip export type was {:?}", type_name_of(.1))]
+    #[error("Mismatched zip export data and project type! Project type was {0:?}, zip export type was {:?}", type_name_of(.1))]
     MismatchedPaths(ProjectType, ZipPath),
     #[error(transparent)]
     Zipping(zip_service::ZipError),
@@ -349,6 +347,7 @@ mod test {
     use std::sync::Arc;
     use anyhow::anyhow;
     use once_cell::sync::Lazy;
+    use sea_orm::Iden;
     use tokio::sync::RwLock;
     use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
     use crate::data::adapters::project::{ProjectDeserializeError, SerializedProjectData};
@@ -356,7 +355,7 @@ mod test {
     use crate::data::domain::project::{Project, ProjectDescription, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
     use crate::data::domain::versions;
     use crate::data::serialization::pack_info::{PackData, PackInfo};
-    use crate::data::serialization::project::Project as SerializedProject;
+    use crate::data::serialization::project::{Project as SerializedProject, SerializedProjectType};
     use crate::repositories::adapter_repo::{AdapterProvider, AdapterProviderContext, AdapterRepoError};
     use crate::repositories::project_repo;
     use crate::repositories::project_repo::{ProjectCloseError, ProjectCreationError, ProjectOpenError, ProjectProvider, ProjectRepoError};
@@ -735,7 +734,9 @@ mod test {
     }
     
     fn default_serialized_project() -> SerializedProject {
-        SerializedProject::new(
+        SerializedProject::with_name(
+            "Test Project".to_string(),
+            SerializedProjectType::Data,
             PackInfo::new(
                 PackData::new(
                     "test_pack".into(),
@@ -771,7 +772,7 @@ mod test {
             let project_provider = project_service.project_provider.read().await;
 
             let created_settings = project_provider.with_project(project_id, |project| {
-                let mut comparison_project = Project::new(project_settings.clone());
+                let mut comparison_project = Project::from_settings(project_settings.clone());
                 comparison_project.set_id(project_id);
 
                 assert_eq!(*project, comparison_project);
@@ -816,7 +817,7 @@ mod test {
             let project_provider = project_service.project_provider.read().await;
 
             let created_settings = project_provider.with_project(project_id, |project| {
-                let mut comparison_project = Project::new(project_settings.clone());
+                let mut comparison_project = Project::from_settings(project_settings.clone());
                 comparison_project.set_id(project_id);
 
                 assert_eq!(*project, comparison_project);
@@ -871,7 +872,7 @@ mod test {
                 project_version: ProjectVersion { version: *versions::V1_20_4 },
             };
 
-            let existing_project = Project::new(project_settings.clone());
+            let existing_project = Project::from_settings(project_settings.clone());
             let project_service = test_service_with_project_provider(MockProjectProvider::with_project(existing_project));
             
             // When I try to create that project again
@@ -891,7 +892,7 @@ mod test {
             // Given a project that already exists
 
             let project_settings = default_test_project_settings();
-            let existing_project = Project::new(project_settings.clone());
+            let existing_project = Project::from_settings(project_settings.clone());
             let project_service = test_service_with_project_provider(MockProjectProvider::with_project(existing_project));
 
             // When I try to create that project again with the overwrite flag set
@@ -949,7 +950,7 @@ mod test {
             // Given a project that exists
 
             let project_settings = default_test_project_settings();
-            let existing_project = Project::new(project_settings.clone());
+            let existing_project = Project::from_settings(project_settings.clone());
             let project_service = test_service_with_project_provider(MockProjectProvider::with_project(existing_project));
             
             // When I open it
@@ -961,7 +962,7 @@ mod test {
             let project_provider = project_service.project_provider.read().await;
 
             let created_settings = project_provider.with_project(project_id, |project| {
-                let mut comparison_project = Project::new(project_settings.clone());
+                let mut comparison_project = Project::from_settings(project_settings.clone());
                 comparison_project.set_id(project_id);
 
                 assert_eq!(*project, comparison_project);
@@ -1013,7 +1014,7 @@ mod test {
             // Given a project which is already open
 
             let project_settings = default_test_project_settings();
-            let existing_project = Project::new(project_settings.clone());
+            let existing_project = Project::from_settings(project_settings.clone());
             let project_service = test_service_with_project_provider(MockProjectProvider::with_open_project(existing_project));
             
             // When I try to open it again
@@ -1072,7 +1073,7 @@ mod test {
             // Given an open project
 
             let project_settings = default_test_project_settings();
-            let existing_project = Project::new(project_settings.clone());
+            let existing_project = Project::from_settings(project_settings.clone());
             let project_service = test_service_with_project_provider(MockProjectProvider::with_open_project(existing_project.clone()));
             
             // When I close it
@@ -1116,7 +1117,7 @@ mod test {
             // Given a project which is not open
 
             let project_settings = default_test_project_settings();
-            let existing_project = Project::new(project_settings.clone());
+            let existing_project = Project::from_settings(project_settings.clone());
             let project_service = test_service_with_project_provider(MockProjectProvider::with_project(existing_project.clone()));
             
             // When I try to close it
@@ -1166,7 +1167,7 @@ mod test {
             // Given an error from the repo
 
             let project_settings = default_test_project_settings();
-            let project = Project::new(project_settings.clone());
+            let project = Project::from_settings(project_settings.clone());
 
             let mut project_provider = MockProjectProvider::with_open_project(project.clone());
             project_provider.settings = MockProjectProviderSettings {
@@ -1266,7 +1267,7 @@ mod test {
             // Given a valid zip
 
             let serialized_project = default_serialized_project();
-            let project = Project::new(default_test_project_settings());
+            let project = Project::from_settings(default_test_project_settings());
             
             MockProjectAdapter::reset_config();
             MockProjectAdapter::set_config(ProjectAdapterConfig {
@@ -1306,7 +1307,7 @@ mod test {
             // Given a valid zip pair
 
             let serialized_project = default_serialized_project();
-            let project = Project::new(default_test_project_settings());
+            let project = Project::from_settings(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
             MockProjectAdapter::set_config(ProjectAdapterConfig {
@@ -1350,7 +1351,7 @@ mod test {
             // Given an error from the zip provider
 
             let serialized_project = default_serialized_project();
-            let project = Project::new(default_test_project_settings());
+            let project = Project::from_settings(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
             MockProjectAdapter::set_config(ProjectAdapterConfig {
@@ -1389,7 +1390,7 @@ mod test {
             // Given a valid project
 
             let serialized_project = default_serialized_project();
-            let project = Project::new(default_test_project_settings());
+            let project = Project::from_settings(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
             MockProjectAdapter::set_config(ProjectAdapterConfig {
@@ -1430,7 +1431,7 @@ mod test {
             // Given a project with both resource and data components
 
             let serialized_project = default_serialized_project();
-            let project = Project::new(ProjectSettings::Combined {
+            let project = Project::from_settings(ProjectSettings::Combined {
                 name: "Test Project".to_string(),
                 data_description: PackDescription::String("Test Description".to_string()),
                 resource_description: PackDescription::String("Test Description".to_string()),
@@ -1480,7 +1481,7 @@ mod test {
             // Given a project with combined type and a single path
 
             let serialized_project = default_serialized_project();
-            let project = Project::new(ProjectSettings::Combined {
+            let project = Project::from_settings(ProjectSettings::Combined {
                 name: "Test Project".to_string(),
                 data_description: PackDescription::String("Test Description".to_string()),
                 resource_description: PackDescription::String("Test Description".to_string()),
@@ -1524,7 +1525,7 @@ mod test {
             // Given a project with combined type and a single path
 
             let serialized_project = default_serialized_project();
-            let project = Project::new(default_test_project_settings());
+            let project = Project::from_settings(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
             MockProjectAdapter::set_config(ProjectAdapterConfig {
@@ -1565,7 +1566,7 @@ mod test {
             // Given a zip that already exists
 
             let serialized_project = default_serialized_project();
-            let project = Project::new(default_test_project_settings());
+            let project = Project::from_settings(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
             MockProjectAdapter::set_config(ProjectAdapterConfig {
@@ -1609,7 +1610,7 @@ mod test {
             // Given a zip that already exists
 
             let serialized_project = default_serialized_project();
-            let project = Project::new(default_test_project_settings());
+            let project = Project::from_settings(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
             MockProjectAdapter::set_config(ProjectAdapterConfig {
@@ -1651,7 +1652,7 @@ mod test {
             // Given an error from the zip provider
 
             let serialized_project = default_serialized_project();
-            let project = Project::new(default_test_project_settings());
+            let project = Project::from_settings(default_test_project_settings());
 
             MockProjectAdapter::reset_config();
             MockProjectAdapter::set_config(ProjectAdapterConfig {

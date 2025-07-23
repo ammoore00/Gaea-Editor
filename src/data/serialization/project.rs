@@ -9,27 +9,45 @@ use crate::data::serialization::pack_info::PackInfo;
 
 #[async_trait::async_trait]
 pub trait ZippableProject {
-    async fn zip(&self) -> Result<Vec<u8>, ZipError>;
-    async fn extract(zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, ZipError> where Self: Sized;
+    async fn zip(&self) -> Result<Vec<u8>, SerializedProjectError>;
+    async fn extract(name: &str, zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, SerializedProjectError> where Self: Sized;
 }
 
 #[derive(Debug, Clone, getset::Getters)]
 #[getset(get = "pub")]
 pub struct Project {
-    pack_info: Arc<RwLock<PackInfo>>
+    name: String,
+    project_type: SerializedProjectType,
+    
+    pack_info: Arc<RwLock<PackInfo>>,
 }
 
 impl Project {
-    pub fn new(pack_info: PackInfo) -> Self {
+    pub fn new(project_type: SerializedProjectType, pack_info: PackInfo) -> Self {
         Self {
+            name: "".to_string(),
+            project_type,
             pack_info: Arc::new(RwLock::new(pack_info))
+        }
+    }
+    
+    pub fn with_name(name: String, project_type: SerializedProjectType, pack_info: PackInfo) -> Self {
+        Self {
+            name,
+            ..Self::new(project_type, pack_info)
         }
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum SerializedProjectType {
+    Data,
+    Resource
+}
+
 #[async_trait::async_trait]
 impl ZippableProject for Project {
-    async fn zip(&self) -> Result<Vec<u8>, ZipError> {
+    async fn zip(&self) -> Result<Vec<u8>, SerializedProjectError> {
         let buffer = Cursor::new(Vec::new());
         let mut zip = zip::ZipWriter::new(buffer);
 
@@ -42,23 +60,52 @@ impl ZippableProject for Project {
         Ok(zip_data.into_inner())
     }
     
-    async fn extract(mut zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, ZipError> {
+    async fn extract(name: &str, mut zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, SerializedProjectError> {
         let mut files = HashMap::new();
+
+        let has_data_dir = zip_archive.by_name("data/").is_ok();
+        let has_assets_dir = zip_archive.by_name("assets/").is_ok();
 
         // TODO: implement real file handling
         for i in 0..zip_archive.len() {
             let mut file = zip_archive.by_index(i)?;
             let mut content = String::new();
+            
+            if file.is_dir() {
+                continue;
+            }
+            
             file.read_to_string(&mut content)?;
-
             files.insert(file.name().to_string(), content);
         }
         let pack_info = Arc::new(RwLock::new(serde_json::from_str(&files["pack.mcmeta"]).unwrap()));
+        
+        let project_type = if has_data_dir {
+            SerializedProjectType::Data
+        }
+        else if has_assets_dir {
+            SerializedProjectType::Resource
+        }
+        else { 
+            return Err(SerializedProjectError::InvalidZipFile("No data or assets directory found!".to_string()))
+        };
 
         Ok(Project {
+            name: name.to_string(),
+            project_type,
             pack_info
         })
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SerializedProjectError {
+    #[error(transparent)]
+    Zip(#[from] ZipError),
+    #[error(transparent)]
+    IOError(#[from] std::io::Error),
+    #[error("Invalid zip file: {0:?}")]
+    InvalidZipFile(String),
 }
 
 #[cfg(test)]
@@ -74,6 +121,8 @@ mod tests {
             // Given a simple project with only a pack info
             let pack_info = Arc::new(RwLock::new(PackInfo::default_data()));
             let project = Project {
+                name: "Test project".to_string(),
+                project_type: SerializedProjectType::Data,
                 pack_info: pack_info.clone()
             };
 
@@ -108,14 +157,18 @@ mod tests {
             zip.start_file::<&str, ExtendedFileOptions>("pack.mcmeta", FileOptions::default()).unwrap();
             zip.write_all(pack_info_string.as_bytes()).unwrap();
             
+            zip.add_directory::<&str, ExtendedFileOptions>("data", Default::default()).unwrap();
+            
             let zip_data = zip.finish().unwrap();
             let zip_archive = ZipArchive::new(zip_data).unwrap();
 
             // When I deserialize it
-            let project = Project::extract(zip_archive).await.unwrap();
+            let project = Project::extract("Test Project", zip_archive).await.unwrap();
 
             // It should be loaded correctly into the project
             assert_eq!(*project.pack_info.read().await, pack_info);
         }
+        
+        // TODO: test data vs resource pack detection based on structure
     }
 }
