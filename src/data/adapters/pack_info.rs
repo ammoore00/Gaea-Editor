@@ -16,7 +16,7 @@ impl Adapter<SerializedType, DomainType> for PackInfoAdapter {
     type SerializedConversionError = PackInfoSerializationError;
 
     async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(
-        serialized: AdapterInput<SerializedType>,
+        serialized: AdapterInput<&SerializedType>,
         _context: AdapterProviderContext<'_, AdpProvider>
     ) -> Result<DomainType, Self::ConversionError> {
         let pack_info = &*serialized;
@@ -80,7 +80,7 @@ impl Adapter<SerializedType, DomainType> for PackInfoAdapter {
     }
 
     async fn serialize<AdpProvider: AdapterProvider + ?Sized>(
-        domain: AdapterInput<DomainType>,
+        domain: AdapterInput<&DomainType>,
         _context: AdapterProviderContext<'_, AdpProvider>
     ) -> Result<SerializedType, Self::SerializedConversionError> {
         let description = &domain.description;
@@ -165,7 +165,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             );
-            let pack_info = AdapterInput::new(pack_info);
+            let pack_info = AdapterInput::new(&pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -203,7 +203,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             );
-            let pack_info = AdapterInput::new(pack_info);
+            let pack_info = AdapterInput::new(&pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -243,7 +243,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             );
-            let pack_info = AdapterInput::new(pack_info);
+            let pack_info = AdapterInput::new(&pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -282,7 +282,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             );
-            let pack_info = AdapterInput::new(pack_info);
+            let pack_info = AdapterInput::new(&pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -312,7 +312,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             );
-            let pack_info = AdapterInput::new(pack_info);
+            let pack_info = AdapterInput::new(&pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -346,7 +346,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             );
-            let pack_info = AdapterInput::new(pack_info);
+            let pack_info = AdapterInput::new(&pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -380,7 +380,7 @@ mod tests {
                 pack,
                 None, None, None, None,
             );
-            let pack_info = AdapterInput::new(pack_info);
+            let pack_info = AdapterInput::new(&pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -408,7 +408,7 @@ mod tests {
                 PackDescription::String("Test description".to_string()),
                 PackVersionType::Data(version)
             );
-            let pack_info = AdapterInput::new(pack_info);
+            let pack_info = AdapterInput::new(&pack_info);
             
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -432,7 +432,7 @@ mod tests {
                 PackDescription::String("Test description".to_string()),
                 PackVersionType::Resource(version)
             );
-            let pack_info = AdapterInput::new(pack_info);
+            let pack_info = AdapterInput::new(&pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;
@@ -459,7 +459,7 @@ mod tests {
                     version_if_resource: version,
                 }
             );
-            let pack_info = AdapterInput::new(pack_info);
+            let pack_info = AdapterInput::new(&pack_info);
 
             let repo = AdapterRepository::create_repo().await;
             let context = AdapterRepository::context_from_repo(&repo).await;

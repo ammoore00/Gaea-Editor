@@ -24,11 +24,11 @@ where
     type SerializedConversionError: AdapterError;
     
     async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(
-        serialized: AdapterInput<Serialized>,
+        serialized: AdapterInput<&Serialized>,
         context: AdapterProviderContext<'_, AdpProvider>
     ) -> Result<Domain, Self::ConversionError>;
     async fn serialize<AdpProvider: AdapterProvider + ?Sized>(
-        domain: AdapterInput<Domain>,
+        domain: AdapterInput<&Domain>,
         context: AdapterProviderContext<'_, AdpProvider>
     ) -> Result<Serialized, Self::SerializedConversionError>;
 }

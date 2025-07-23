@@ -60,11 +60,11 @@ where
         let zip_file = self.filesystem_provider.read().await.read_file(path).await?;
         let zip_file = std::io::Cursor::new(zip_file);
         let zip_archive = ZipArchive::new(zip_file)?;
-        T::extract(zip_archive).map_err(ZipError::ZipArchiveError)
+        T::extract(zip_archive).await.map_err(ZipError::ZipArchiveError)
     }
 
     async fn zip(&self, path: &Path, data: &T, overwrite_existing: bool) -> Result<()> {
-        let zip_contents = data.zip()?;
+        let zip_contents = data.zip().await?;
         let settings = if overwrite_existing { FileWriteOptions::Overwrite } else { FileWriteOptions::CreateNew };
         self.filesystem_provider.read().await.write_file(path, zip_contents.as_slice(), settings).await.map_err(ZipError::IOError)
     }
@@ -152,8 +152,9 @@ mod test {
         content: String,
     }
 
+    #[async_trait]
     impl ZippableProject for TestProject {
-        fn zip(&self) -> std::result::Result<Vec<u8>, zip::result::ZipError> {
+        async fn zip(&self) -> std::result::Result<Vec<u8>, zip::result::ZipError> {
             let buffer = Cursor::new(Vec::new());
             let mut zip = ZipWriter::new(buffer);
 
@@ -164,7 +165,7 @@ mod test {
             Ok(zip_data.into_inner())
         }
 
-        fn extract(mut zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> std::result::Result<Self, zip::result::ZipError> {
+        async fn extract(mut zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> std::result::Result<Self, zip::result::ZipError> {
             let mut file = zip_archive.by_index(0)?;
             let mut content = String::new();
             file.read_to_string(&mut content)?;
@@ -177,7 +178,7 @@ mod test {
     async fn test_extract_success() {
         //Given a simple test project file 
         let test_project = TestProject { content: "test content".to_string() };
-        let zip_data = test_project.zip().unwrap();
+        let zip_data = test_project.zip().await.unwrap();
 
         let mut mock = MockFilesystemProviderMock::new();
         
@@ -223,7 +224,7 @@ mod test {
     async fn test_zip_success() {
         // Given a simple test project
         let test_project = TestProject { content: "test content".to_string() };
-        let zip_data = test_project.zip().unwrap();
+        let zip_data = test_project.zip().await.unwrap();
 
         let mut mock = MockFilesystemProviderMock::new();
         

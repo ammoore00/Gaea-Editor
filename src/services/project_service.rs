@@ -192,7 +192,7 @@ where
         };
 
         let adapter_context = AdapterProviderContext::new(self.adapter_provider.read().await);
-        let serialize_input = AdapterInput::new(serialized_project);
+        let serialize_input = AdapterInput::new(&serialized_project);
         
         let project: Project = self.adapter_provider.read().await.deserialize(serialize_input, adapter_context).await.map_err(ZipError::Deserialization)?;
         let project_id = *project.id();
@@ -216,15 +216,13 @@ where
 
             project_provider.with_project_async(zip_data.project_id, |project: Arc<RwLock<Project>>| {
                 Box::pin(async move {
-                    let project_type = project.read().await.project_type().clone();
-
-                    // TODO: Cloning whole project right now for export - this is expensive, but done async and done rarely - investigate appropriateness
-                    let project_input: AdapterInput<Project> = AdapterInput::new(project.read().await.clone());
+                    let project_lock = &*project.read().await;
+                    let project_input = AdapterInput::new(project_lock);
 
                     // TODO: Assumed to be infallible for now - add proper error handling in the future
                     let serialized_project = adapter_provider.serialize(project_input, adapter_context).await.unwrap();
 
-                    (serialized_project, project_type)
+                    (serialized_project, project.read().await.project_type().clone())
                 })
             }).await.ok_or(ProjectServiceError::ProjectDoesNotExist)?
         };
@@ -353,7 +351,7 @@ mod test {
     use once_cell::sync::Lazy;
     use tokio::sync::RwLock;
     use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
-    use crate::data::adapters::project::{ProjectDeserializeConversionError, SerializedProjectData};
+    use crate::data::adapters::project::{ProjectDeserializeError, SerializedProjectData};
     use crate::data::domain::pack_info::PackDescription;
     use crate::data::domain::project::{Project, ProjectDescription, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
     use crate::data::domain::versions;
@@ -660,20 +658,20 @@ mod test {
 
     #[async_trait::async_trait]
     impl Adapter<SerializedProjectData, Project> for MockProjectAdapter {
-        type ConversionError = ProjectDeserializeConversionError;
+        type ConversionError = ProjectDeserializeError;
         type SerializedConversionError = Infallible;
 
-        async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(_serialized: AdapterInput<SerializedProjectData>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Project, Self::ConversionError> {
+        async fn deserialize<AdpProvider: AdapterProvider + ?Sized>(_serialized: AdapterInput<&SerializedProjectData>, context: AdapterProviderContext<'_, AdpProvider>) -> Result<Project, Self::ConversionError> {
             let config = PROJECT_ADAPTER_CONFIG.read().unwrap();
 
             if *config.fail_conversion.read().unwrap() {
-                return Err(Self::ConversionError::PackInfoDeserialization(AdapterRepoError::DeserializationError(Box::new(TestError))));
+                return Err(Self::ConversionError::PackInfo(AdapterRepoError::DeserializationError(Box::new(TestError))));
             }
 
             Ok(config.project.clone().unwrap())
         }
 
-        async fn serialize<AdpProvider: AdapterProvider + ?Sized>(domain: AdapterInput<Project>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<SerializedProjectData, Self::SerializedConversionError> {
+        async fn serialize<AdpProvider: AdapterProvider + ?Sized>(domain: AdapterInput<&Project>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<SerializedProjectData, Self::SerializedConversionError> {
             match domain.project_type() {
                 ProjectType::Combined => {
                     let serialized_project = PROJECT_ADAPTER_CONFIG.read().unwrap().serialized_project.clone().unwrap();

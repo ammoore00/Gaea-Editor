@@ -1,20 +1,21 @@
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use zip::result::ZipError;
 use zip::write::{ExtendedFileOptions, FileOptions};
 use zip::ZipArchive;
 use crate::data::serialization::pack_info::PackInfo;
 
+#[async_trait::async_trait]
 pub trait ZippableProject {
-    fn zip(&self) -> Result<Vec<u8>, ZipError>;
-    fn extract(zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, ZipError> where Self: Sized;
+    async fn zip(&self) -> Result<Vec<u8>, ZipError>;
+    async fn extract(zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, ZipError> where Self: Sized;
 }
 
 #[derive(Debug, Clone, getset::Getters)]
 #[getset(get = "pub")]
 pub struct Project {
-    // This should represent the internal file layout of the project
     pack_info: Arc<RwLock<PackInfo>>
 }
 
@@ -26,13 +27,14 @@ impl Project {
     }
 }
 
+#[async_trait::async_trait]
 impl ZippableProject for Project {
-    fn zip(&self) -> Result<Vec<u8>, ZipError> {
+    async fn zip(&self) -> Result<Vec<u8>, ZipError> {
         let buffer = Cursor::new(Vec::new());
         let mut zip = zip::ZipWriter::new(buffer);
 
         zip.start_file::<&str, ExtendedFileOptions>("pack.mcmeta", FileOptions::default())?;
-        zip.write_all(serde_json::to_string(&self.pack_info).unwrap().as_bytes())?;
+        zip.write_all(serde_json::to_string(&*self.pack_info.read().await).unwrap().as_bytes())?;
 
         // TODO: implement handling for other files
 
@@ -40,7 +42,7 @@ impl ZippableProject for Project {
         Ok(zip_data.into_inner())
     }
     
-    fn extract(mut zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, ZipError> {
+    async fn extract(mut zip_archive: ZipArchive<Cursor<Vec<u8>>>) -> Result<Self, ZipError> {
         let mut files = HashMap::new();
 
         // TODO: implement real file handling
@@ -51,7 +53,7 @@ impl ZippableProject for Project {
 
             files.insert(file.name().to_string(), content);
         }
-        let pack_info = serde_json::from_str(&files["pack.mcmeta"]).unwrap();
+        let pack_info = Arc::new(RwLock::new(serde_json::from_str(&files["pack.mcmeta"]).unwrap()));
 
         Ok(Project {
             pack_info
@@ -67,8 +69,8 @@ mod tests {
         use ::zip::ZipArchive;
         use super::*;
 
-        #[test]
-        fn test_zip_pack_info() {
+        #[tokio::test]
+        async fn test_zip_pack_info() {
             // Given a simple project with only a pack info
             let pack_info = Arc::new(RwLock::new(PackInfo::default_data()));
             let project = Project {
@@ -76,7 +78,7 @@ mod tests {
             };
 
             // When I serialize it
-            let zip_data = project.zip().unwrap();
+            let zip_data = project.zip().await.unwrap();
 
             // It should return a zip file containing the serialized pack info
             let mut zip_file = ZipArchive::new(Cursor::new(zip_data)).unwrap();
@@ -86,7 +88,7 @@ mod tests {
             let mut pack_info_file = zip_file.by_index(0).unwrap();
             let mut pack_info_content = String::new();
             pack_info_file.read_to_string(&mut pack_info_content).unwrap();
-            assert_eq!(pack_info_content, serde_json::to_string(&pack_info).unwrap());
+            assert_eq!(pack_info_content, serde_json::to_string(&*pack_info.read().await).unwrap());
         }
     }
     
@@ -94,8 +96,8 @@ mod tests {
         use ::zip::ZipWriter;
         use super::*;
 
-        #[test]
-        fn test_extract_pack_info() {
+        #[tokio::test]
+        async fn test_extract_pack_info() {
             // Given a simple zip file with only a pack.mcmeta
             let pack_info = PackInfo::default_data();
             let pack_info_string = serde_json::to_string(&pack_info).unwrap();
@@ -110,10 +112,10 @@ mod tests {
             let zip_archive = ZipArchive::new(zip_data).unwrap();
 
             // When I deserialize it
-            let project = Project::extract(zip_archive).unwrap();
+            let project = Project::extract(zip_archive).await.unwrap();
 
             // It should be loaded correctly into the project
-            assert_eq!(*project.pack_info.read().unwrap(), pack_info);
+            assert_eq!(*project.pack_info.read().await, pack_info);
         }
     }
 }
