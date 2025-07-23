@@ -23,7 +23,7 @@ pub struct Project {
 impl Project {
     pub fn new(name: String, project_version: ProjectVersion, pack_info: PackInfoProjectData) -> Self {
         let id = Self::generate_id();
-        
+
         Self {
             name, id,
             path: None,
@@ -32,10 +32,10 @@ impl Project {
             has_unsaved_changes: false,
         }
     }
-    
+
     pub fn from_settings(settings: ProjectSettings) -> Self {
         let id = Self::generate_id();
-        
+
         match settings {
             ProjectSettings::DataPack { name, description, path, project_version } => {
                 Self {
@@ -73,7 +73,7 @@ impl Project {
     pub fn clear_unsaved_changes(&mut self) {
         self.has_unsaved_changes = false;
     }
-    
+
     pub fn project_type(&self) -> ProjectType {
         match &self.pack_info {
             PackInfoProjectData::DataPack(_) => ProjectType::DataPack,
@@ -127,7 +127,7 @@ impl ProjectSettings {
 
         }
     }
-    
+
     pub fn name(&self) -> &str {
         match self {
             Self::DataPack { name, .. } => name,
@@ -135,7 +135,7 @@ impl ProjectSettings {
             Self::Combined { name, .. } => name,
         }
     }
-    
+
     pub fn path(&self) -> Option<&PathBuf> {
         match self {
             Self::DataPack { path, .. } => path,
@@ -156,16 +156,16 @@ impl ProjectVersion {
         let format = versions::get_datapack_format_for_version(self.version);
         format
     }
-    
+
     pub fn get_resource_format(&self) -> &'static PackFormat {
         let format = versions::get_resourcepack_format_for_version(self.version);
         format
     }
-    
+
     pub fn get_base_data_mc_version(&self) -> MinecraftVersion {
         self.version
     }
-    
+
     pub fn get_base_resource_mc_version(&self) -> MinecraftVersion {
         self.version
     }
@@ -175,6 +175,24 @@ impl From<MinecraftVersion> for ProjectVersion {
     fn from(version: MinecraftVersion) -> Self {
         Self {
             version,
+        }
+    }
+}
+
+impl From<&MinecraftVersion> for ProjectVersion {
+    fn from(version: &MinecraftVersion) -> Self {
+        Self {
+            version: version.clone(),
+        }
+    }
+}
+
+impl From<&PackFormat> for ProjectVersion {
+    fn from(value: &PackFormat) -> Self {
+        let version = value.get_versions().read().unwrap().iter().next().unwrap().clone();
+
+        Self {
+            version
         }
     }
 }
@@ -234,7 +252,7 @@ impl Project {
                     project_version: self.project_version.clone(),
                 }
             },
-            PackInfoProjectData::ResourcePack(info) => { 
+            PackInfoProjectData::ResourcePack(info) => {
                 ProjectSettings::ResourcePack {
                     name: self.name.clone(),
                     description: info.description().clone(),

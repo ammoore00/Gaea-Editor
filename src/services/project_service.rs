@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 use crate::data::adapters::{self, AdapterInput};
 use crate::data::adapters::project::SerializedProjectData;
 use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType};
-use crate::data::serialization::project::Project as SerializedProject;
+use crate::data::serialization::project::{Project as SerializedProject, SerializedProjectType};
 use crate::repositories::adapter_repo;
 use crate::repositories::adapter_repo::{AdapterRepoError, AdapterRepository, AdapterProviderContext};
 use crate::repositories::project_repo::{self, ProjectRepoError, ProjectRepository};
@@ -178,7 +178,10 @@ where
                 let result = zip_provider.extract(path.as_path()).await;
                 let serialized_project = result.map_err(ZipError::Zipping)?;
 
-                SerializedProjectData::Single(serialized_project)
+                match serialized_project.project_type() {
+                    SerializedProjectType::Data => SerializedProjectData::Data(serialized_project),
+                    SerializedProjectType::Resource => SerializedProjectData::Resource(serialized_project),
+                }
             }
             ZipPath::Combined { data_path, resource_path } => {
                 let (data_project, resource_project) = tokio::try_join!(
@@ -229,7 +232,7 @@ where
         match (&zip_data.path, &serialized_project) {
             (
                 ZipPath::Single(path),
-                SerializedProjectData::Single(project),
+                SerializedProjectData::Data(project) | SerializedProjectData::Resource(project),
             ) => {
                 let result = self.zip_provider.read().await.zip(path, project, overwrite_existing).await.map_err(ZipError::Zipping);
 
@@ -673,14 +676,17 @@ mod test {
         async fn serialize<AdpProvider: AdapterProvider + ?Sized>(domain: AdapterInput<&Project>, _context: AdapterProviderContext<'_, AdpProvider>) -> Result<SerializedProjectData, Self::SerializedConversionError> {
             match domain.project_type() {
                 ProjectType::Combined => {
-                    let serialized_project = PROJECT_ADAPTER_CONFIG.read().unwrap().serialized_project.clone().unwrap();
+                    let serialized_project = PROJECT_ADAPTER_CONFIG.read().expect("Failed to read config").serialized_project.clone().unwrap();
                     Ok(SerializedProjectData::Combined {
                         data_project: serialized_project.clone(),
                         resource_project: serialized_project,
                     })
                 }
-                _ => {
-                    Ok(SerializedProjectData::Single(PROJECT_ADAPTER_CONFIG.read().unwrap().serialized_project.clone().unwrap()))
+                ProjectType::DataPack => {
+                    Ok(SerializedProjectData::Data(PROJECT_ADAPTER_CONFIG.read().expect("Failed to read config").serialized_project.clone().unwrap()))
+                }
+                ProjectType::ResourcePack => {
+                    Ok(SerializedProjectData::Resource(PROJECT_ADAPTER_CONFIG.read().expect("Failed to read config").serialized_project.clone().unwrap()))
                 }
             }
         }

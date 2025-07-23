@@ -37,45 +37,9 @@ impl Adapter<SerializedType, DomainType> for PackInfoAdapter {
             }
         }
         
-        let version_if_data = versions::DATA_FORMAT_MAP.get(&(pack_format as u8));
-        let version_if_resource = versions::RESOURCE_FORMAT_MAP.get(&(pack_format as u8));
-
-        // The adapter has no way to know based on provided serialized info whether this pack
-        // is a resourcepack or datapack. Therefore, we provide information for whichever is valid,
-        // and return both if both are valid. It is up to the caller to decide which to use
-        let version = match (version_if_data, version_if_resource) {
-            (Some(data_version), Some(resource_version)) => {
-                let data_version = *data_version.value();
-                let resource_version = *resource_version.value();
-
-                let version_if_data = *data_version.get_versions().read().unwrap().iter().next()
-                    .expect(&format!("Data format {} missing any associated Minecraft versions!", pack_format));
-                let version_if_resource = *resource_version.get_versions().read().unwrap().iter().next()
-                    .expect(&format!("Resource format {} missing any associated Minecraft versions!", pack_format));
-                
-                PackVersionType::Unknown {
-                    version_if_data,
-                    version_if_resource,
-                }
-            }
-            (Some(data_version), None) => {
-                let version = *data_version.get_versions().read().unwrap().iter().next()
-                    .expect(&format!("Data format {} missing any associated Minecraft versions!", pack_format));
-                PackVersionType::Data(version)
-            }
-            (None, Some(resource_version)) => {
-                let version = *resource_version.get_versions().read().unwrap().iter().next()
-                    .expect(&format!("Resource format {} missing any associated Minecraft versions!", pack_format));
-                PackVersionType::Resource(version)
-            }
-            (None, None) => {
-                return Err(PackInfoDeserializationError::NoValidFormatFound(pack_format as u8))
-            }
-        };
-        
         Ok (PackInfoSerializationInput {
             description: description.into(),
-            version
+            format: pack_format as u8,
         })
     }
 
@@ -84,17 +48,11 @@ impl Adapter<SerializedType, DomainType> for PackInfoAdapter {
         _context: AdapterProviderContext<'_, AdpProvider>
     ) -> Result<SerializedType, Self::SerializedConversionError> {
         let description = &domain.description;
-        let version = domain.version;
-
-        let format = match version {
-            PackVersionType::Data(version) => versions::get_datapack_format_for_version(version),
-            PackVersionType::Resource(version) => versions::get_resourcepack_format_for_version(version),
-            PackVersionType::Unknown { .. } => return Err(PackInfoSerializationError::UnknownVersionTypeInSerialization.into()),
-        };
+        let format = domain.format;
 
         let pack = PackData::new(
             description.clone().into(),
-            format.get_format_id() as u32,
+            format as u32,
             None
         );
 
@@ -108,22 +66,12 @@ impl Adapter<SerializedType, DomainType> for PackInfoAdapter {
 #[derive(Debug, Clone, derive_new::new)]
 pub struct PackInfoSerializationInput {
     pub description: PackDescription,
-    pub version: PackVersionType,
+    pub format: u8,
 }
 
 impl Into<PackInfo> for PackInfoSerializationInput {
     fn into(self) -> PackInfo {
         PackInfo::new(self.description, None)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum PackVersionType {
-    Data(MinecraftVersion),
-    Resource(MinecraftVersion),
-    Unknown {
-        version_if_data: MinecraftVersion,
-        version_if_resource: MinecraftVersion,
     }
 }
 
@@ -180,16 +128,11 @@ mod tests {
             // It should deserialize properly
             let PackInfoSerializationInput {
                 description,
-                version
+                format
             } = pack_data;
 
             assert!(matches!(description, PackDescription::String(text) if text == "Test desccription"));
-
-            let version = match version {
-                PackVersionType::Data(version) => version,
-                _ => panic!("Expected data version")
-            };
-            assert!(format.get_versions().read().unwrap().contains(&version));
+            assert_eq!(format, versions::D48.get_format_id());
         }
 
         #[tokio::test]
@@ -218,85 +161,11 @@ mod tests {
             // It should deserialize properly
             let PackInfoSerializationInput {
                 description,
-                version
+                format
             } = pack_data;
 
             assert!(matches!(description, PackDescription::String(text) if text == "Test desccription"));
-
-            let version = match version {
-                PackVersionType::Resource(version) => version,
-                _ => panic!("Expected resource version")
-            };
-            assert!(format.get_versions().read().unwrap().contains(&version));
-        }
-        
-        #[tokio::test]
-        async fn test_pack_info_adapter_deser_valid_format_for_both_types() {
-            // Given a pack info with a format version which is a valid format
-            // for both resourcepacks and datapacks
-            let data_format = &*versions::D4;
-            let resource_format = &*versions::R4;
-
-            let pack = PackData::new(
-                TextComponent::String("Test desccription".to_string()),
-                data_format.get_format_id() as u32,
-                None
-            );
-
-            let pack_info = SerializedPackInfo::new(
-                pack,
-                None, None, None, None,
-            );
-            let pack_info = AdapterInput::new(&pack_info);
-
-            let repo = AdapterRepository::create_repo().await;
-            let context = AdapterRepository::context_from_repo(&repo).await;
-
-            // When I deserialize it
-            let pack_data = PackInfoAdapter::deserialize(pack_info, context).await.unwrap();
-
-            // It should give options for the primary MC version for both
-            let PackInfoSerializationInput {
-                description,
-                version
-            } = pack_data;
-
-            assert!(matches!(description, PackDescription::String(text) if text == "Test desccription"));
-
-            let versions = match version {
-                PackVersionType::Unknown { version_if_data, version_if_resource } => (version_if_data, version_if_resource),
-                _ => panic!("Expected unknown version type")
-            };
-            assert!(data_format.get_versions().read().unwrap().contains(&versions.0));
-            assert!(resource_format.get_versions().read().unwrap().contains(&versions.1));
-        }
-        
-        #[tokio::test]
-        async fn test_pack_info_adapter_deser_invalid_pack_format() {
-            // Given a pack info with a format id which does not exist
-            let fake_format_id = 1;
-
-            let pack = PackData::new(
-                TextComponent::String("Test desccription".to_string()),
-                fake_format_id,
-                None
-            );
-
-            let pack_info = SerializedPackInfo::new(
-                pack,
-                None, None, None, None,
-            );
-            let pack_info = AdapterInput::new(&pack_info);
-
-            let repo = AdapterRepository::create_repo().await;
-            let context = AdapterRepository::context_from_repo(&repo).await;
-            
-            // When I deserialize it
-            let result = PackInfoAdapter::deserialize(pack_info, context).await;
-
-            // It should return an error
-            assert!(result.is_err());
-            assert!(matches!(result, Err(PackInfoDeserializationError::NoValidFormatFound(_))));
+            assert_eq!(format, versions::R32.get_format_id());
         }
         
         #[tokio::test]
@@ -410,7 +279,7 @@ mod tests {
 
             let pack_info = PackInfoSerializationInput::new(
                 PackDescription::String("Test description".to_string()),
-                PackVersionType::Data(version)
+                versions::get_datapack_format_for_version(version).clone().get_format_id()
             );
             let pack_info = AdapterInput::new(&pack_info);
             
@@ -434,7 +303,7 @@ mod tests {
 
             let pack_info = PackInfoSerializationInput::new(
                 PackDescription::String("Test description".to_string()),
-                PackVersionType::Resource(version)
+                versions::get_resourcepack_format_for_version(version).clone().get_format_id()
             );
             let pack_info = AdapterInput::new(&pack_info);
 
@@ -449,31 +318,6 @@ mod tests {
             
             assert_eq!(*serialized.pack().pack_format(), expected_format.get_format_id() as u32);
             assert!(matches!(serialized.pack().description(), TextComponent::String(text) if text == "Test description"));
-        }
-
-        #[tokio::test]
-        async fn test_pack_info_adapter_ser_unknown_version_type_is_invalid() {
-            // Given a pack info with unknown version type
-            let version = *versions::V1_20_5;
-
-            let pack_info = PackInfoSerializationInput::new(
-                PackDescription::String("Test description".to_string()),
-                PackVersionType::Unknown {
-                    version_if_data: version,
-                    version_if_resource: version,
-                }
-            );
-            let pack_info = AdapterInput::new(&pack_info);
-
-            let repo = AdapterRepository::create_repo().await;
-            let context = AdapterRepository::context_from_repo(&repo).await;
-            
-            // When I try to serialize it
-            let result = PackInfoAdapter::serialize(pack_info, context).await;
-            
-            // It should return an error
-            assert!(result.is_err());
-            assert!(matches!(result, Err(PackInfoSerializationError::UnknownVersionTypeInSerialization)));
         }
     }
 }
