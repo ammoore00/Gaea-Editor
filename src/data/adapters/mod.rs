@@ -63,10 +63,12 @@ impl<T> Clone for AdapterInput<T> {
     }
 }
 
-pub fn register_default_adapters<AdapterProvider: adapter_repo::AdapterProvider + Send + Sync + 'static>(provider: &mut AdapterProvider) {
+pub fn register_default_adapters<AdapterProvider: adapter_repo::AdapterProvider + Send + Sync + 'static>(provider: &mut AdapterProvider) -> &AdapterProvider {
     provider.register::<ProjectAdapter, project::SerializedType, project::DomainType>();
     
     provider.register::<PackInfoAdapter, pack_info::SerializedType, pack_info::DomainType>();
     
     provider.register::<ResourceLocationAdapter, resource_location::SerializedType, resource_location::DomainType>();
+    
+    provider
 }

@@ -40,14 +40,14 @@ impl Project {
             ProjectSettings::DataPack { name, description, path, project_version } => {
                 Self {
                     name, id, path, project_version,
-                    pack_info: PackInfoProjectData::DataPack(PackInfo::new(description, None)),
+                    pack_info: PackInfoProjectData::Data(PackInfo::new(description, None)),
                     has_unsaved_changes: false,
                 }
             }
             ProjectSettings::ResourcePack { name, description, path, project_version } => {
                 Self {
                     name, id, path, project_version,
-                    pack_info: PackInfoProjectData::ResourcePack(PackInfo::new(description, None)),
+                    pack_info: PackInfoProjectData::Resource(PackInfo::new(description, None)),
                     has_unsaved_changes: false,
                 }
             }
@@ -76,8 +76,8 @@ impl Project {
 
     pub fn project_type(&self) -> ProjectType {
         match &self.pack_info {
-            PackInfoProjectData::DataPack(_) => ProjectType::DataPack,
-            PackInfoProjectData::ResourcePack(_) => ProjectType::ResourcePack,
+            PackInfoProjectData::Data(_) => ProjectType::DataPack,
+            PackInfoProjectData::Resource(_) => ProjectType::ResourcePack,
             PackInfoProjectData::Combined { .. } => ProjectType::Combined,
         }
     }
@@ -217,8 +217,8 @@ pub enum ProjectDescription {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum PackInfoProjectData {
-    DataPack(PackInfo),
-    ResourcePack(PackInfo),
+    Data(PackInfo),
+    Resource(PackInfo),
     Combined {
         data_info: PackInfo,
         resource_info: PackInfo,
@@ -244,7 +244,7 @@ impl Project {
 
     pub fn recreate_settings(&self) -> ProjectSettings {
         match &self.pack_info {
-            PackInfoProjectData::DataPack(info) => {
+            PackInfoProjectData::Data(info) => {
                 ProjectSettings::DataPack {
                     name: self.name.clone(),
                     description: info.description().clone(),
@@ -252,7 +252,7 @@ impl Project {
                     project_version: self.project_version.clone(),
                 }
             },
-            PackInfoProjectData::ResourcePack(info) => {
+            PackInfoProjectData::Resource(info) => {
                 ProjectSettings::ResourcePack {
                     name: self.name.clone(),
                     description: info.description().clone(),
