@@ -2,6 +2,7 @@ pub mod pack_info;
 pub mod project;
 
 pub(crate) mod text_component {
+    use std::fmt::Display;
     use crate::data::domain::pack_info::PackDescription;
     
     #[derive(Debug, Clone, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -9,6 +10,14 @@ pub(crate) mod text_component {
     pub enum TextComponent {
         // TODO: Implement additional types
         String(String),
+    }
+    
+    impl Display for TextComponent {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                TextComponent::String(text) => write!(f, "{}", text),
+            }
+        }
     }
 
     impl From<PackDescription> for TextComponent {

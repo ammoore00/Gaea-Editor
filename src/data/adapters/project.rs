@@ -211,7 +211,7 @@ async fn serialize_pack_info<AdpProvider: AdapterProvider + ?Sized>(
 
     context.serialize(input).await.map_err(|e| {
         ProjectSerializeError::PackInfo(e)
-    })?
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -527,6 +527,123 @@ mod test {
     }
     
     mod serialize {
+        use rstest::fixture;
+        use crate::data::adapters::register_default_adapters;
+        use crate::data::domain::pack_info::PackDescription;
+        use crate::data::domain::project::{ProjectSettings, ProjectVersion};
+        use crate::repositories::adapter_repo::AdapterRepository;
         use super::*;
+        
+        #[fixture]
+        fn data_project() -> DomainType {
+            DomainProject::from_settings(
+                ProjectSettings::DataPack {
+                    name: "Test Data Pack".to_string(),
+                    description: PackDescription::String("Test data description".to_string()),
+                    path: None,
+                    project_version: ProjectVersion::from(&versions::latest()),
+                }
+            )
+        }
+
+        #[fixture]
+        fn resource_project() -> DomainType {
+            DomainProject::from_settings(
+                ProjectSettings::ResourcePack {
+                    name: "Test Resource Pack".to_string(),
+                    description: PackDescription::String("Test resource description".to_string()),
+                    path: None,
+                    project_version: ProjectVersion::from(&versions::latest()),
+                }
+            )
+        }
+        
+        #[fixture]
+        fn combined_project() -> DomainType {
+            DomainProject::from_settings(
+                ProjectSettings::Combined {
+                    name: "Test Data Pack".to_string(),
+                    data_description: PackDescription::String("Test data description".to_string()),
+                    resource_description: PackDescription::String("Test resource description".to_string()),
+                    path: None,
+                    project_version: ProjectVersion::from(&versions::latest()),
+                }
+            )
+        }
+        
+        #[rstest::rstest]
+        #[tokio::test]
+        async fn test_ser_data_pack(
+            // Given a standard data pack
+            data_project: DomainType
+        ) {
+            let repo = AdapterRepository::create_repo().await;
+            register_default_adapters(&mut *repo.write().await);
+            
+            let context = AdapterRepository::context_from_repo(&repo).await;
+
+            // When I serialize it
+            let serialized = ProjectAdapter::serialize(AdapterInput::new(&data_project), context).await.unwrap();
+            
+            // Then it should be serialized correctly
+            match serialized {
+                SerializedType::Data(project) => {
+                    assert_eq!(*project.pack_info().read().await.pack().pack_format(), versions::get_datapack_format_for_version(versions::latest()).get_format_id() as u32);
+                    assert_eq!(project.pack_info().read().await.pack().description().to_string(), "Test data description");
+                }
+                _ => panic!("Expected data pack serialization"),
+            }
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        async fn test_ser_resource_pack(
+            // Given a standard data pack
+            resource_project: DomainType
+        ) {
+            let repo = AdapterRepository::create_repo().await;
+            register_default_adapters(&mut *repo.write().await);
+
+            let context = AdapterRepository::context_from_repo(&repo).await;
+
+            // When I serialize it
+            let serialized = ProjectAdapter::serialize(AdapterInput::new(&resource_project), context).await.unwrap();
+
+            // Then it should be serialized correctly
+            match serialized {
+                SerializedType::Resource(project) => {
+                    assert_eq!(*project.pack_info().read().await.pack().pack_format(), versions::get_resourcepack_format_for_version(versions::latest()).get_format_id() as u32);
+                    assert_eq!(project.pack_info().read().await.pack().description().to_string(), "Test resource description");
+                }
+                _ => panic!("Expected resource pack serialization"),
+            }
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        async fn test_ser_combined_pack(
+            // Given a standard data pack
+            combined_project: DomainType
+        ) {
+            let repo = AdapterRepository::create_repo().await;
+            register_default_adapters(&mut *repo.write().await);
+
+            let context = AdapterRepository::context_from_repo(&repo).await;
+
+            // When I serialize it
+            let serialized = ProjectAdapter::serialize(AdapterInput::new(&combined_project), context).await.unwrap();
+
+            // Then it should be serialized correctly
+            match serialized {
+                SerializedType::Combined { data_project, resource_project } => {
+                    assert_eq!(*data_project.pack_info().read().await.pack().pack_format(), versions::get_datapack_format_for_version(versions::latest()).get_format_id() as u32);
+                    assert_eq!(data_project.pack_info().read().await.pack().description().to_string(), "Test data description");
+                    
+                    assert_eq!(*resource_project.pack_info().read().await.pack().pack_format(), versions::get_resourcepack_format_for_version(versions::latest()).get_format_id() as u32);
+                    assert_eq!(resource_project.pack_info().read().await.pack().description().to_string(), "Test resource description");
+                }
+                _ => panic!("Expected combined pack serialization"),
+            }
+        }
     }
 }

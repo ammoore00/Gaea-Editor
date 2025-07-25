@@ -130,6 +130,13 @@ impl AdapterProvider for AdapterRepository {
             domain: TypeId::of::<Domain>(),
             serialized: TypeId::of::<Serialized>(),
         };
+        
+        // Print the names of the Domain and Serialized types for debugging purposes
+        println!(
+            "Domain type: {:?}, Serialized type: {:?}",
+            std::any::type_name::<Domain>(),
+            std::any::type_name::<Serialized>()
+        );
 
         let adapter = self.adapters.get(&adapter_type).ok_or_else(|| AdapterRepoError::NoAdapterFound)?;
         let adapter = adapter.downcast_ref::<AdapterWrapper<Domain, Serialized, Self>>().unwrap();
