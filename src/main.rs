@@ -38,13 +38,14 @@ fn create_application() -> (ApplicationWindow, Task<window::Message>) {
 }
 
 fn setup_logging() {
-    #[cfg(debug_assertions)]
-    let default_level = "debug";
-    #[cfg(not(debug_assertions))]
-    let default_level = "info";
-    
+    let filter_directives = if cfg!(debug_assertions) {
+        "gaea=debug,warn"
+    } else {
+        "gaea=info,error"
+    };
+
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_level));
+        .unwrap_or_else(|_| EnvFilter::new(filter_directives));
 
     let fmt_layer = layer()
         .with_target(true)
