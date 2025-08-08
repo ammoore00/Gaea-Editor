@@ -39,7 +39,7 @@ fn create_application() -> (ApplicationWindow, Task<window::Message>) {
 
 fn setup_logging() {
     let filter_directives = if cfg!(debug_assertions) {
-        "gaea=debug,warn"
+        "gaea=debug,iced=info,warn"
     } else {
         "gaea=info,error"
     };
