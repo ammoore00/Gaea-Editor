@@ -1,4 +1,4 @@
-use std::{env, panic};
+use std::panic;
 use std::sync::{Mutex, Once};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use lazy_static::lazy_static;
@@ -10,9 +10,7 @@ lazy_static! {
     static ref OCCURRED_PANICS: AtomicUsize = AtomicUsize::new(0);
 }
 
-pub struct PanicSilencer {
-    expected_panic_count: usize,
-}
+pub struct PanicSilencer;
 
 impl PanicSilencer {
     pub fn new(expected_panic_count: usize) -> Self {
@@ -36,7 +34,6 @@ impl PanicSilencer {
 
         // Add this silencer's expected panics to the global count
         EXPECTED_PANICS.fetch_add(expected_panic_count, Ordering::SeqCst);
-
-        Self { expected_panic_count }
+        Self
     }
 }
