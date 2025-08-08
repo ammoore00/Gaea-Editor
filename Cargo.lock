@@ -1735,7 +1735,7 @@ dependencies = [
  "syntect",
  "syntect_minecraft_highlighting",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "tracing-subscriber",

@@ -310,7 +310,9 @@ pub enum SaveError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ZipError {
-    #[error("Mismatched zip export data and project type! Project type was {0:?}, zip export type was {:?}", type_name_of(.1))]
+    #[error("Mismatched zip export data and project type! Project type was {project_type:?}, zip export type was {zip_type}", 
+            project_type = .0, 
+            zip_type = type_name_of(.1))]
     MismatchedPaths(ProjectType, ZipPath),
     #[error(transparent)]
     Zipping(zip_service::ZipError),
