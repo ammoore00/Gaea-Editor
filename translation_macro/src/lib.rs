@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use convert_case::{Case, Casing};
-use quote::{quote, ToTokens};
+use quote::quote;
 use syn::{parse_macro_input, DeriveInput, Data, Attribute, Meta, Lit, Expr};
 
 #[proc_macro_derive(TranslationKey, attributes(translation))]
