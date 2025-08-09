@@ -1,4 +1,6 @@
+use std::ops::Deref;
 use std::sync::Arc;
+use getset::Getters;
 use tokio::sync::RwLock;
 use crate::data::serialization::project::Project as SerializedProject;
 use crate::repositories::{adapter_repo, project_repo};
@@ -138,6 +140,8 @@ impl AppContextBuilder<Finalized> {
     }
 }
 
+#[derive(Getters)]
+#[get = "pub"]
 pub struct AppContext {
     filesystem_service_context: FilesystemServiceContext,
     project_service_context: ProjectServiceContext,
@@ -146,10 +150,10 @@ pub struct AppContext {
 }
 
 #[derive(Clone)]
-pub struct FilesystemServiceContext(Arc<RwLock<dyn FilesystemProvider>>);
+pub struct FilesystemServiceContext(Arc<RwLock<dyn FilesystemProvider + Send + Sync>>);
 
 #[derive(Clone)]
-pub struct ProjectServiceContext(Arc<RwLock<dyn ProjectServiceProvider>>);
+pub struct ProjectServiceContext(Arc<RwLock<dyn ProjectServiceProvider + Send + Sync>>);
 
 impl ProjectServiceContext {
     pub fn with_default_project_service<
@@ -164,15 +168,23 @@ impl ProjectServiceContext {
 }
 
 #[derive(Clone)]
-pub struct UndoServiceContext(Arc<RwLock<dyn UndoProvider>>);
+pub struct UndoServiceContext(Arc<RwLock<dyn UndoProvider + Send + Sync>>);
 
 #[derive(Clone)]
-pub struct TranslationServiceContext(Arc<RwLock<dyn TranslationProvider>>);
+pub struct TranslationServiceContext(Arc<RwLock<dyn TranslationProvider + Send + Sync>>);
 
 impl TranslationServiceContext {
     pub fn with_default_translation_service<
         Filesystem: FilesystemProvider + Send + Sync + 'static
     >(translation_service: TranslationService<Filesystem>) -> Self {
         Self(Arc::new(RwLock::new(translation_service)))
+    }
+}
+
+impl Deref for TranslationServiceContext {
+    type Target = Arc<RwLock<dyn TranslationProvider + Send + Sync>>;
+    
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }

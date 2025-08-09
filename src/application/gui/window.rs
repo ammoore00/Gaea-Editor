@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use std::sync::Arc;
 use iced::{Element, Length, Task, Theme};
 use iced::widget::{Column, Container, pane_grid, PaneGrid};
 use iced::widget::pane_grid::Axis;
@@ -7,7 +8,6 @@ use crate::application::app_context::AppContext;
 use crate::application::gui::header::Header;
 use crate::application::gui::text_editor;
 use crate::application::gui::text_editor::{highlighter, TextEditor};
-use crate::repositories::adapter_repo::AdapterProvider;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -28,11 +28,13 @@ pub struct ApplicationWindow {
     header: Header,
     text_editors: Vec<TextEditor>,
     
-    app_context: AppContext,
+    app_context: Arc<AppContext>,
 }
 
 impl ApplicationWindow {
     pub fn new(app_context: AppContext) -> (Self, Task<Message>) {
+        let app_context = Arc::new(app_context);
+        
         let file_tree_pane = PaneState::new(PaneType::FileTree);
         let main_content_pane = PaneState::new(PaneType::MainContent);
         let preview_pane = PaneState::new(PaneType::Preview);
@@ -50,13 +52,15 @@ impl ApplicationWindow {
                 }),
             });
         
+        let (header, header_message) = Header::with_task(app_context.clone());
+        
         let mut window = Self {
             theme: highlighter::Theme::SolarizedDark,
             
             panes,
             focus: None,
             
-            header: Header::new().0,
+            header,
             text_editors: Vec::new(),
             
             app_context,
