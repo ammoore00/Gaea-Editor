@@ -1,4 +1,3 @@
-use std::ops::Deref;
 use std::sync::Arc;
 use crate::services::translation_service::TranslationKey;
 use crate::application::gui::header::menu::Item;
@@ -14,6 +13,7 @@ const MENU_WIDTH: f32 = 180.0;
 const MENU_OFFSET: f32 = 8.0;
 const MENU_SPACING: f32 = 0.0;
 
+#[derive(Debug, Clone)]
 pub enum Message {
     TranslationsUpdated(HeaderTranslations),
 }
@@ -25,14 +25,14 @@ pub struct Header {
 }
 
 impl Header {
-    pub fn with_task(app_context: Arc<AppContext>) -> (Self, Task<Message>) {
+    pub fn with_task(app_context: Arc<AppContext>) -> (Self, Task<window::Message>) {
         let self_ = Self {
             app_context: app_context.clone(),
             
             translations: HeaderTranslations::default(),
         };
         
-        (self_, Task::perform(Self::translate(app_context.clone()), |translation| Message::TranslationsUpdated(translation)))
+        (self_, Task::perform(Self::translate(app_context.clone()), |translation| Message::TranslationsUpdated(translation).into()))
     }
 
     pub fn update(&mut self, message: Message) -> Task<window::Message> {

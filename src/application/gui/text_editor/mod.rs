@@ -27,10 +27,6 @@ pub enum Message {
     ThemeChanged(highlighter::Theme),
 }
 
-fn make_message(message: Message) -> window::Message {
-    window::Message::TextEditorMessage(0, message)
-}
-
 pub struct TextEditor {
     theme: highlighter::Theme,
     file: Option<PathBuf>,
@@ -41,7 +37,7 @@ pub struct TextEditor {
 }
 
 impl<'a> TextEditor {
-    pub(crate) fn new(theme: highlighter::Theme) -> (Self, Task<window::Message>) {
+    pub(crate) fn with_task(theme: highlighter::Theme) -> (Self, Task<window::Message>) {
         (
             Self {
                 theme,
@@ -57,7 +53,7 @@ impl<'a> TextEditor {
                         "{}/tests/mcfunction/everything.mcfunction",
                         env!("CARGO_MANIFEST_DIR")
                     )),
-                    |result| make_message(Message::FileOpened(result)),
+                    |result| Message::FileOpened(result).into(),
                 ),
                 widget::focus_next(),
             ]),
@@ -92,7 +88,7 @@ impl<'a> TextEditor {
                 } else {
                     self.is_loading = true;
                     
-                    Task::perform(open_file(), |result| make_message(Message::FileOpened(result)))
+                    Task::perform(open_file(), |result| Message::FileOpened(result).into())
                 }
             }
             Message::FileOpened(result) => {
@@ -122,7 +118,7 @@ impl<'a> TextEditor {
                     */
                     Task::perform(
                         save_file(self.file.clone(), text),
-                        |result| make_message(Message::FileSaved(result)),
+                        |result| Message::FileSaved(result).into(),
                     )
                 }
             }
@@ -143,21 +139,21 @@ impl<'a> TextEditor {
     pub(crate) fn view(&self) -> Element<window::Message> {
         // Row macro didn't like external function calls
         let controls = Row::new()
-            .push(action(Icon::new(NEW_ICON), "New file", Some(make_message(Message::NewFile))))
+            .push(action(Icon::new(NEW_ICON), "New file", Some(Message::NewFile.into())))
             .push(action(
                 Icon::new(OPEN_ICON),
                 "Open file",
-                (!self.is_loading).then_some(make_message(Message::OpenFile))
+                (!self.is_loading).then_some(Message::OpenFile.into())
             ))
             .push(action(
                 Icon::new(SAVE_ICON),
                 "Save file",
-                self.is_dirty.then_some(make_message(Message::SaveFile))
+                self.is_dirty.then_some(Message::SaveFile.into())
             ))
             .push(horizontal_space())
             .push(toggler(self.word_wrap)
                 .label("Word Wrap")
-                .on_toggle(|toggled| make_message(Message::WordWrapToggled(toggled)))
+                .on_toggle(|toggled| Message::WordWrapToggled(toggled).into())
                 .text_size(14)
             )
             .padding([5, 10])
@@ -187,7 +183,7 @@ impl<'a> TextEditor {
         
         let text_editor = text_editor(&self.content)
             .height(Fill)
-            .on_action(|action| make_message(Message::ActionPerformed(action)))
+            .on_action(|action| Message::ActionPerformed(action).into())
             .wrapping(if self.word_wrap {
                 text::Wrapping::Word
             } else {
@@ -199,7 +195,7 @@ impl<'a> TextEditor {
                     if key_press.modifiers.command() =>
                         {
                             Some(text_editor::Binding::Custom(
-                                make_message(Message::SaveFile),
+                                Message::SaveFile.into(),
                             ))
                         }
                     _ => text_editor::Binding::from_key_press(key_press),

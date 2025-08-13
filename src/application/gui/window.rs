@@ -6,17 +6,33 @@ use iced::widget::{Column, Container, pane_grid, PaneGrid};
 use iced::widget::pane_grid::Axis;
 use crate::application::app_context::AppContext;
 use crate::application::gui::header::Header;
-use crate::application::gui::text_editor;
+use crate::application::gui::{header, text_editor};
 use crate::application::gui::text_editor::{highlighter, TextEditor};
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    // Global messages
+    ThemeSelected(highlighter::Theme),
+    
+    // Main window messages
     ResizedPane(pane_grid::ResizeEvent),
     ClickedPane(pane_grid::Pane),
     
-    ThemeSelected(highlighter::Theme),
-    
-    TextEditorMessage(i32, text_editor::Message),
+    // Element messages
+    TextEditorMessage(text_editor::Message),
+    HeaderMessage(header::Message),
+}
+
+impl From<text_editor::Message> for Message {
+    fn from(value: text_editor::Message) -> Self {
+        Message::TextEditorMessage(value)
+    }
+}
+
+impl From<header::Message> for Message {
+    fn from(value: header::Message) -> Self {
+        Message::HeaderMessage(value)
+    }
 }
 
 pub struct ApplicationWindow {
@@ -26,7 +42,7 @@ pub struct ApplicationWindow {
     focus: Option<pane_grid::Pane>,
     
     header: Header,
-    text_editors: Vec<TextEditor>,
+    text_editor: TextEditor,
     
     app_context: Arc<AppContext>,
 }
@@ -34,7 +50,7 @@ pub struct ApplicationWindow {
 impl ApplicationWindow {
     pub fn new(app_context: AppContext) -> (Self, Task<Message>) {
         let app_context = Arc::new(app_context);
-        
+
         let file_tree_pane = PaneState::new(PaneType::FileTree);
         let main_content_pane = PaneState::new(PaneType::MainContent);
         let preview_pane = PaneState::new(PaneType::Preview);
@@ -51,25 +67,28 @@ impl ApplicationWindow {
                     b: Box::new(pane_grid::Configuration::Pane(preview_pane)),
                 }),
             });
-        
+
+        let theme = highlighter::Theme::SolarizedDark;
+
         let (header, header_message) = Header::with_task(app_context.clone());
+        let (text_editor, editor_message) = TextEditor::with_task(theme.clone());
         
-        let mut window = Self {
-            theme: highlighter::Theme::SolarizedDark,
+        let window = Self {
+            theme,
             
             panes,
             focus: None,
             
             header,
-            text_editors: Vec::new(),
+            text_editor,
             
             app_context,
         };
         
-        let editor = TextEditor::new(window.theme.clone());
-        window.text_editors.push(editor.0);
-        
-        (window, editor.1)
+        (window, Task::batch([
+            header_message,
+            editor_message,
+        ]))
     }
     
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -86,8 +105,8 @@ impl ApplicationWindow {
                 self.focus = Some(pane);
                 Task::none()
             }
-            // TODO: Fix indexes not being used
-            Message::TextEditorMessage(index, message) => self.text_editors[0].update(message),
+            Message::TextEditorMessage(message) => self.text_editor.update(message),
+            Message::HeaderMessage(message) => self.header.update(message),
         }
     }
     
@@ -99,7 +118,7 @@ impl ApplicationWindow {
             pane_grid::Content::new(
                 match state.pane_type {
                     PaneType::FileTree => Container::new(iced::widget::text("File Tree")),
-                    PaneType::MainContent => Container::new(self.text_editors[0].view()),
+                    PaneType::MainContent => Container::new(self.text_editor.view()),
                     PaneType::Preview => Container::new(iced::widget::text("Preview")),
                 })
         })
