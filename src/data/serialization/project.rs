@@ -159,8 +159,8 @@ mod tests {
         async fn test_zip_files() {
             // Given a project with additional files
             let pack_info = Arc::new(RwLock::new(PackInfo::default_data()));
-            let mut files = HashMap::new();
             
+            let mut files = HashMap::new();
             let test_name = "data/test.json";
             let expected_test_contents = r#"{"test": "test"}"#;
             files.insert(PathBuf::from(test_name), expected_test_contents.to_string());
@@ -175,7 +175,7 @@ mod tests {
             // When I serialize it
             let zip_data = project.zip().await.unwrap();
 
-            // It should return a zip file containing the serialized pack info
+            // It should return a zip file containing the added file
             let mut zip_file = ZipArchive::new(Cursor::new(zip_data)).unwrap();
 
             assert_eq!(zip_file.len(), 2);
