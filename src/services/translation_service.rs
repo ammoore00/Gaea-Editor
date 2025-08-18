@@ -1,7 +1,9 @@
+use std::any::TypeId;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use serde::de::Error;
 use serde_json::Value;
@@ -262,6 +264,8 @@ pub struct Language {
     name: String,
     translation_map: Arc<std::sync::RwLock<HashMap<String, String>>>
 }
+
+pub static DEFAULT_TRANSLATIONS: Lazy<DashMap<String, String>> = Lazy::new(|| DashMap::new());
 
 pub trait TranslationKey {
     fn key(&self) -> &'static str;
@@ -575,6 +579,7 @@ mod tests {
         }
 
         #[derive(TranslationKey)]
+        #[no_output]
         enum TestTranslationKeys {
             #[translation(en_us = "Hello")]
             Hello,

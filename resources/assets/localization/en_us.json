@@ -1,6 +1,10 @@
 {
   "name": "English",
   "translations": {
-
+    "pack_info.default_data_description": "A Data Pack for Minecraft",
+    "pack_info.default_resource_description": "A Resource Pack for Minecraft",
+    "file_menu.title": "File",
+    "file_menu.export": "Export Project",
+    "file_menu.import": "Import Project"
   }
 }
