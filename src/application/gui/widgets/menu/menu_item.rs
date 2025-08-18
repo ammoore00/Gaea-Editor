@@ -3,7 +3,7 @@ use iced::{Event, Length, Rectangle, Size};
 use iced::advanced::graphics::core::Element;
 use iced::advanced::layout::{Limits, Node};
 use iced::advanced::renderer::Style;
-use iced::advanced::widget::{tree, Tree};
+use iced::advanced::widget::Tree;
 use iced::mouse::Cursor;
 use iced::widget::{button, horizontal_rule, text, Button, Row, Rule, Space};
 use iced::widget::button::{Status, StyleFn};
@@ -47,7 +47,7 @@ where
 {
     icon: Option<Icon>,
     content: Option<MenuItemContent<'a, Message, Theme, Renderer>>,
-    _state: std::marker::PhantomData<&'a (State)>,
+    _state: std::marker::PhantomData<&'a State>,
 }
 
 struct Initial;

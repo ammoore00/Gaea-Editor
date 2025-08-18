@@ -1,5 +1,3 @@
-use std::convert::Infallible;
-use std::error::Error;
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use tokio::fs::OpenOptions;
@@ -504,7 +502,6 @@ mod tests {
     }
     
     mod read {
-        use std::cell::RefCell;
         use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
         use super::*;

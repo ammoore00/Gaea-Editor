@@ -351,14 +351,12 @@ mod test {
     use std::path::{Path, PathBuf};
     use std::pin::Pin;
     use std::sync::Arc;
-    use anyhow::anyhow;
     use once_cell::sync::Lazy;
-    use sea_orm::Iden;
     use tokio::sync::RwLock;
     use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
     use crate::data::adapters::project::{ProjectDeserializeError, SerializedProjectData};
     use crate::data::domain::pack_info::PackDescription;
-    use crate::data::domain::project::{Project, ProjectDescription, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
+    use crate::data::domain::project::{Project, ProjectID, ProjectSettings, ProjectType, ProjectVersion};
     use crate::data::domain::versions;
     use crate::data::serialization::pack_info::{PackData, PackInfo};
     use crate::data::serialization::project::{Project as SerializedProject, SerializedProjectType};
@@ -759,7 +757,7 @@ mod test {
     }
     
     mod create_project {
-        use crate::data::domain::project::{ProjectType, ProjectVersion};
+        use crate::data::domain::project::ProjectVersion;
         use crate::data::domain::versions;
         use super::*;
         

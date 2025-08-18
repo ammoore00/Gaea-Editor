@@ -35,7 +35,7 @@ where
     T: Send + Sync + Sized + ZippableProject,
     Filesystem: FilesystemProvider,
 {
-    _phantom: PhantomData<(T)>,
+    _phantom: PhantomData<T>,
     filesystem_provider: Arc<RwLock<Filesystem>>,
 }
 
@@ -86,7 +86,6 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::error::Error;
     use std::fs::Metadata;
     use std::io::{Cursor, Read, Write};
     use std::path::PathBuf;

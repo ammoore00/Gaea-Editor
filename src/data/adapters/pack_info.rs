@@ -1,4 +1,3 @@
-use mc_version::MinecraftVersion;
 use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
 use crate::data::domain::pack_info::{PackDescription, PackInfo};
 use crate::data::domain::versions;

@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::fmt::Debug;
 use std::result;
 use std::sync::{Arc, Mutex};
@@ -80,7 +79,7 @@ impl UndoProvider for UndoService {
                 // Dash map is thread safe for access
                 let command_stack_mutex = self.undo_stack.get_mut(&UndoStackID::Global).ok_or(UndoError::InvalidStackID(undo_stack_id))?;
 
-                let mut command_stack = command_stack_mutex.lock().unwrap();
+                let command_stack = command_stack_mutex.lock().unwrap();
                 let command_data = command_stack.last().ok_or(UndoError::NothingToUndo)?;
 
                 match command_data {
@@ -104,7 +103,7 @@ impl UndoProvider for UndoService {
                 // Dash map is thread safe for access
                 let command_stack_mutex = self.undo_stack.get_mut(&undo_stack_id).ok_or(UndoError::InvalidStackID(undo_stack_id))?;
 
-                let mut command_stack = command_stack_mutex.lock().unwrap();
+                let command_stack = command_stack_mutex.lock().unwrap();
                 let command_data = command_stack.last().ok_or(UndoError::NothingToUndo)?;
 
                 match command_data {
