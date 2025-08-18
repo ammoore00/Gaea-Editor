@@ -344,6 +344,7 @@ fn type_name_of<T>(_: &T) -> &'static str {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
     use std::convert::Infallible;
     use std::future::Future;
     use std::io;
@@ -752,7 +753,8 @@ mod test {
                     None
                 ),
                 None, None, None, None
-            )
+            ),
+            HashMap::new()
         )
     }
     

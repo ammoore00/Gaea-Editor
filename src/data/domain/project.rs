@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::hash::Hash;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use mc_version::{MinecraftVersion, PackFormat};
@@ -14,21 +17,21 @@ pub struct Project {
     path: Option<PathBuf>,
     project_version: ProjectVersion,
 
-    pack_info: PackInfoProjectData,
+    project_data: ProjectData,
 
     // TODO: make this more comprehensive
     has_unsaved_changes: bool,
 }
 
 impl Project {
-    pub fn new(name: String, project_version: ProjectVersion, pack_info: PackInfoProjectData) -> Self {
+    pub fn new(name: String, project_version: ProjectVersion, project_data: ProjectData) -> Self {
         let id = Self::generate_id();
 
         Self {
             name, id,
             path: None,
             project_version,
-            pack_info,
+            project_data,
             has_unsaved_changes: false,
         }
     }
@@ -40,14 +43,14 @@ impl Project {
             ProjectSettings::DataPack { name, description, path, project_version } => {
                 Self {
                     name, id, path, project_version,
-                    pack_info: PackInfoProjectData::Data(PackInfo::new(description, None)),
+                    project_data: ProjectData::data(PackInfo::new(description, None)),
                     has_unsaved_changes: false,
                 }
             }
             ProjectSettings::ResourcePack { name, description, path, project_version } => {
                 Self {
                     name, id, path, project_version,
-                    pack_info: PackInfoProjectData::Resource(PackInfo::new(description, None)),
+                    project_data: ProjectData::resource(PackInfo::new(description, None)),
                     has_unsaved_changes: false,
                 }
             }
@@ -55,10 +58,10 @@ impl Project {
                 Self {
                     name, id, path, project_version,
 
-                    pack_info: PackInfoProjectData::Combined {
-                        data_info: PackInfo::new(data_description, None),
-                        resource_info: PackInfo::new(resource_description, None),
-                    },
+                    project_data: ProjectData::combined(
+                        PackInfo::new(data_description, None),
+                        PackInfo::new(resource_description, None),
+                    ),
 
                     has_unsaved_changes: false,
                 }
@@ -75,10 +78,10 @@ impl Project {
     }
 
     pub fn project_type(&self) -> ProjectType {
-        match &self.pack_info {
-            PackInfoProjectData::Data(_) => ProjectType::DataPack,
-            PackInfoProjectData::Resource(_) => ProjectType::ResourcePack,
-            PackInfoProjectData::Combined { .. } => ProjectType::Combined,
+        match &self.project_data {
+            ProjectData::Data(_) => ProjectType::DataPack,
+            ProjectData::Resource(_) => ProjectType::ResourcePack,
+            ProjectData::Combined { .. } => ProjectType::Combined,
         }
     }
 
@@ -216,12 +219,110 @@ pub enum ProjectDescription {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum PackInfoProjectData {
-    Data(PackInfo),
-    Resource(PackInfo),
+pub enum ProjectData {
+    Data(ProjectFiles),
+    Resource(ProjectFiles),
     Combined {
-        data_info: PackInfo,
-        resource_info: PackInfo,
+        data_files: ProjectFiles,
+        resource_files: ProjectFiles,
+    }
+}
+
+impl ProjectData {
+    pub fn data(pack_info: PackInfo) -> Self {
+        Self::Data(ProjectFiles {
+            pack_info,
+            files: FileData::new(),
+        })
+    }
+
+    pub fn data_with_files(pack_info: PackInfo, files: HashMap<PathBuf, String>) -> Self {
+        Self::Data(ProjectFiles {
+            pack_info,
+            files: FileData::with_files(files),
+        })
+    }
+    
+    pub fn resource(pack_info: PackInfo) -> Self {
+        Self::Resource(ProjectFiles {
+            pack_info,
+            files: FileData::new(),
+        })
+    }
+    
+    pub fn resource_with_files(pack_info: PackInfo, files: HashMap<PathBuf, String>) -> Self {
+        Self::Resource(ProjectFiles {
+            pack_info,
+            files: FileData::with_files(files),
+        })
+    }
+    
+    pub fn combined(data_pack_info: PackInfo, resource_pack_info: PackInfo) -> Self {
+        Self::Combined {
+            data_files: ProjectFiles {
+                pack_info: data_pack_info,
+                files: FileData::new(),
+            },
+            resource_files: ProjectFiles {
+                pack_info: resource_pack_info,
+                files: FileData::new(),
+            }
+        }
+    }
+    
+    pub fn combined_with_files(
+        data_pack_info: PackInfo,
+        data_files: HashMap<PathBuf, String>,
+        resource_pack_info: PackInfo,
+        resource_files: HashMap<PathBuf, String>
+    ) -> Self {
+        Self::Combined {
+            data_files: ProjectFiles {
+                pack_info: data_pack_info,
+                files: FileData::with_files(data_files),
+            },
+            resource_files: ProjectFiles {
+                pack_info: resource_pack_info,
+                files: FileData::with_files(resource_files),
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, getset::Getters)]
+#[getset(get = "pub")]
+pub struct ProjectFiles {
+    pack_info: PackInfo,
+    files: FileData,
+}
+
+// TODO: Convert this to use relational database
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FileData(pub HashMap<PathBuf, String>);
+
+impl FileData {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+    
+    pub fn with_files(files: HashMap<PathBuf, String>) -> Self {
+        Self(files)
+    }
+}
+
+impl Deref for FileData {
+    type Target = HashMap<PathBuf, String>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Hash for FileData {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        for (path, content) in &self.0 {
+            path.hash(state);
+            content.hash(state);
+        }
     }
 }
 
@@ -243,32 +344,50 @@ impl Project {
     }
 
     pub fn recreate_settings(&self) -> ProjectSettings {
-        match &self.pack_info {
-            PackInfoProjectData::Data(info) => {
+        match &self.project_data {
+            ProjectData::Data(info) => {
                 ProjectSettings::DataPack {
                     name: self.name.clone(),
-                    description: info.description().clone(),
+                    description: info.pack_info.description().clone(),
                     path: self.path.clone(),
                     project_version: self.project_version.clone(),
                 }
             },
-            PackInfoProjectData::Resource(info) => {
+            ProjectData::Resource(info) => {
                 ProjectSettings::ResourcePack {
                     name: self.name.clone(),
-                    description: info.description().clone(),
+                    description: info.pack_info.description().clone(),
                     path: self.path.clone(),
                     project_version: self.project_version.clone(),
                 }
             },
-            PackInfoProjectData::Combined { data_info, resource_info } => {
+            ProjectData::Combined { data_files: data_info, resource_files: resource_info } => {
                 ProjectSettings::Combined {
                     name: self.name.clone(),
-                    data_description: data_info.description().clone(),
-                    resource_description: resource_info.description().clone(),
+                    data_description: data_info.pack_info.description().clone(),
+                    resource_description: resource_info.pack_info.description().clone(),
                     path: self.path.clone(),
                     project_version: self.project_version.clone(),
                 }
             }
+        }
+    }
+    
+    pub fn set_files(&mut self, files: HashMap<PathBuf, String>) {
+        match &mut self.project_data {
+            ProjectData::Data(data_files) => data_files.files = FileData::with_files(files),
+            ProjectData::Resource(resource_files) => resource_files.files = FileData::with_files(files),
+            _ => panic!("Cannot set files on a combined project"),
+        }
+    }
+    
+    pub fn set_combined_files(&mut self, data_files: HashMap<PathBuf, String>, resource_files: HashMap<PathBuf, String>) {
+        match &mut self.project_data {
+            ProjectData::Combined { data_files: data, resource_files: resource } => {
+                data.files = FileData::with_files(data_files);
+                resource.files = FileData::with_files(resource_files);
+            }
+            _ => panic!("Cannot set combined files on a single type project"),
         }
     }
 }

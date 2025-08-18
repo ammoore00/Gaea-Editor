@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use crate::data::adapters;
 use crate::data::adapters::{Adapter, AdapterError, AdapterInput};
 use crate::data::adapters::pack_info::{PackInfoSerializationInput};
-use crate::data::domain::project::{PackInfoProjectData, Project as DomainProject};
+use crate::data::domain::project::{ProjectData, Project as DomainProject};
 use crate::data::domain::versions;
 use crate::data::serialization::pack_info::PackInfo;
 use crate::data::serialization::project::{Project as SerializedProject, SerializedProjectType};
@@ -46,7 +46,8 @@ impl Adapter<SerializedType, DomainType> for ProjectAdapter {
                 let name = project.name();
                 
                 let format = deserialized_pack_info.format;
-                let pack_info = PackInfoProjectData::Data(deserialized_pack_info.into());
+                // TODO: Fix expensive clone
+                let project_data = ProjectData::data_with_files(deserialized_pack_info.into(), project.files().clone());
                 
                 let format = *versions::DATA_FORMAT_MAP.get(&format)
                     .ok_or(ProjectDeserializeError::InvalidVersion(format!("Invalid data format {}", format)))?
@@ -55,7 +56,7 @@ impl Adapter<SerializedType, DomainType> for ProjectAdapter {
                 DomainProject::new(
                     name.clone(),
                     format.into(),
-                    pack_info,
+                    project_data,
                 )
             }
             SerializedProjectData::Resource(project) => {
@@ -70,7 +71,8 @@ impl Adapter<SerializedType, DomainType> for ProjectAdapter {
                 let name = project.name();
 
                 let format = deserialized_pack_info.format;
-                let pack_info = PackInfoProjectData::Resource(deserialized_pack_info.into());
+                // TODO: Fix expensive clone
+                let project_data = ProjectData::resource_with_files(deserialized_pack_info.into(), project.files().clone());
 
                 let format = *versions::RESOURCE_FORMAT_MAP.get(&format)
                     .ok_or(ProjectDeserializeError::InvalidVersion(format!("Invalid resource format {}", format)))?
@@ -79,7 +81,7 @@ impl Adapter<SerializedType, DomainType> for ProjectAdapter {
                 DomainProject::new(
                     name.clone(),
                     format.into(),
-                    pack_info,
+                    project_data,
                 )
             }
             SerializedProjectData::Combined {
@@ -99,15 +101,15 @@ impl Adapter<SerializedType, DomainType> for ProjectAdapter {
                 }
                 
                 let data_pack_info = &*data_project.pack_info().read().await;
-                let deserialized_data_pack_info = deserialize_pack_info(data_pack_info).await?;
-                let data_format = deserialized_data_pack_info.format;
+                let deserialized_data_data = deserialize_pack_info(data_pack_info).await?;
+                let data_format = deserialized_data_data.format;
                 let data_format = *versions::DATA_FORMAT_MAP.get(&data_format)
                     .ok_or(ProjectDeserializeError::InvalidVersion(format!("Invalid data format {}", data_format)))?
                     .value();
 
                 let resource_pack_info = &*resource_project.pack_info().read().await;
-                let deserialized_resource_pack_info = deserialize_pack_info(resource_pack_info).await?;
-                let resource_format = deserialized_resource_pack_info.format;
+                let deserialized_resource_data = deserialize_pack_info(resource_pack_info).await?;
+                let resource_format = deserialized_resource_data.format;
                 let resource_format = *versions::RESOURCE_FORMAT_MAP.get(&resource_format)
                     .ok_or(ProjectDeserializeError::InvalidVersion(format!("Invalid resource format {}", resource_format)))?
                     .value();
@@ -147,10 +149,13 @@ impl Adapter<SerializedType, DomainType> for ProjectAdapter {
                 DomainProject::new(
                     name.clone(),
                     project_version,
-                    PackInfoProjectData::Combined {
-                        data_info: deserialized_data_pack_info.into(),
-                        resource_info: deserialized_resource_pack_info.into(),
-                    },
+                    // TODO: Fix expensive clone
+                    ProjectData::combined_with_files(
+                        deserialized_data_data.into(),
+                        data_project.files().clone(),
+                        deserialized_resource_data.into(),
+                        resource_project.files().clone(),
+                    ),
                 )
             }
         };
@@ -165,38 +170,49 @@ impl Adapter<SerializedType, DomainType> for ProjectAdapter {
         let project = domain.0;
         let project_version= project.project_version();
         
-        match project.pack_info() {
+        match project.project_data() {
             // TODO: Add more complete format handling
-            PackInfoProjectData::Data(pack_info) => {
+            ProjectData::Data(project_files) => {
                 let data_format = versions::get_datapack_format_for_version(project_version.get_base_data_mc_version());
-                let pack_info_domain_data = PackInfoSerializationInput::new(pack_info.description().clone(), data_format.get_format_id());
+                let pack_info_domain_data = PackInfoSerializationInput::new(project_files.pack_info().description().clone(), data_format.get_format_id());
+
+                let serialized_pack_info = serialize_pack_info(&pack_info_domain_data, context.clone()).await?;
+
+                let files = project_files.files().clone().0;
+                
+                // TODO: Fix expensive clone
+                Ok(SerializedProjectData::Data(SerializedProject::new(SerializedProjectType::Data, serialized_pack_info, files)))
+            }
+            ProjectData::Resource(project_files) => {
+                let data_format = versions::get_resourcepack_format_for_version(project_version.get_base_resource_mc_version());
+                let pack_info_domain_data = PackInfoSerializationInput::new(project_files.pack_info().description().clone(), data_format.get_format_id());
 
                 let serialized_pack_info = serialize_pack_info(&pack_info_domain_data, context.clone()).await?;
                 
-                Ok(SerializedProjectData::Data(SerializedProject::new(SerializedProjectType::Data, serialized_pack_info)))
-            }
-            PackInfoProjectData::Resource(pack_info) => {
-                let data_format = versions::get_resourcepack_format_for_version(project_version.get_base_resource_mc_version());
-                let pack_info_domain_data = PackInfoSerializationInput::new(pack_info.description().clone(), data_format.get_format_id());
+                let files = project_files.files().clone().0;
 
-                let serialized_pack_info = serialize_pack_info(&pack_info_domain_data, context.clone()).await?;
-
-                Ok(SerializedProjectData::Resource(SerializedProject::new(SerializedProjectType::Resource, serialized_pack_info)))
+                // TODO: Fix expensive clone
+                Ok(SerializedProjectData::Resource(SerializedProject::new(SerializedProjectType::Resource, serialized_pack_info, files)))
             }
-            PackInfoProjectData::Combined { data_info, resource_info } => {
+            ProjectData::Combined { data_files: data_project_files, resource_files: resource_project_files } => {
                 let data_format = versions::get_datapack_format_for_version(project_version.get_base_data_mc_version());
-                let pack_info_domain_data = PackInfoSerializationInput::new(data_info.description().clone(), data_format.get_format_id());
+                let pack_info_domain_data = PackInfoSerializationInput::new(data_project_files.pack_info().description().clone(), data_format.get_format_id());
 
                 let serialized_data_pack_info = serialize_pack_info(&pack_info_domain_data, context.clone()).await?;
 
+                let data_files = data_project_files.files().clone().0;
+
                 let data_format = versions::get_resourcepack_format_for_version(project_version.get_base_resource_mc_version());
-                let pack_info_domain_data = PackInfoSerializationInput::new(resource_info.description().clone(), data_format.get_format_id());
+                let pack_info_domain_data = PackInfoSerializationInput::new(resource_project_files.pack_info().description().clone(), data_format.get_format_id());
 
                 let serialized_resource_pack_info = serialize_pack_info(&pack_info_domain_data, context.clone()).await?;
-                
+
+                let resource_files = resource_project_files.files().clone().0;
+
+                // TODO: Fix expensive clone
                 Ok(SerializedProjectData::Combined {
-                    data_project: SerializedProject::new(SerializedProjectType::Data, serialized_data_pack_info),
-                    resource_project: SerializedProject::new(SerializedProjectType::Resource, serialized_resource_pack_info),
+                    data_project: SerializedProject::new(SerializedProjectType::Data, serialized_data_pack_info, data_files),
+                    resource_project: SerializedProject::new(SerializedProjectType::Resource, serialized_resource_pack_info, resource_files),
                 })
             }
         }
@@ -246,6 +262,8 @@ mod test {
     use super::*;
     
     mod deserialize {
+        use std::collections::HashMap;
+        use std::path::PathBuf;
         use map_tuple::{TupleMap0, TupleMap1};
         use rstest::fixture;
         use crate::data::adapters::register_default_adapters;
@@ -258,41 +276,60 @@ mod test {
         fn serialized(
             #[default("data")] project_type: &str,
             #[default("4")] format: &str,
+            #[default(false)] has_additional_files: bool,
         ) -> SerializedType {
             match project_type {
                 "data" => {
                     let format = format.parse::<u32>().unwrap();
-                    SerializedProjectData::Data(
-                        SerializedProject::with_name(
-                            "Test Data Pack".to_string(),
-                            SerializedProjectType::Data,
-                            PackInfo::new(
-                                PackData::new(
-                                    TextComponent::String("Test data description".to_string()),
-                                    format,
-                                    None
-                                ),
-                                None, None, None, None
-                            )
-                        )
-                    )
+                    
+                    let mut project = SerializedProject::with_name(
+                        "Test Data Pack".to_string(),
+                        SerializedProjectType::Data,
+                        PackInfo::new(
+                            PackData::new(
+                                TextComponent::String("Test data description".to_string()),
+                                format,
+                                None
+                            ),
+                            None, None, None, None
+                        ),
+                        HashMap::new()
+                    );
+                    
+                    if has_additional_files {
+                        let mut files = HashMap::new();
+                        files.insert(PathBuf::from("test_file.json"), "test_file_contents".to_string());
+                        
+                        project.set_files(files);
+                    }
+                    
+                    SerializedProjectData::Data(project)
                 }
                 "resource" => {
                     let format = format.parse::<u32>().unwrap();
-                    SerializedProjectData::Resource(
-                        SerializedProject::with_name(
-                            "Test Resource Pack".to_string(),
-                            SerializedProjectType::Resource,
-                            PackInfo::new(
-                                PackData::new(
-                                    TextComponent::String("Test resource description".to_string()),
-                                    format,
-                                    None
-                                ),
-                                None, None, None, None
-                            )
-                        )
-                    )
+                    
+                    let mut project = SerializedProject::with_name(
+                        "Test Resource Pack".to_string(),
+                        SerializedProjectType::Resource,
+                        PackInfo::new(
+                            PackData::new(
+                                TextComponent::String("Test resource description".to_string()),
+                                format,
+                                None
+                            ),
+                            None, None, None, None
+                        ),
+                        HashMap::new()
+                    );
+
+                    if has_additional_files {
+                        let mut files = HashMap::new();
+                        files.insert(PathBuf::from("test_file.json"), "test_file_contents".to_string());
+
+                        project.set_files(files);
+                    }
+                    
+                    SerializedProjectData::Resource(project)
                 }
                 "combined" => {
                     let (data_format, resource_format) = format
@@ -303,31 +340,47 @@ mod test {
                         .map0(|format| format.parse::<u32>().unwrap())
                         .map1(|format| format.parse::<u32>().unwrap());
                     
-                    SerializedProjectData::Combined {
-                        data_project: SerializedProject::with_name(
-                            "Test Data Pack".to_string(),
-                            SerializedProjectType::Data,
-                            PackInfo::new(
-                                PackData::new(
-                                    TextComponent::String("Test data description".to_string()),
-                                    data_format,
-                                    None
-                                ),
-                                None, None, None, None
-                            )
+                    let mut data_project = SerializedProject::with_name(
+                        "Test Data Pack".to_string(),
+                        SerializedProjectType::Data,
+                        PackInfo::new(
+                            PackData::new(
+                                TextComponent::String("Test data description".to_string()),
+                                data_format,
+                                None
+                            ),
+                            None, None, None, None
                         ),
-                        resource_project: SerializedProject::with_name(
-                            "Test Resource Pack".to_string(),
-                            SerializedProjectType::Resource,
-                            PackInfo::new(
-                                PackData::new(
-                                    TextComponent::String("Test resource description".to_string()),
-                                    resource_format,
-                                    None
-                                ),
-                                None, None, None, None
-                            )
-                        )
+                        HashMap::new()
+                    );
+                    
+                    let mut resource_project = SerializedProject::with_name(
+                        "Test Resource Pack".to_string(),
+                        SerializedProjectType::Resource,
+                        PackInfo::new(
+                            PackData::new(
+                                TextComponent::String("Test resource description".to_string()),
+                                resource_format,
+                                None
+                            ),
+                            None, None, None, None
+                        ),
+                        HashMap::new()
+                    );
+
+                    if has_additional_files {
+                        let mut data_files = HashMap::new();
+                        data_files.insert(PathBuf::from("test_data_file.json"), "test_data_file_contents".to_string());
+                        data_project.set_files(data_files);
+
+                        let mut resource_files = HashMap::new();
+                        resource_files.insert(PathBuf::from("test_resource_file.json"), "test_resource_file_contents".to_string());
+                        resource_project.set_files(resource_files);
+                    }
+                    
+                    SerializedProjectData::Combined {
+                        data_project,
+                        resource_project,
                     }
                 },
                 _ => panic!("Unknown project type: {}", project_type),
@@ -352,9 +405,9 @@ mod test {
             assert_eq!(project.name(), "Test Data Pack");
             assert_eq!(project.project_version().get_base_data_mc_version(), *versions::V1_21);
             
-            assert!(matches!(project.pack_info(), PackInfoProjectData::Data(_)));
-            if let PackInfoProjectData::Data(pack_info) = project.pack_info() {
-                assert_eq!(pack_info.description().to_string(), "Test data description");
+            assert!(matches!(project.project_data(), ProjectData::Data(_)));
+            if let ProjectData::Data(project_data) = project.project_data() {
+                assert_eq!(project_data.pack_info().description().to_string(), "Test data description");
             }
             else {
                 panic!("Expected data pack info");
@@ -379,9 +432,9 @@ mod test {
             assert_eq!(project.name(), "Test Resource Pack");
             assert_eq!(project.project_version().get_base_data_mc_version(), *versions::V1_21);
 
-            assert!(matches!(project.pack_info(), PackInfoProjectData::Resource(_)));
-            if let PackInfoProjectData::Resource(pack_info) = project.pack_info() {
-                assert_eq!(pack_info.description().to_string(), "Test resource description");
+            assert!(matches!(project.project_data(), ProjectData::Resource(_)));
+            if let ProjectData::Resource(project_data) = project.project_data() {
+                assert_eq!(project_data.pack_info().description().to_string(), "Test resource description");
             }
             else {
                 panic!("Expected resource pack info");
@@ -421,7 +474,8 @@ mod test {
                             None
                         ),
                         None, None, None, None
-                    )
+                    ),
+                    HashMap::new()
                 )
             );
             
@@ -456,10 +510,10 @@ mod test {
             assert_eq!(project.name(), "Test Data Pack");
             assert_eq!(project.project_version().get_base_data_mc_version(), *versions::V1_21);
 
-            assert!(matches!(project.pack_info(), PackInfoProjectData::Combined { .. }));
-            if let PackInfoProjectData::Combined { data_info, resource_info } = project.pack_info() {
-                assert_eq!(data_info.description().to_string(), "Test data description");
-                assert_eq!(resource_info.description().to_string(), "Test resource description");
+            assert!(matches!(project.project_data(), ProjectData::Combined { .. }));
+            if let ProjectData::Combined { data_files: data_info, resource_files: resource_info } = project.project_data() {
+                assert_eq!(data_info.pack_info().description().to_string(), "Test data description");
+                assert_eq!(resource_info.pack_info().description().to_string(), "Test resource description");
             }
         }
 
@@ -496,7 +550,8 @@ mod test {
                             None
                         ),
                         None, None, None, None
-                    )
+                    ),
+                    HashMap::new()
                 ),
                 resource_project: SerializedProject::with_name(
                     "Test Data Pack 2".to_string(),
@@ -508,7 +563,8 @@ mod test {
                             None
                         ),
                         None, None, None, None
-                    )
+                    ),
+                    HashMap::new()
                 )
             };
             
@@ -524,9 +580,90 @@ mod test {
             assert!(result.is_err());
             assert!(matches!(result.unwrap_err(), ProjectDeserializeError::MismatchedType(_)));
         }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        async fn test_deser_data_pack_additional_files(
+            // Given a data pack zip with additional files
+            #[with("data", "48", true)] serialized: SerializedProjectData,
+        ) {
+            let repo = AdapterRepository::create_repo().await;
+            register_default_adapters(&mut *repo.write().await);
+
+            let context = AdapterRepository::context_from_repo(&repo).await;
+
+            // When I deserialize it
+            let project = ProjectAdapter::deserialize(AdapterInput::new(&serialized), context).await.unwrap();
+
+            // Then it should correctly contain the additional files
+            assert!(matches!(project.project_data(), ProjectData::Data(_)));
+            if let ProjectData::Data(project_data) = project.project_data() {
+                let files = project_data.files();
+                assert!(files.contains_key(&PathBuf::from("test_file.json")));
+                assert_eq!(files.get(&PathBuf::from("test_file.json")).unwrap(), "test_file_contents");
+            }
+            else {
+                panic!("Expected data pack info");
+            }
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        async fn test_deser_resource_pack_additional_files(
+            // Given a resource pack zip with additional files
+            #[with("resource", "34", true)] serialized: SerializedProjectData,
+        ) {
+            let repo = AdapterRepository::create_repo().await;
+            register_default_adapters(&mut *repo.write().await);
+
+            let context = AdapterRepository::context_from_repo(&repo).await;
+
+            // When I deserialize it
+            let project = ProjectAdapter::deserialize(AdapterInput::new(&serialized), context).await.unwrap();
+
+            // Then it should correctly contain the additional files
+            assert!(matches!(project.project_data(), ProjectData::Resource(_)));
+            if let ProjectData::Resource(project_data) = project.project_data() {
+                let files = project_data.files();
+                assert!(files.contains_key(&PathBuf::from("test_file.json")));
+                assert_eq!(files.get(&PathBuf::from("test_file.json")).unwrap(), "test_file_contents");
+            }
+            else {
+                panic!("Expected data pack info");
+            }
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        async fn test_deser_combined_pack_additional_files(
+            // Given a data pack zip and a resource pack zip with additional files
+            #[with("combined", "48, 34", true)] serialized: SerializedProjectData,
+        ) {
+            let repo = AdapterRepository::create_repo().await;
+            register_default_adapters(&mut *repo.write().await);
+
+            let context = AdapterRepository::context_from_repo(&repo).await;
+
+            // When I deserialize them together
+            let project = ProjectAdapter::deserialize(AdapterInput::new(&serialized), context).await.unwrap();
+
+            // Then the project should correctly contain the additional files for each pack
+            assert!(matches!(project.project_data(), ProjectData::Combined { .. }));
+            if let ProjectData::Combined { data_files, resource_files } = project.project_data() {
+                let files = data_files.files();
+                assert!(files.contains_key(&PathBuf::from("test_data_file.json")));
+                assert_eq!(files.get(&PathBuf::from("test_data_file.json")).unwrap(), "test_data_file_contents");
+
+                let files = resource_files.files();
+                assert!(files.contains_key(&PathBuf::from("test_resource_file.json")));
+                assert_eq!(files.get(&PathBuf::from("test_resource_file.json")).unwrap(), "test_resource_file_contents");
+            }
+        }
     }
     
     mod serialize {
+        use std::collections::HashMap;
+        use std::path::PathBuf;
         use rstest::fixture;
         use crate::data::adapters::register_default_adapters;
         use crate::data::domain::pack_info::PackDescription;
@@ -535,32 +672,50 @@ mod test {
         use super::*;
         
         #[fixture]
-        fn data_project() -> DomainType {
-            DomainProject::from_settings(
+        fn data_project(#[default(false)] has_additional_files: bool) -> DomainType {
+            let mut project = DomainProject::from_settings(
                 ProjectSettings::DataPack {
                     name: "Test Data Pack".to_string(),
                     description: PackDescription::String("Test data description".to_string()),
                     path: None,
                     project_version: ProjectVersion::from(&versions::latest()),
                 }
-            )
+            );
+            
+            if has_additional_files {
+                let mut files = HashMap::new();
+                files.insert(PathBuf::from("test_file.json"), "test_file_contents".to_string());
+
+                project.set_files(files);
+            };
+            
+            project
         }
 
         #[fixture]
-        fn resource_project() -> DomainType {
-            DomainProject::from_settings(
+        fn resource_project(#[default(false)] has_additional_files: bool) -> DomainType {
+            let mut project = DomainProject::from_settings(
                 ProjectSettings::ResourcePack {
                     name: "Test Resource Pack".to_string(),
                     description: PackDescription::String("Test resource description".to_string()),
                     path: None,
                     project_version: ProjectVersion::from(&versions::latest()),
                 }
-            )
+            );
+
+            if has_additional_files {
+                let mut files = HashMap::new();
+                files.insert(PathBuf::from("test_file.json"), "test_file_contents".to_string());
+
+                project.set_files(files);
+            };
+            
+            project
         }
         
         #[fixture]
-        fn combined_project() -> DomainType {
-            DomainProject::from_settings(
+        fn combined_project(#[default(false)] has_additional_files: bool) -> DomainType {
+            let mut project = DomainProject::from_settings(
                 ProjectSettings::Combined {
                     name: "Test Data Pack".to_string(),
                     data_description: PackDescription::String("Test data description".to_string()),
@@ -568,32 +723,21 @@ mod test {
                     path: None,
                     project_version: ProjectVersion::from(&versions::latest()),
                 }
-            )
+            );
+
+            if has_additional_files {
+                let mut data_files = HashMap::new();
+                data_files.insert(PathBuf::from("test_data_file.json"), "test_data_file_contents".to_string());
+
+                let mut resource_files = HashMap::new();
+                resource_files.insert(PathBuf::from("test_resource_file.json"), "test_resource_file_contents".to_string());
+
+                project.set_combined_files(data_files, resource_files);
+            };
+            
+            project
         }
         
-        #[rstest::rstest]
-        #[tokio::test]
-        async fn test_ser_data_pack(
-            // Given a standard data pack
-            data_project: DomainType
-        ) {
-            let repo = AdapterRepository::create_repo().await;
-            register_default_adapters(&mut *repo.write().await);
-            
-            let context = AdapterRepository::context_from_repo(&repo).await;
-
-            // When I serialize it
-            let serialized = ProjectAdapter::serialize(AdapterInput::new(&data_project), context).await.unwrap();
-            
-            // Then it should be serialized correctly
-            match serialized {
-                SerializedType::Data(project) => {
-                    assert_eq!(*project.pack_info().read().await.pack().pack_format(), versions::get_datapack_format_for_version(versions::latest()).get_format_id() as u32);
-                    assert_eq!(project.pack_info().read().await.pack().description().to_string(), "Test data description");
-                }
-                _ => panic!("Expected data pack serialization"),
-            }
-        }
 
         #[rstest::rstest]
         #[tokio::test]
@@ -643,6 +787,30 @@ mod test {
                     assert_eq!(resource_project.pack_info().read().await.pack().description().to_string(), "Test resource description");
                 }
                 _ => panic!("Expected combined pack serialization"),
+            }
+        }
+
+        #[rstest::rstest]
+        #[tokio::test]
+        async fn test_ser_data_pack_additional_files(
+            // Given a data pack with additional files
+            #[with(true)] data_project: DomainType
+        ) {
+            let repo = AdapterRepository::create_repo().await;
+            register_default_adapters(&mut *repo.write().await);
+
+            let context = AdapterRepository::context_from_repo(&repo).await;
+
+            // When I serialize it
+            let serialized = ProjectAdapter::serialize(AdapterInput::new(&data_project), context).await.unwrap();
+
+            // Then it should be serialized correctly, with the additional files present
+            match serialized {
+                SerializedType::Data(project) => {
+                    assert!(project.files().contains_key(&PathBuf::from("test_file.json")));
+                    assert_eq!(project.files().get(&PathBuf::from("test_file.json")).unwrap(), "test_file_contents");
+                }
+                _ => panic!("Expected data pack serialization"),
             }
         }
     }

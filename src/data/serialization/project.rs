@@ -1,10 +1,7 @@
 use std::collections::HashMap;
-use std::ffi::{OsStr, OsString};
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::Arc;
-use sea_orm::Iden;
 use tokio::sync::RwLock;
 use zip::result::ZipError;
 use zip::write::{ExtendedFileOptions, FileOptions};
@@ -29,7 +26,7 @@ pub struct Project {
 }
 
 impl Project {
-    pub fn new(project_type: SerializedProjectType, pack_info: PackInfo) -> Self {
+    pub fn new(project_type: SerializedProjectType, pack_info: PackInfo, files: HashMap<PathBuf, String>) -> Self {
         Self {
             name: "".to_string(),
             project_type,
@@ -38,11 +35,18 @@ impl Project {
         }
     }
     
-    pub fn with_name(name: String, project_type: SerializedProjectType, pack_info: PackInfo) -> Self {
+    pub fn with_name(name: String, project_type: SerializedProjectType, pack_info: PackInfo, files: HashMap<PathBuf, String>) -> Self {
         Self {
             name,
-            ..Self::new(project_type, pack_info)
+            ..Self::new(project_type, pack_info, files)
         }
+    }
+}
+
+#[cfg(test)]
+impl Project {
+    pub fn set_files(&mut self, files: HashMap<PathBuf, String>) {
+        self.files = files;
     }
 }
 
@@ -80,10 +84,6 @@ impl ZippableProject for Project {
         for i in 0..zip_archive.len() {
             let mut file = zip_archive.by_index(i)?;
             let mut content = String::new();
-            
-            if file.is_dir() {
-                continue;
-            }
 
             let file_name = file.enclosed_name().ok_or(SerializedProjectError::InvalidZipFile(format!("Unsafe path in zip file!: {0}", file.name())))?;
             
@@ -163,6 +163,7 @@ mod tests {
             let mut files = HashMap::new();
             let test_name = "data/test.json";
             let expected_test_contents = r#"{"test": "test"}"#;
+            files.insert(PathBuf::from("data/"), "".to_string());
             files.insert(PathBuf::from(test_name), expected_test_contents.to_string());
             
             let project = Project {
@@ -178,7 +179,7 @@ mod tests {
             // It should return a zip file containing the added file
             let mut zip_file = ZipArchive::new(Cursor::new(zip_data)).unwrap();
 
-            assert_eq!(zip_file.len(), 2);
+            assert_eq!(zip_file.len(), 3);
 
             let mut test_file = zip_file.by_name(test_name).unwrap();
             let mut test_file_content = String::new();
@@ -240,7 +241,7 @@ mod tests {
             let project = Project::extract("Test Project", zip_archive).await.unwrap();
 
             // The added file should be loaded correctly
-            assert!(project.files.len() > 1); // Has more than just pack info
+            assert_eq!(project.files.len(), 3);
             assert!(project.files.contains_key(&PathBuf::from("data/test.json")));
             assert_eq!(project.files.get(&PathBuf::from("data/test.json")).unwrap(), r#"{"test": "test"}"#);
         }
