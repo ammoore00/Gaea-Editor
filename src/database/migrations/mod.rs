@@ -1,0 +1,2 @@
+mod m20250819_000000_create_recipe_table;
+mod migrator;

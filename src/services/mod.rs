@@ -5,3 +5,4 @@ pub mod resource;
 pub mod download_service;
 pub mod undo_service;
 pub mod zip_service;
+mod database_service;
