@@ -756,7 +756,10 @@ mod test {
             // Then it should be serialized correctly
             match serialized {
                 SerializedType::Resource(project) => {
-                    assert_eq!(*project.pack_info().read().await.pack().pack_format(), versions::get_resourcepack_format_for_version(versions::latest()).get_format_id() as u32);
+                    assert_eq!(
+                        *project.pack_info().read().await.pack().pack_format(),
+                        versions::get_resourcepack_format_for_version(versions::latest()).get_format_id() as u32
+                    );
                     assert_eq!(project.pack_info().read().await.pack().description().to_string(), "Test resource description");
                 }
                 _ => panic!("Expected resource pack serialization"),
@@ -780,10 +783,16 @@ mod test {
             // Then it should be serialized correctly
             match serialized {
                 SerializedType::Combined { data_project, resource_project } => {
-                    assert_eq!(*data_project.pack_info().read().await.pack().pack_format(), versions::get_datapack_format_for_version(versions::latest()).get_format_id() as u32);
+                    assert_eq!(
+                        *data_project.pack_info().read().await.pack().pack_format(),
+                        versions::get_datapack_format_for_version(versions::latest()).get_format_id() as u32
+                    );
                     assert_eq!(data_project.pack_info().read().await.pack().description().to_string(), "Test data description");
                     
-                    assert_eq!(*resource_project.pack_info().read().await.pack().pack_format(), versions::get_resourcepack_format_for_version(versions::latest()).get_format_id() as u32);
+                    assert_eq!(
+                        *resource_project.pack_info().read().await.pack().pack_format(),
+                        versions::get_resourcepack_format_for_version(versions::latest()).get_format_id() as u32
+                    );
                     assert_eq!(resource_project.pack_info().read().await.pack().description().to_string(), "Test resource description");
                 }
                 _ => panic!("Expected combined pack serialization"),

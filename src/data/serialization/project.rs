@@ -31,7 +31,7 @@ impl Project {
             name: "".to_string(),
             project_type,
             pack_info: Arc::new(RwLock::new(pack_info)),
-            files: HashMap::new(),
+            files,
         }
     }
     
