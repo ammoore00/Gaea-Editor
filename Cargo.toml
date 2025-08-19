@@ -19,7 +19,6 @@ iced_aw = { version = "0.12.2", features = ["default"] }
 
 tokio = { version = "1.47.1", features = ["fs", "macros"] }
 
-
 syntect = "5.2.0"
 syntect_minecraft_highlighting = "0.1.0"
 

@@ -16,6 +16,13 @@ const MENU_SPACING: f32 = 0.0;
 #[derive(Debug, Clone)]
 pub enum Message {
     TranslationsUpdated(HeaderTranslations),
+    FileMenuMessage(FileMenuMessage),
+}
+
+impl From<FileMenuMessage> for Message {
+    fn from(message: FileMenuMessage) -> Self {
+        Message::FileMenuMessage(message)
+    }
 }
 
 pub struct Header {
@@ -40,6 +47,9 @@ impl Header {
             Message::TranslationsUpdated(translations) => {
                 self.translations = translations;
             },
+            Message::FileMenuMessage(message) => {
+                println!("File menu message: {:?}", message);
+            }
         }
         
         // TODO: implement header menu bar
@@ -83,14 +93,29 @@ impl Header {
     fn create_file_menu(&self) -> Menu<'_, window::Message, iced::Theme, iced::Renderer> {
         let file_translations = &self.translations.file_menu;
         
+        let import_button = Button::new(file_translations.import.as_str())
+            .width(Length::Fill)
+            .style(iced::widget::button::secondary)
+            .on_press(Message::from(FileMenuMessage::Import).into());
+        let export_button = Button::new(file_translations.export.as_str())
+            .width(Length::Fill)
+            .style(iced::widget::button::secondary)
+            .on_press(Message::from(FileMenuMessage::Export).into()); 
+        
         Menu::new(menu_items!(
-            (Button::new(file_translations.import.as_str()).width(Length::Fill).style(iced::widget::button::secondary))
-            (Button::new(file_translations.export.as_str()).width(Length::Fill).style(iced::widget::button::secondary))
+            (import_button)
+            (export_button)
         ))
         .max_width(MENU_WIDTH)
         .offset(MENU_OFFSET)
         .spacing(MENU_SPACING)
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum FileMenuMessage {
+    Import,
+    Export,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, translation_macro::TranslationKey)]
